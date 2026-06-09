@@ -619,11 +619,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isGeneratingAi.value = true
             try {
                 val name = imageItem.name.lowercase()
-                val mimeType = if (name.endsWith(".png")) "image/png" else "image/jpeg"
-                val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-
                 val systemPrompt = """
-                    You are an expert Microstock SEO Specialist. Your job is to analyze the provided image and generate highly accurate metadata (Title, Description, and Keywords). Don't Use - or _ and odd symbols.
+                    You are an expert Microstock SEO Specialist. Your job is to analyze the provided image/asset and generate highly accurate metadata (Title, Description, and Keywords). Don't Use - or _ and odd symbols.
 
                     Strictly follow these rules:
                     1. Language: Always output the Title, Description, and Keywords in English.
@@ -642,29 +639,67 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     Format output must be strictly valid JSON like this: {"title": "...", "description": "...", "keywords": "keyword1,keyword2,keyword3"}
                 """.trimIndent()
 
-                val userPrompt = """
-                    Analyze this image and generate professional microstock metadata in JSON format according to system rules.
-                """.trimIndent()
-
                 val modelName = _selectedModel.value
                 val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
 
-                val req = GeminiRequest(
-                    contents = listOf(
-                        GeminiContent(
-                            parts = listOf(
-                                GeminiPart(text = "$systemPrompt\n\n$userPrompt"),
-                                GeminiPart(
-                                    inlineData = GeminiInlineData(
-                                        mimeType = mimeType,
-                                        data = base64Data
+                val req = if (name.endsWith(".eps")) {
+                    val epsText = try {
+                        val fullString = String(bytes, java.nio.charset.StandardCharsets.UTF_8)
+                        if (fullString.length > 250000) {
+                            fullString.substring(0, 250000) + "\n...[truncated EPS content]..."
+                        } else {
+                            fullString
+                        }
+                    } catch (e: Exception) {
+                        ""
+                    }
+
+                    val userPromptEps = """
+                        Analyze this EPS (Encapsulated PostScript) vector file code. Inspect metadata tags, labels, font comments, layer names, coordinates, and shape parameters inside the PostScript content. Deducing what visual concept, template style, interface mock, or illustrative graphic is defined in this PostScript vector, generate professional microstock metadata (Title, Description, and Keywords).
+
+                        System Rules:
+                        $systemPrompt
+
+                        EPS Code to analyze:
+                        ```postscript
+                        $epsText
+                        ```
+                    """.trimIndent()
+
+                    GeminiRequest(
+                        contents = listOf(
+                            GeminiContent(
+                                parts = listOf(
+                                    GeminiPart(text = userPromptEps)
+                                )
+                            )
+                        ),
+                        generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
+                    )
+                } else {
+                    val mimeType = if (name.endsWith(".png")) "image/png" else "image/jpeg"
+                    val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                    val userPrompt = """
+                        Analyze this image and generate professional microstock metadata in JSON format according to system rules.
+                    """.trimIndent()
+
+                    GeminiRequest(
+                        contents = listOf(
+                            GeminiContent(
+                                parts = listOf(
+                                    GeminiPart(text = "$systemPrompt\n\n$userPrompt"),
+                                    GeminiPart(
+                                        inlineData = GeminiInlineData(
+                                            mimeType = mimeType,
+                                            data = base64Data
+                                        )
                                     )
                                 )
                             )
-                        )
-                    ),
-                    generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
-                )
+                        ),
+                        generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
+                    )
+                }
 
                 val resp = NetworkClient.apiService.getGeminiContent(url, req)
                 val resultText = resp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""

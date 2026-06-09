@@ -324,6 +324,7 @@ fun MainScreen(
                             ) {
                                 items(imagesList, key = { it.id }) { item ->
                                     val isPng = item.name.endsWith(".png", ignoreCase = true)
+                                    val isEps = item.name.endsWith(".eps", ignoreCase = true)
                                     // Border is Green if XMP is found, otherwise Gray.
                                     val borderColor = if (item.hasMetadata) Color(0xFF22C55E) else Color(0xFF4B5563)
                                     
@@ -340,16 +341,52 @@ fun MainScreen(
                                                 .border(BorderStroke(2.dp, borderColor), RoundedCornerShape(6.dp))
                                                 .clip(RoundedCornerShape(6.dp))
                                         ) {
-                                            AsyncImage(
-                                                model = item.uri,
-                                                contentDescription = item.name,
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentScale = ContentScale.Crop
-                                            )
+                                            if (isEps) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(Color(0xFF4F46E5).copy(alpha = 0.15f)), // Modern Indigo theme
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.Center,
+                                                        modifier = Modifier.padding(4.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Description,
+                                                            contentDescription = "EPS Vector",
+                                                            tint = Color(0xFF818CF8),
+                                                            modifier = Modifier.size(32.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Surface(
+                                                            color = Color(0xFF4F46E5),
+                                                            shape = RoundedCornerShape(3.dp),
+                                                            modifier = Modifier.padding(horizontal = 2.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = "EPS VECTOR",
+                                                                color = Color.White,
+                                                                fontSize = 8.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                AsyncImage(
+                                                    model = item.uri,
+                                                    contentDescription = item.name,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                            }
                                         }
-
+ 
                                         Spacer(modifier = Modifier.height(4.dp))
-
+ 
                                         // Selection Checkbox Below the Image Accent Blue
                                         Checkbox(
                                             checked = item.isSelected,
@@ -359,6 +396,17 @@ fun MainScreen(
                                                 uncheckedColor = Color(0xFF4B5563)
                                             ),
                                             modifier = Modifier.size(24.dp)
+                                        )
+
+                                        Spacer(modifier = Modifier.height(2.dp))
+
+                                        Text(
+                                            text = item.name,
+                                            color = Color.White.copy(alpha = 0.8f),
+                                            fontSize = 8.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.padding(horizontal = 2.dp)
                                         )
                                     }
                                 }
