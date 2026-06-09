@@ -578,6 +578,110 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun generateMetadataFromSelectedImage() {
+        if (_isOfflineMode.value) {
+            _toastFlow.value = "Fitur analisis gambar hanya tersedia di Mode Online!"
+            return
+        }
+
+        val selected = _imagesList.value.filter { it.isSelected }
+        if (selected.isEmpty()) {
+            _toastFlow.value = "Silakan centang/pilih satu gambar terlebih dahulu!"
+            return
+        }
+
+        val imageItem = selected[0]
+        val bytes = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri)
+        if (bytes == null) {
+            _toastFlow.value = "Tidak dapat membaca file gambar: ${imageItem.name}"
+            return
+        }
+
+        val provider = _selectedProvider.value
+        if (provider != "Gemini") {
+            _toastFlow.value = "Fitur analisis gambar saat ini hanya didukung oleh Google Gemini!"
+            return
+        }
+
+        val apiKey = _geminiKey.value
+        if (apiKey.isBlank()) {
+            _toastFlow.value = "Masukkan API Key Gemini terlebih dahulu di bagian API Key!"
+            return
+        }
+
+        viewModelScope.launch {
+            _isGeneratingAi.value = true
+            try {
+                val name = imageItem.name.lowercase()
+                val mimeType = if (name.endsWith(".png")) "image/png" else "image/jpeg"
+                val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+
+                val systemPrompt = """
+                    You are an expert Microstock SEO Specialist. Your job is to analyze the provided image and generate highly accurate metadata (Title, Description, and Keywords). Don't Use - or _ and odd symbols.
+
+                    Strictly follow these rules:
+                    1. Language: Always output the Title, Description, and Keywords in English.
+                    2. Title max until 20 words. 
+                    3. Description must be Maximum 200 characters a dynamic combination of concept description and organic visual multi usage targets. and suitable for what.
+                    4. Keywords Quantity: Generate exactly between 42 to 49 high-quality keywords. Quality and relevance are prioritized over quantity.
+                    5. Keywords Formatting: 
+                       - Separate keywords ONLY with a comma without any spaces after the comma (e.g., keyword1,keyword2,keyword3).
+                       - DO NOT include periods, dots, or any other special characters.
+                    6. Content Relevance: 
+                       - No keyword spamming or redundant keywords. 
+                       - Avoid contradictory terms.
+                       - Do not repeat root words or redundant variations.
+                       - Use only 1 word for each keyword. Don't combine 2 words without spaces to make one word, for example like photoobject, it's wrong and the correct is like this: photo, object.
+
+                    Format output must be strictly valid JSON like this: {"title": "...", "description": "...", "keywords": "keyword1,keyword2,keyword3"}
+                """.trimIndent()
+
+                val userPrompt = """
+                    Analyze this image and generate professional microstock metadata in JSON format according to system rules.
+                """.trimIndent()
+
+                val modelName = _selectedModel.value
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
+
+                val req = GeminiRequest(
+                    contents = listOf(
+                        GeminiContent(
+                            parts = listOf(
+                                GeminiPart(text = "$systemPrompt\n\n$userPrompt"),
+                                GeminiPart(
+                                    inlineData = GeminiInlineData(
+                                        mimeType = mimeType,
+                                        data = base64Data
+                                    )
+                                )
+                            )
+                        )
+                    ),
+                    generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
+                )
+
+                val resp = NetworkClient.apiService.getGeminiContent(url, req)
+                val resultText = resp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
+
+                val cleanJson = extractJson(resultText)
+                val parsed = gson.fromJson(cleanJson, GeneratedMetadata::class.java)
+                if (parsed != null) {
+                    _title.value = parsed.title ?: ""
+                    _description.value = parsed.description ?: ""
+                    _keywords.value = parsed.keywords ?: ""
+                    _toastFlow.value = "AI berhasil menganalisis gambar & menghasilkan metadata!"
+                } else {
+                    _toastFlow.value = "Respon AI tidak valid JSON."
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _toastFlow.value = "Error AI Gemini: ${e.localizedMessage ?: e.message}"
+            } finally {
+                _isGeneratingAi.value = false
+            }
+        }
+    }
+
     private fun extractJson(raw: String): String {
         val trimmed = raw.trim()
         val start = trimmed.indexOf('{')

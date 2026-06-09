@@ -1103,6 +1103,38 @@ fun MainScreen(
                         }
                     }
 
+                    if (!isOfflineMode) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = {
+                                viewModel.generateMetadataFromSelectedImage()
+                            },
+                            enabled = !isGeneratingAi,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF2E7D32),
+                                disabledContainerColor = Color(0xFF2E7D32).copy(alpha = 0.7f),
+                                contentColor = Color.White,
+                                disabledContentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp)
+                                .testTag("generate_metadata_from_image_btn")
+                        ) {
+                            if (isGeneratingAi) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Analyzing Image...", fontWeight = FontWeight.Bold, color = Color.White)
+                            } else {
+                                Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("GENERATE DARI GAMBAR (GEMINI)", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Note Guidance Panel (Background Grey Muda)
@@ -1122,8 +1154,8 @@ fun MainScreen(
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "1. Pilih AI Provider & masukkan Kunci API, klik SAVE API untuk mengaktifkan.\n" +
-                                       "2. Tulis konsep detail atau deskripsi visual gambar.\n" +
-                                       "3. Klik GENERATE METADATA untuk mengotomatiskan penulisan Title, Deskripsi, dan Keywords (microstock standard) secara instan.",
+                                       "2. Tulis konsep detail/deskripsi gambar lalu klik GENERATE METADATA.\n" +
+                                       "3. ATAU centang satu gambar di galeri, lalu klik GENERATE DARI GAMBAR untuk analisis visual langsung oleh Gemini.",
                                 color = Color(0xFF4B5563),
                                 fontSize = 10.sp,
                                 lineHeight = 14.sp
