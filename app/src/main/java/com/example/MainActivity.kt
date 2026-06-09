@@ -165,19 +165,19 @@ fun MainScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            pickerLauncher.launch("image/*")
+            pickerLauncher.launch("*/*")
         } else {
-            Toast.makeText(context, "Izin penyimpanan dibutuhkan untuk memilih gambar.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Izin penyimpanan dibutuhkan untuk memilih berkas.", Toast.LENGTH_SHORT).show()
         }
     }
 
     fun requestAndPickImages() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            pickerLauncher.launch("image/*")
+            pickerLauncher.launch("*/*")
         } else {
             val permission = Manifest.permission.READ_EXTERNAL_STORAGE
             if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) {
-                pickerLauncher.launch("image/*")
+                pickerLauncher.launch("*/*")
             } else {
                 permissionLauncher.launch(permission)
             }
@@ -1223,7 +1223,7 @@ fun MainScreen(
                     }
                 )
                 Text(
-                    text = " • war machine hybrid app version 1.2.0",
+                    text = " • war machine hybrid app version 1.3",
                     fontSize = 9.sp,
                     color = Color.White.copy(alpha = 0.9f),
                     fontStyle = FontStyle.Italic

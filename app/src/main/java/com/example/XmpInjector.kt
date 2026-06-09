@@ -213,13 +213,31 @@ object XmpInjector {
         return null
     }
 
-    fun parseXMP(originalBytes: ByteArray, isPng: Boolean): XmpData? {
+    fun extractXMPFromEps(bytes: ByteArray): String? {
         try {
-            val xmlStr = if (isPng) {
+            val str = String(bytes, StandardCharsets.UTF_8)
+            val startIdx = str.indexOf("<x:xmpmeta")
+            if (startIdx != -1) {
+                val endIdx = str.indexOf("</x:xmpmeta>", startIdx)
+                if (endIdx != -1) {
+                    return str.substring(startIdx, endIdx + "</x:xmpmeta>".length)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
+
+    fun parseXMP(originalBytes: ByteArray, isPng: Boolean, isEps: Boolean = false): XmpData? {
+        try {
+            val xmlStr = (if (isEps) {
+                extractXMPFromEps(originalBytes)
+            } else if (isPng) {
                 extractXMPFromPng(originalBytes)
             } else {
                 extractXMPFromJpeg(originalBytes)
-            } ?: return null
+            }) ?: return null
 
             return extractXMP(xmlStr)
         } catch (e: Exception) {
@@ -401,5 +419,54 @@ object XmpInjector {
         }
 
         return outputStream.toByteArray()
+    }
+
+    fun injectIntoEps(
+        originalBytes: ByteArray,
+        title: String,
+        description: String,
+        keywords: List<String>,
+        creator: String
+    ): ByteArray {
+        try {
+            val fileStr = String(originalBytes, StandardCharsets.UTF_8)
+            val xmpXml = generateXmpMeta(title, description, keywords, creator)
+            
+            val xmpStart = fileStr.indexOf("<x:xmpmeta")
+            val xmpEnd = if (xmpStart != -1) fileStr.indexOf("</x:xmpmeta>", xmpStart) else -1
+            
+            if (xmpStart != -1 && xmpEnd != -1) {
+                val beforeXmp = fileStr.substring(0, xmpStart)
+                val afterXmp = fileStr.substring(xmpEnd + "</x:xmpmeta>".length)
+                val newContent = beforeXmp + xmpXml + afterXmp
+                return newContent.toByteArray(StandardCharsets.UTF_8)
+            } else {
+                // Insert after standard postscript header
+                val headerIdx = fileStr.indexOf("\n")
+                if (headerIdx != -1) {
+                    val before = fileStr.substring(0, headerIdx + 1)
+                    val after = fileStr.substring(headerIdx + 1)
+                    val xpacketBlock = """
+                        %XMP_Begin
+                        <?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+                        $xmpXml
+                        <?xpacket end="w"?>
+                        %XMP_End
+                    """.trimIndent() + "\n"
+                    val newContent = before + xpacketBlock + after
+                    return newContent.toByteArray(StandardCharsets.UTF_8)
+                } else {
+                    val xpacketBlock = """
+                        <?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+                        $xmpXml
+                        <?xpacket end="w"?>
+                    """.trimIndent() + "\n"
+                    return (xpacketBlock + fileStr).toByteArray(StandardCharsets.UTF_8)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return originalBytes
+        }
     }
 }

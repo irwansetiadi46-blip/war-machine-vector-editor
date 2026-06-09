@@ -307,31 +307,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             uris.forEach { uri ->
                 if (current.none { it.uri == uri }) {
                     val name = FileHelper.getFileNameFromUri(context, uri)
-                    val originalBytes = FileHelper.readBytesFromUri(context, uri)
+                    val nameLower = name.lowercase()
                     
-                    var hasMeta = false
-                    var meta: XmpData? = null
+                    // Accept Jpeg, Png, and Eps
+                    if (nameLower.endsWith(".png") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".eps")) {
+                        val originalBytes = FileHelper.readBytesFromUri(context, uri)
+                        
+                        var hasMeta = false
+                        var meta: XmpData? = null
 
-                    if (originalBytes != null) {
-                        val isPng = name.endsWith(".png", ignoreCase = true)
-                        meta = XmpInjector.parseXMP(originalBytes, isPng)
-                        if (meta != null && (meta.title.isNotBlank() || meta.description.isNotBlank() || meta.keywords.isNotBlank() || meta.creator.isNotBlank())) {
-                            hasMeta = true
+                        if (originalBytes != null) {
+                            val isPng = nameLower.endsWith(".png")
+                            val isEps = nameLower.endsWith(".eps")
+                            meta = XmpInjector.parseXMP(originalBytes, isPng = isPng, isEps = isEps)
+                            if (meta != null && (meta.title.isNotBlank() || meta.description.isNotBlank() || meta.keywords.isNotBlank() || meta.creator.isNotBlank())) {
+                                hasMeta = true
+                            }
                         }
-                    }
 
-                    current.add(
-                        ImageItem(
-                            id = nextId++,
-                            name = name,
-                            uri = uri,
-                            originalBytes = originalBytes,
-                            injectedBytes = null,
-                            hasMetadata = hasMeta,
-                            isSelected = isAllMode,
-                            metadata = meta
+                        current.add(
+                            ImageItem(
+                                id = nextId++,
+                                name = name,
+                                uri = uri,
+                                originalBytes = originalBytes,
+                                injectedBytes = null,
+                                hasMetadata = hasMeta,
+                                isSelected = isAllMode,
+                                metadata = meta
+                            )
                         )
-                    )
+                    }
                 }
             }
 
@@ -731,23 +737,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     try {
                         val bytesToInject = item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
                         if (bytesToInject != null) {
-                            val isPng = item.name.endsWith(".png", ignoreCase = true)
-                            val injectedBytes: ByteArray = if (isPng) {
-                                XmpInjector.injectIntoPng(
-                                    bytesToInject,
-                                    metaTitle,
-                                    metaDesc,
-                                    keywordsList,
-                                    metaCreator
-                                )
-                            } else {
-                                XmpInjector.injectIntoJpeg(
-                                    bytesToInject,
-                                    metaTitle,
-                                    metaDesc,
-                                    keywordsList,
-                                    metaCreator
-                                )
+                            val nameLower = item.name.lowercase()
+                            val injectedBytes: ByteArray = when {
+                                nameLower.endsWith(".png") -> {
+                                    XmpInjector.injectIntoPng(
+                                        bytesToInject,
+                                        metaTitle,
+                                        metaDesc,
+                                        keywordsList,
+                                        metaCreator
+                                    )
+                                }
+                                nameLower.endsWith(".eps") -> {
+                                    XmpInjector.injectIntoEps(
+                                        bytesToInject,
+                                        metaTitle,
+                                        metaDesc,
+                                        keywordsList,
+                                        metaCreator
+                                    )
+                                }
+                                else -> {
+                                    XmpInjector.injectIntoJpeg(
+                                        bytesToInject,
+                                        metaTitle,
+                                        metaDesc,
+                                        keywordsList,
+                                        metaCreator
+                                    )
+                                }
                             }
 
                             val newestXmpData = XmpData(
@@ -824,7 +842,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             ext = item.name.substring(dotIndex)
                         } else {
                             baseName = item.name
-                            ext = if (item.name.endsWith("png", true)) ".png" else ".jpg"
+                            ext = when {
+                                item.name.endsWith("png", true) -> ".png"
+                                item.name.endsWith("eps", true) -> ".eps"
+                                else -> ".jpg"
+                            }
                         }
 
                         val finalName = if (item.injectedBytes != null) {
@@ -848,8 +870,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (filesToSave.size == 1) {
                             // Single file download
                             val entry = filesToSave.entries.first()
-                            val isPng = entry.key.endsWith(".png", ignoreCase = true)
-                            val mimeType = if (isPng) "image/png" else "image/jpeg"
+                            val keyLower = entry.key.lowercase()
+                            val mimeType = when {
+                                keyLower.endsWith(".png") -> "image/png"
+                                keyLower.endsWith(".eps") -> "application/postscript"
+                                else -> "image/jpeg"
+                            }
                             val savedUri = FileHelper.saveToDownloads(context, entry.key, mimeType, entry.value)
                             savedUri != null
                         } else {
