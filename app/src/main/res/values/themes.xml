@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.MyApplication" parent="android:Theme.DeviceDefault.NoActionBar" />
+
+    <style name="Theme.OfflineResult" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">#F25C05</item>
+        <item name="colorPrimaryDark">#D84315</item>
+        <item name="colorAccent">#F25C05</item>
+    </style>
+</resources>

@@ -1,0 +1,6 @@
+{
+  "name": "War Machine Hybrid",
+  "description": "Inject metadata XMP (Title, Description, Keywords, Creator) into JPEG/PNG images, with AI generation support via Groq and Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
