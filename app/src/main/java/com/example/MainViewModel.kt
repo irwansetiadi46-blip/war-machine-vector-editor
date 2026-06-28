@@ -888,15 +888,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 for (item in selected) {
                     val bytesToSave = item.injectedBytes ?: item.originalBytes
                     if (bytesToSave != null) {
-                        // Determine proper name (with _injected suffix if injected)
-                        val baseName: String
                         val ext: String
                         val dotIndex = item.name.lastIndexOf('.')
                         if (dotIndex != -1) {
-                            baseName = item.name.substring(0, dotIndex)
                             ext = item.name.substring(dotIndex)
                         } else {
-                            baseName = item.name
                             ext = when {
                                 item.name.endsWith("png", true) -> ".png"
                                 item.name.endsWith("eps", true) -> ".eps"
@@ -904,12 +900,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
 
-                        val finalName = if (item.injectedBytes != null) {
-                            "${baseName}_injected$ext"
-                        } else {
-                            "$baseName$ext"
+                        var finalName = ""
+                        val metaTitle = item.metadata?.title?.trim()
+                        if (!metaTitle.isNullOrEmpty()) {
+                            var sanitized = metaTitle.replace(Regex("[\\\\/:*?\"<>|]"), "")
+                            sanitized = sanitized.replace(Regex("\\s+"), "-").lowercase()
+                            if (sanitized.length > 50) sanitized = sanitized.substring(0, 50)
+                            sanitized = sanitized.trimEnd('-')
+                            if (sanitized.isNotEmpty()) finalName = "$sanitized$ext"
                         }
-                        filesToSave[finalName] = bytesToSave
+                        
+                        if (finalName.isEmpty()) {
+                            val baseName = if (dotIndex != -1) item.name.substring(0, dotIndex) else item.name
+                            finalName = "$baseName$ext"
+                        }
+                        
+                        var uniqueName = finalName
+                        var counter = 1
+                        val nameWithoutExt = finalName.substringBeforeLast(".")
+                        val extension = if (finalName.contains(".")) ".${finalName.substringAfterLast(".")}" else ""
+                        while (filesToSave.containsKey(uniqueName)) {
+                            uniqueName = "$nameWithoutExt-$counter$extension"
+                            counter++
+                        }
+
+                        filesToSave[uniqueName] = bytesToSave
                     }
                 }
 
@@ -935,7 +950,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             savedUri != null
                         } else {
                             // Zip download
-                            val zipHeader = "WarMachine_Hybrid_${System.currentTimeMillis()}"
+                            val zipHeader = "WMH-Metadata-Injected"
                             val zipBytes = FileHelper.createZipOfBytes(filesToSave)
                             val savedUri = FileHelper.saveToDownloads(context, "$zipHeader.zip", "application/zip", zipBytes)
                             savedUri != null
