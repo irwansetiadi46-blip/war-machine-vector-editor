@@ -70,7 +70,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedProvider = MutableStateFlow("Gemini")
     val selectedProvider = _selectedProvider.asStateFlow()
 
-    private val _selectedModel = MutableStateFlow("gemini-2.5-flash")
+    private val _selectedModel = MutableStateFlow("gemini-3.5-flash")
     val selectedModel = _selectedModel.asStateFlow()
 
     private val _promptConcept = MutableStateFlow("")
@@ -259,7 +259,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateDefaultModel(provider: String) {
         _selectedProvider.value = provider
-        _selectedModel.value = if (provider == "Gemini") "gemini-2.5-flash" else "llama-3.3-70b-versatile"
+        _selectedModel.value = if (provider == "Gemini") "gemini-3.5-flash" else "llama-3.3-70b-versatile"
     }
 
     fun setSelectedModel(model: String) {
@@ -432,13 +432,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _title.value = meta?.title ?: ""
                         _description.value = meta?.description ?: ""
                         _keywords.value = meta?.keywords ?: ""
-                        _creator.value = meta?.creator ?: ""
+                        val newCreator = meta?.creator ?: ""
+                        _creator.value = if (newCreator.isNotBlank()) newCreator else (if (_creator.value.isNotBlank()) _creator.value else savedCreator)
                     } else if (selected.isEmpty()) {
                         if (isFormBlank) {
                             _title.value = ""
                             _description.value = ""
                             _keywords.value = ""
-                            _creator.value = savedCreator
+                            _creator.value = if (_creator.value.isNotBlank()) _creator.value else savedCreator
                         }
                     }
                 }
@@ -448,12 +449,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _title.value = meta?.title ?: ""
                         _description.value = meta?.description ?: ""
                         _keywords.value = meta?.keywords ?: ""
-                        _creator.value = meta?.creator ?: ""
+                        val newCreator = meta?.creator ?: ""
+                        _creator.value = if (newCreator.isNotBlank()) newCreator else (if (_creator.value.isNotBlank()) _creator.value else savedCreator)
                     } else if (selected.isEmpty() && isFormBlank) {
                         _title.value = ""
                         _description.value = ""
                         _keywords.value = ""
-                        _creator.value = savedCreator
+                        _creator.value = if (_creator.value.isNotBlank()) _creator.value else savedCreator
                     }
                 }
                 SelectionMode.ALL -> {
@@ -461,7 +463,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _title.value = ""
                         _description.value = ""
                         _keywords.value = ""
-                        _creator.value = savedCreator
+                        _creator.value = if (_creator.value.isNotBlank()) _creator.value else savedCreator
                     }
                 }
             }
@@ -486,13 +488,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- AI Metadata Generation ---
     fun generateMetadata() {
+        val selected = _imagesList.value.filter { it.isSelected }
+        if (selected.isNotEmpty()) {
+            if (!_isOfflineMode.value) {
+                generateMetadataFromSelectedImage()
+            } else {
+                _toastFlow.value = "Fitur analisis gambar hanya tersedia di Mode Online!"
+            }
+            return
+        }
+
         if (_isOfflineMode.value) {
             generateKeywordsOffline()
             return
         }
         val concept = _promptConcept.value
         if (concept.isBlank()) {
-            _toastFlow.value = "Konsep tidak boleh kosong!"
+            _toastFlow.value = "Masukkan konsep deskripsi atau pilih satu gambar!"
             return
         }
 
@@ -654,7 +666,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         ""
                     }
 
+                    val concept = _promptConcept.value
+                    val conceptHint = if (concept.isNotBlank()) "User provided concept/hint: $concept\n" else ""
+
                     val userPromptEps = """
+                        $conceptHint
                         Analyze this EPS (Encapsulated PostScript) vector file code. Inspect metadata tags, labels, font comments, layer names, coordinates, and shape parameters inside the PostScript content. Deducing what visual concept, template style, interface mock, or illustrative graphic is defined in this PostScript vector, generate professional microstock metadata (Title, Description, and Keywords).
 
                         System Rules:
@@ -679,7 +695,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     val mimeType = if (name.endsWith(".png")) "image/png" else "image/jpeg"
                     val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                    val concept = _promptConcept.value
+                    val conceptHint = if (concept.isNotBlank()) "User provided concept/hint: $concept\n" else ""
+                    
                     val userPrompt = """
+                        $conceptHint
                         Analyze this image and generate professional microstock metadata in JSON format according to system rules.
                     """.trimIndent()
 

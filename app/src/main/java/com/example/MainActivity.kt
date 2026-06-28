@@ -42,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -55,6 +56,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.rememberCoroutineScope
@@ -65,6 +69,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+        windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        windowInsetsController.hide(WindowInsetsCompat.Type.navigationBars())
+
         setContent {
             MyApplicationTheme {
                 Scaffold(
@@ -89,6 +98,7 @@ fun MainScreen(
     viewModel: MainViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     
     // --- State Observables ---
     val imagesList by viewModel.imagesList.collectAsStateWithLifecycle()
@@ -906,52 +916,79 @@ fun MainScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Model Selection Select Row
-                    Text(
-                        text = "Pilih AI Provider & Model:",
-                        color = Color(0xFF1F2937),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                    val aiModels = listOf(
+                        Triple("Gemini", "gemini-3.5-flash", "Gemini 3.5 Flash"),
+                        Triple("Gemini", "gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite"),
+                        Triple("Gemini", "gemini-3.1-pro", "Gemini 3.1 Pro"),
+                        Triple("Gemini", "gemini-2.5-flash", "Gemini 2.5 Flash"),
+                        Triple("Gemini", "gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite"),
+                        Triple("Groq", "llama-3.3-70b-versatile", "Groq Llama-3.3")
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    
+                    var expanded by remember { mutableStateOf(false) }
+                    val currentModelLabel = aiModels.find { it.first == selectedProvider && it.second == selectedModel }?.third ?: selectedModel
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        listOf(
-                            Triple("Gemini", "gemini-2.5-flash-lite", "Gemini Flash-Lite"),
-                            Triple("Gemini", "gemini-2.5-flash", "Gemini Flash"),
-                            Triple("Groq", "llama-3.3-70b-versatile", "Groq Llama-3.3")
-                        ).forEach { (provider, model, label) ->
-                            val isSelected = selectedProvider == provider && selectedModel == model
-                            val btnContainerColor = if (isSelected) Color(0xFFF25C05) else Color(0xFFF3F4F6)
-                            val btnContentColor = if (isSelected) Color.White else Color(0xFF4B5563)
-                            val btnBorderColor = if (isSelected) Color(0xFFF25C05) else Color(0xFFD1D5DB)
-
-                            OutlinedButton(
-                                onClick = {
-                                    viewModel.updateDefaultModel(provider)
-                                    viewModel.setSelectedModel(model)
-                                },
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Model Aktif:",
+                                color = Color(0xFF4B5563),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = currentModelLabel,
+                                color = Color(0xFF1F2937),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                        
+                        Box {
+                            Button(
+                                onClick = { expanded = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF25C05)),
                                 shape = RoundedCornerShape(6.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = btnContainerColor,
-                                    contentColor = btnContentColor
-                                ),
-                                border = BorderStroke(1.dp, btnBorderColor),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(34.dp)
-                                    .testTag("model_${model}")
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                modifier = Modifier.height(36.dp)
                             ) {
-                                Text(
-                                    text = label, 
-                                    fontSize = 10.sp, 
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Text("Ganti Model", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                            }
+                            
+                            DropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                aiModels.forEach { (provider, model, label) ->
+                                    val isSelected = selectedProvider == provider && selectedModel == model
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                RadioButton(
+                                                    selected = isSelected,
+                                                    onClick = null,
+                                                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFF25C05))
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = label,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            viewModel.updateDefaultModel(provider)
+                                            viewModel.setSelectedModel(model)
+                                            expanded = false
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -1151,38 +1188,6 @@ fun MainScreen(
                         }
                     }
 
-                    if (!isOfflineMode) {
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Button(
-                            onClick = {
-                                viewModel.generateMetadataFromSelectedImage()
-                            },
-                            enabled = !isGeneratingAi,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF2E7D32),
-                                disabledContainerColor = Color(0xFF2E7D32).copy(alpha = 0.7f),
-                                contentColor = Color.White,
-                                disabledContentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(44.dp)
-                                .testTag("generate_metadata_from_image_btn")
-                        ) {
-                            if (isGeneratingAi) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Analyzing Image...", fontWeight = FontWeight.Bold, color = Color.White)
-                            } else {
-                                Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("GENERATE DARI GAMBAR (GEMINI)", fontWeight = FontWeight.Black, fontSize = 13.sp)
-                            }
-                        }
-                    }
-
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Note Guidance Panel (Background Grey Muda)
@@ -1203,10 +1208,20 @@ fun MainScreen(
                             Text(
                                 text = "1. Pilih AI Provider & masukkan Kunci API, klik SAVE API untuk mengaktifkan.\n" +
                                        "2. Tulis konsep detail/deskripsi gambar lalu klik GENERATE METADATA.\n" +
-                                       "3. ATAU centang satu gambar di galeri, lalu klik GENERATE DARI GAMBAR untuk analisis visual langsung oleh Gemini.",
+                                       "3. ATAU centang satu gambar di galeri, lalu klik GENERATE METADATA untuk analisis visual langsung oleh Gemini.",
                                 color = Color(0xFF4B5563),
                                 fontSize = 10.sp,
                                 lineHeight = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Dapatkan Gemini API Key di sini",
+                                color = Color(0xFF2563EB),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable {
+                                    uriHandler.openUri("https://aistudio.google.com/app/apikey")
+                                }
                             )
                         }
                     }
@@ -1271,7 +1286,7 @@ fun MainScreen(
                     }
                 )
                 Text(
-                    text = " • war machine hybrid app version 1.3",
+                    text = " • war machine hybrid app version 1.4",
                     fontSize = 9.sp,
                     color = Color.White.copy(alpha = 0.9f),
                     fontStyle = FontStyle.Italic
