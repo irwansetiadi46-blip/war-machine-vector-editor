@@ -70,7 +70,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedProvider = MutableStateFlow("Gemini")
     val selectedProvider = _selectedProvider.asStateFlow()
 
-    private val _selectedModel = MutableStateFlow("gemini-3.5-flash")
+    private val _selectedModel = MutableStateFlow("gemini-3.1-flash-lite")
     val selectedModel = _selectedModel.asStateFlow()
 
     private val _promptConcept = MutableStateFlow("")
@@ -259,7 +259,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateDefaultModel(provider: String) {
         _selectedProvider.value = provider
-        _selectedModel.value = if (provider == "Gemini") "gemini-3.5-flash" else "llama-3.3-70b-versatile"
+        _selectedModel.value = if (provider == "Gemini") "gemini-3.1-flash-lite" else "llama-3.3-70b-versatile"
     }
 
     fun setSelectedModel(model: String) {

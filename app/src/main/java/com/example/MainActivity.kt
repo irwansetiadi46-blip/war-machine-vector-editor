@@ -23,6 +23,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -99,6 +102,7 @@ fun MainScreen(
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val focusManager = LocalFocusManager.current
     
     // --- State Observables ---
     val imagesList by viewModel.imagesList.collectAsStateWithLifecycle()
@@ -194,7 +198,9 @@ fun MainScreen(
         }
     }
 
-    Box(modifier = modifier) {
+    Box(modifier = modifier.pointerInput(Unit) {
+        detectTapGestures(onTap = { focusManager.clearFocus() })
+    }) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
