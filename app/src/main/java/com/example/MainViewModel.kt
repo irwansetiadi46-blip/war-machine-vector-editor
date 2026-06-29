@@ -21,7 +21,8 @@ data class ImageItem(
     val injectedBytes: ByteArray?,
     val hasMetadata: Boolean,
     val isSelected: Boolean,
-    val metadata: XmpData?
+    val metadata: XmpData?,
+    val isGenerating: Boolean = false
 )
 
 data class GeneratedMetadata(
@@ -743,6 +744,166 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun setImageGenerating(id: Int, isGenerating: Boolean) {
+        _imagesList.value = _imagesList.value.map {
+            if (it.id == id) it.copy(isGenerating = isGenerating) else it
+        }
+    }
+
+    fun updateImageMetadata(id: Int, title: String, description: String, keywords: String) {
+        _imagesList.value = _imagesList.value.map { item ->
+            if (item.id == id) {
+                val newMeta = item.metadata?.copy(
+                    title = title,
+                    description = description,
+                    keywords = keywords
+                ) ?: XmpData(title, description, keywords, _creator.value)
+                item.copy(metadata = newMeta)
+            } else {
+                item
+            }
+        }
+    }
+
+    fun generateMetadataForImage(id: Int) {
+        if (_isOfflineMode.value) {
+            _toastFlow.value = "Fitur analisis gambar hanya tersedia di Mode Online!"
+            return
+        }
+
+        val imageItem = _imagesList.value.find { it.id == id } ?: return
+        val bytes = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri)
+        if (bytes == null) {
+            _toastFlow.value = "Tidak dapat membaca file gambar: ${imageItem.name}"
+            return
+        }
+
+        val provider = _selectedProvider.value
+        if (provider != "Gemini") {
+            _toastFlow.value = "Fitur analisis gambar saat ini hanya didukung oleh Google Gemini!"
+            return
+        }
+
+        val apiKey = _geminiKey.value
+        if (apiKey.isBlank()) {
+            _toastFlow.value = "Masukkan API Key Gemini terlebih dahulu di bagian API Key!"
+            return
+        }
+
+        viewModelScope.launch {
+            setImageGenerating(id, true)
+            try {
+                val name = imageItem.name.lowercase()
+                val systemPrompt = """
+                    You are an expert Microstock SEO Specialist. Your job is to analyze the provided image/asset and generate highly accurate metadata (Title, Description, and Keywords). Don't Use - or _ and odd symbols.
+
+                    Strictly follow these rules:
+                    1. Language: Always output the Title, Description, and Keywords in English.
+                    2. Title max until 20 words. 
+                    3. Description must be Maximum 200 characters a dynamic combination of concept description and organic visual multi usage targets. and suitable for what.
+                    4. Keywords Quantity: Generate exactly between 42 to 49 high-quality keywords. Quality and relevance are prioritized over quantity.
+                    5. Keywords Formatting: 
+                       - Separate keywords ONLY with a comma without any spaces after the comma (e.g., keyword1,keyword2,keyword3).
+                       - DO NOT include periods, dots, or any other special characters.
+                    6. Content Relevance: 
+                       - No keyword spamming or redundant keywords. 
+                       - Avoid contradictory terms.
+                       - Do not repeat root words or redundant variations.
+                       - Use only 1 word for each keyword. Don't combine 2 words without spaces to make one word, for example like photoobject, it's wrong and the correct is like this: photo, object.
+
+                    Format output must be strictly valid JSON like this: {"title": "...", "description": "...", "keywords": "keyword1,keyword2,keyword3"}
+                """.trimIndent()
+
+                val modelName = _selectedModel.value
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
+
+                val req = if (name.endsWith(".eps")) {
+                    val epsText = try {
+                        val fullString = String(bytes, java.nio.charset.StandardCharsets.UTF_8)
+                        if (fullString.length > 250000) {
+                            fullString.substring(0, 250000) + "\n...[truncated EPS content]..."
+                        } else {
+                            fullString
+                        }
+                    } catch (e: Exception) {
+                        ""
+                    }
+
+                    val concept = _promptConcept.value
+                    val conceptHint = if (concept.isNotBlank()) "User provided concept/hint: $concept\n" else ""
+
+                    val userPromptEps = """
+                        $conceptHint
+                        Analyze this EPS (Encapsulated PostScript) vector file code. Inspect metadata tags, labels, font comments, layer names, coordinates, and shape parameters inside the PostScript content. Deducing what visual concept, template style, interface mock, or illustrative graphic is defined in this PostScript vector, generate professional microstock metadata (Title, Description, and Keywords).
+
+                        System Rules:
+                        $systemPrompt
+
+                        EPS Code to analyze:
+                        ```postscript
+                        $epsText
+                        ```
+                    """.trimIndent()
+
+                    GeminiRequest(
+                        contents = listOf(
+                            GeminiContent(
+                                parts = listOf(
+                                    GeminiPart(text = userPromptEps)
+                                )
+                            )
+                        ),
+                        generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
+                    )
+                } else {
+                    val mimeType = if (name.endsWith(".png")) "image/png" else "image/jpeg"
+                    val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                    val concept = _promptConcept.value
+                    val conceptHint = if (concept.isNotBlank()) "User provided concept/hint: $concept\n" else ""
+                    
+                    val userPrompt = """
+                        $conceptHint
+                        Analyze this image and generate professional microstock metadata in JSON format according to system rules.
+                    """.trimIndent()
+
+                    GeminiRequest(
+                        contents = listOf(
+                            GeminiContent(
+                                parts = listOf(
+                                    GeminiPart(text = "$systemPrompt\n\n$userPrompt"),
+                                    GeminiPart(
+                                        inlineData = GeminiInlineData(
+                                            mimeType = mimeType,
+                                            data = base64Data
+                                        )
+                                    )
+                                )
+                            )
+                        ),
+                        generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
+                    )
+                }
+
+                val resp = NetworkClient.apiService.getGeminiContent(url, req)
+                val resultText = resp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
+
+                val cleanJson = extractJson(resultText)
+                val parsed = gson.fromJson(cleanJson, GeneratedMetadata::class.java)
+                if (parsed != null) {
+                    updateImageMetadata(id, parsed.title ?: "", parsed.description ?: "", parsed.keywords ?: "")
+                    _toastFlow.value = "AI berhasil menghasilkan metadata untuk ${imageItem.name}"
+                } else {
+                    _toastFlow.value = "Respon AI tidak valid JSON untuk ${imageItem.name}."
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _toastFlow.value = "Error AI Gemini: ${e.localizedMessage ?: e.message}"
+            } finally {
+                setImageGenerating(id, false)
+            }
+        }
+    }
+
     private fun extractJson(raw: String): String {
         val trimmed = raw.trim()
         val start = trimmed.indexOf('{')
@@ -766,15 +927,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val metaKeywordsString = _keywords.value
         val metaCreator = _creator.value
 
-        if (metaTitle.isBlank() && metaDesc.isBlank() && metaKeywordsString.isBlank() && metaCreator.isBlank()) {
-            _toastFlow.value = "Form input metadata tidak boleh kosong!"
-            return
-        }
+        val hasAnyValidMetadata = selected.any { item ->
+            !(item.metadata?.title.isNullOrBlank() && item.metadata?.description.isNullOrBlank() && item.metadata?.keywords.isNullOrBlank())
+        } || !(metaTitle.isBlank() && metaDesc.isBlank() && metaKeywordsString.isBlank() && metaCreator.isBlank())
 
-        val keywordsList = if (metaKeywordsString.isNotBlank()) {
-            metaKeywordsString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        } else {
-            emptyList()
+        if (!hasAnyValidMetadata) {
+            _toastFlow.value = "Setidaknya satu metadata harus diisi pada form global atau gambar spesifik!"
+            return
         }
 
         viewModelScope.launch {
@@ -786,10 +945,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val updatedList = _imagesList.value.map { it }.toMutableList()
                 var successCount = 0
                 var failCount = 0
+                var allKeywordsStringForDb = ""
 
                 for (i in selected.indices) {
                     val item = selected[i]
                     try {
+                        val itemMetaTitle = item.metadata?.title?.takeIf { it.isNotBlank() } ?: metaTitle
+                        val itemMetaDesc = item.metadata?.description?.takeIf { it.isNotBlank() } ?: metaDesc
+                        val itemMetaKeywordsString = item.metadata?.keywords?.takeIf { it.isNotBlank() } ?: metaKeywordsString
+                        val itemMetaCreator = item.metadata?.creator?.takeIf { it.isNotBlank() } ?: metaCreator
+
+                        val itemKeywordsList = if (itemMetaKeywordsString.isNotBlank()) {
+                            itemMetaKeywordsString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        } else {
+                            emptyList()
+                        }
+                        
+                        allKeywordsStringForDb += "$itemMetaKeywordsString,"
+
                         val bytesToInject = item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
                         if (bytesToInject != null) {
                             val nameLower = item.name.lowercase()
@@ -797,37 +970,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 nameLower.endsWith(".png") -> {
                                     XmpInjector.injectIntoPng(
                                         bytesToInject,
-                                        metaTitle,
-                                        metaDesc,
-                                        keywordsList,
-                                        metaCreator
+                                        itemMetaTitle,
+                                        itemMetaDesc,
+                                        itemKeywordsList,
+                                        itemMetaCreator
                                     )
                                 }
                                 nameLower.endsWith(".eps") -> {
                                     XmpInjector.injectIntoEps(
                                         bytesToInject,
-                                        metaTitle,
-                                        metaDesc,
-                                        keywordsList,
-                                        metaCreator
+                                        itemMetaTitle,
+                                        itemMetaDesc,
+                                        itemKeywordsList,
+                                        itemMetaCreator
                                     )
                                 }
                                 else -> {
                                     XmpInjector.injectIntoJpeg(
                                         bytesToInject,
-                                        metaTitle,
-                                        metaDesc,
-                                        keywordsList,
-                                        metaCreator
+                                        itemMetaTitle,
+                                        itemMetaDesc,
+                                        itemKeywordsList,
+                                        itemMetaCreator
                                     )
                                 }
                             }
 
                             val newestXmpData = XmpData(
-                                title = metaTitle,
-                                description = metaDesc,
-                                keywords = metaKeywordsString,
-                                creator = metaCreator
+                                title = itemMetaTitle,
+                                description = itemMetaDesc,
+                                keywords = itemMetaKeywordsString,
+                                creator = itemMetaCreator
                             )
 
                             // Find index of this item in the master list
@@ -854,7 +1027,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 if (successCount > 0 && !_isOfflineMode.value) {
-                    updateDatabaseWithNewOnlineKeywords(metaKeywordsString)
+                    updateDatabaseWithNewOnlineKeywords(allKeywordsStringForDb)
                 }
 
                 _imagesList.value = updatedList

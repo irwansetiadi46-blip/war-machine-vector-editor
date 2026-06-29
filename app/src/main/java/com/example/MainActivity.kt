@@ -27,6 +27,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -332,98 +334,145 @@ fun MainScreen(
                                 fontFamily = FontFamily.Monospace
                             )
                         } else {
-                            LazyVerticalGrid(
-                                columns = GridCells.Adaptive(minSize = 100.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxSize()
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 items(imagesList, key = { it.id }) { item ->
                                     val isPng = item.name.endsWith(".png", ignoreCase = true)
                                     val isEps = item.name.endsWith(".eps", ignoreCase = true)
-                                    // Border is Green if XMP is found, otherwise Gray.
                                     val borderColor = if (item.hasMetadata) Color(0xFF22C55E) else Color(0xFF4B5563)
                                     
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                    Row(
                                         modifier = Modifier
-                                            .width(100.dp)
-                                            .clickable { viewModel.toggleImageSelected(item.id) }
+                                            .fillMaxWidth()
+                                            .clickable { viewModel.toggleImageSelected(item.id) },
+                                        verticalAlignment = Alignment.Top
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(100.dp)
-                                                .background(Color(0xFF1F2937), RoundedCornerShape(6.dp))
-                                                .border(BorderStroke(2.dp, borderColor), RoundedCornerShape(6.dp))
-                                                .clip(RoundedCornerShape(6.dp))
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier.width(100.dp)
                                         ) {
-                                            if (isEps) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(Color(0xFF4F46E5).copy(alpha = 0.15f)), // Modern Indigo theme
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Column(
-                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                        verticalArrangement = Arrangement.Center,
-                                                        modifier = Modifier.padding(4.dp)
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(100.dp)
+                                                    .background(Color(0xFF1F2937), RoundedCornerShape(6.dp))
+                                                    .border(BorderStroke(2.dp, borderColor), RoundedCornerShape(6.dp))
+                                                    .clip(RoundedCornerShape(6.dp))
+                                            ) {
+                                                if (isEps) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(Color(0xFF4F46E5).copy(alpha = 0.15f)),
+                                                        contentAlignment = Alignment.Center
                                                     ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Description,
-                                                            contentDescription = "EPS Vector",
-                                                            tint = Color(0xFF818CF8),
-                                                            modifier = Modifier.size(32.dp)
-                                                        )
-                                                        Spacer(modifier = Modifier.height(4.dp))
-                                                        Surface(
-                                                            color = Color(0xFF4F46E5),
-                                                            shape = RoundedCornerShape(3.dp),
-                                                            modifier = Modifier.padding(horizontal = 2.dp)
+                                                        Column(
+                                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                                            verticalArrangement = Arrangement.Center,
+                                                            modifier = Modifier.padding(4.dp)
                                                         ) {
-                                                            Text(
-                                                                text = "EPS VECTOR",
-                                                                color = Color.White,
-                                                                fontSize = 8.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                            Icon(
+                                                                imageVector = Icons.Default.Description,
+                                                                contentDescription = "EPS Vector",
+                                                                tint = Color(0xFF818CF8),
+                                                                modifier = Modifier.size(32.dp)
                                                             )
+                                                            Spacer(modifier = Modifier.height(4.dp))
+                                                            Surface(
+                                                                color = Color(0xFF4F46E5),
+                                                                shape = RoundedCornerShape(3.dp),
+                                                                modifier = Modifier.padding(horizontal = 2.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = "EPS VECTOR",
+                                                                    color = Color.White,
+                                                                    fontSize = 8.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                                )
+                                                            }
                                                         }
                                                     }
+                                                } else {
+                                                    AsyncImage(
+                                                        model = item.uri,
+                                                        contentDescription = item.name,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Crop
+                                                    )
                                                 }
-                                            } else {
-                                                AsyncImage(
-                                                    model = item.uri,
-                                                    contentDescription = item.name,
-                                                    modifier = Modifier.fillMaxSize(),
-                                                    contentScale = ContentScale.Crop
-                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.height(4.dp))
+
+                                            Checkbox(
+                                                checked = item.isSelected,
+                                                onCheckedChange = { viewModel.toggleImageSelected(item.id) },
+                                                colors = CheckboxDefaults.colors(
+                                                    checkedColor = Color(0xFF00A8FF),
+                                                    uncheckedColor = Color(0xFF4B5563)
+                                                ),
+                                                modifier = Modifier.size(24.dp)
+                                            )
+
+                                            Spacer(modifier = Modifier.height(2.dp))
+
+                                            Text(
+                                                text = item.name,
+                                                color = Color.White.copy(alpha = 0.8f),
+                                                fontSize = 8.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.padding(horizontal = 2.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(12.dp))
+
+                                        // Individual Metadata Fields
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            OutlinedTextField(
+                                                value = item.metadata?.title ?: "",
+                                                onValueChange = { viewModel.updateImageMetadata(item.id, it, item.metadata?.description ?: "", item.metadata?.keywords ?: "") },
+                                                label = { Text("Title", fontSize = 10.sp, color = Color.Gray) },
+                                                textStyle = LocalTextStyle.current.copy(fontSize = 11.sp, color = Color.White),
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                singleLine = true
+                                            )
+                                            OutlinedTextField(
+                                                value = item.metadata?.description ?: "",
+                                                onValueChange = { viewModel.updateImageMetadata(item.id, item.metadata?.title ?: "", it, item.metadata?.keywords ?: "") },
+                                                label = { Text("Description", fontSize = 10.sp, color = Color.Gray) },
+                                                textStyle = LocalTextStyle.current.copy(fontSize = 11.sp, color = Color.White),
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                singleLine = true
+                                            )
+                                            OutlinedTextField(
+                                                value = item.metadata?.keywords ?: "",
+                                                onValueChange = { viewModel.updateImageMetadata(item.id, item.metadata?.title ?: "", item.metadata?.description ?: "", it) },
+                                                label = { Text("Keywords", fontSize = 10.sp, color = Color.Gray) },
+                                                textStyle = LocalTextStyle.current.copy(fontSize = 11.sp, color = Color.White),
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                singleLine = true
+                                            )
+                                            Button(
+                                                onClick = { viewModel.generateMetadataForImage(item.id) },
+                                                modifier = Modifier.fillMaxWidth().height(32.dp),
+                                                contentPadding = PaddingValues(0.dp),
+                                                shape = RoundedCornerShape(4.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A8FF))
+                                            ) {
+                                                if (item.isGenerating) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
+                                                } else {
+                                                    Text("Generate Metadata", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                                }
                                             }
                                         }
- 
-                                        Spacer(modifier = Modifier.height(4.dp))
- 
-                                        // Selection Checkbox Below the Image Accent Blue
-                                        Checkbox(
-                                            checked = item.isSelected,
-                                            onCheckedChange = { viewModel.toggleImageSelected(item.id) },
-                                            colors = CheckboxDefaults.colors(
-                                                checkedColor = Color(0xFF00A8FF),
-                                                uncheckedColor = Color(0xFF4B5563)
-                                            ),
-                                            modifier = Modifier.size(24.dp)
-                                        )
-
-                                        Spacer(modifier = Modifier.height(2.dp))
-
-                                        Text(
-                                            text = item.name,
-                                            color = Color.White.copy(alpha = 0.8f),
-                                            fontSize = 8.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.padding(horizontal = 2.dp)
-                                        )
                                     }
                                 }
                             }
