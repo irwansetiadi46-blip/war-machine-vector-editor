@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -200,6 +201,9 @@ fun MainScreen(
         }
     }
 
+    val mainScrollState = rememberScrollState()
+    val isPointingDown by remember { derivedStateOf { mainScrollState.value < (mainScrollState.maxValue / 2) } }
+
     Box(modifier = modifier.pointerInput(Unit) {
         detectTapGestures(onTap = { focusManager.clearFocus() })
     }) {
@@ -207,7 +211,7 @@ fun MainScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF070E20))
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(mainScrollState)
         ) {
         // 1. --- STYLISH BANNER HEADER (Orange `#f25c05` Background) ---
         Column(
@@ -281,9 +285,48 @@ fun MainScreen(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF101932))
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    // Action line for uploading images
+                    // Single, Multi, ALL buttons replacing upload position
                     Row(
                         modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            SelectionMode.SINGLE to "Single",
+                            SelectionMode.MULTI to "Multi",
+                            SelectionMode.ALL to "ALL"
+                        ).forEach { (mode, label) ->
+                            val isActive = selectionMode == mode
+                            val btnBg = if (isActive) Color(0xFFF25C05) else Color(0xFF00A8FF).copy(alpha = 0.15f)
+                            val borderAccent = if (isActive) Color(0xFFF25C05) else Color(0xFF00A8FF)
+
+                            OutlinedButton(
+                                onClick = { viewModel.setSelectionMode(mode) },
+                                shape = RoundedCornerShape(6.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = btnBg,
+                                    contentColor = Color.White
+                                ),
+                                border = BorderStroke(1.2.dp, borderAccent),
+                                contentPadding = PaddingValues(0.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp)
+                                    .testTag("mode_${label.lowercase()}_btn")
+                            ) {
+                                Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Separate Container for Upload and Indicator text
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
+                            .border(1.dp, Color(0xFF4B5563), RoundedCornerShape(8.dp))
+                            .padding(12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -317,7 +360,7 @@ fun MainScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 120.dp, max = 340.dp)
+                            .heightIn(min = 120.dp, max = 850.dp)
                             .background(Color(0xFF050B18), RoundedCornerShape(8.dp))
                             .border(BorderStroke(1.dp, Color(0xFF4B5563).copy(alpha = 0.5f)), RoundedCornerShape(8.dp))
                             .padding(8.dp)
@@ -459,7 +502,10 @@ fun MainScreen(
                                             OutlinedTextField(
                                                 value = item.individualTitle,
                                                 onValueChange = { viewModel.updateIndividualTitle(item.id, it) },
-                                                label = { Text("Title", fontSize = 10.sp) },
+                                                label = { 
+                                                    val len = item.individualTitle.length
+                                                    if (len > 0) Text("Title ($len character)", fontSize = 10.sp) else Text("Title", fontSize = 10.sp)
+                                                },
                                                 modifier = Modifier.fillMaxWidth().height(60.dp),
                                                 colors = OutlinedTextFieldDefaults.colors(
                                                     focusedTextColor = Color(0xFF22C55E),
@@ -473,7 +519,10 @@ fun MainScreen(
                                             OutlinedTextField(
                                                 value = item.individualDescription,
                                                 onValueChange = { viewModel.updateIndividualDescription(item.id, it) },
-                                                label = { Text("Description", fontSize = 10.sp) },
+                                                label = { 
+                                                    val len = item.individualDescription.length
+                                                    if (len > 0) Text("Description ($len character)", fontSize = 10.sp) else Text("Description", fontSize = 10.sp)
+                                                },
                                                 modifier = Modifier.fillMaxWidth().height(80.dp),
                                                 colors = OutlinedTextFieldDefaults.colors(
                                                     focusedTextColor = Color(0xFF22C55E),
@@ -487,7 +536,10 @@ fun MainScreen(
                                             OutlinedTextField(
                                                 value = item.individualKeywords,
                                                 onValueChange = { viewModel.updateIndividualKeywords(item.id, it) },
-                                                label = { Text("Keywords", fontSize = 10.sp) },
+                                                label = { 
+                                                    val len = if (item.individualKeywords.isBlank()) 0 else item.individualKeywords.split(",").map{ k -> k.trim() }.filter{ k -> k.isNotEmpty() }.size
+                                                    if (len > 0) Text("Keywords ($len)", fontSize = 10.sp) else Text("Keywords", fontSize = 10.sp)
+                                                },
                                                 modifier = Modifier.fillMaxWidth().height(100.dp),
                                                 colors = OutlinedTextFieldDefaults.colors(
                                                     focusedTextColor = Color(0xFF22C55E),
@@ -540,55 +592,7 @@ fun MainScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Buttons "Single", "Multi", "ALL" plus current mode indicator
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(
-                            SelectionMode.SINGLE to "Single",
-                            SelectionMode.MULTI to "Multi",
-                            SelectionMode.ALL to "ALL"
-                        ).forEach { (mode, label) ->
-                            val isActive = selectionMode == mode
-                            val btnBg = if (isActive) Color(0xFFF25C05) else Color(0xFF00A8FF).copy(alpha = 0.15f)
-                            val borderAccent = if (isActive) Color(0xFFF25C05) else Color(0xFF00A8FF)
-
-                            OutlinedButton(
-                                onClick = { viewModel.setSelectionMode(mode) },
-                                shape = RoundedCornerShape(6.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = btnBg,
-                                    contentColor = Color.White
-                                ),
-                                border = BorderStroke(1.2.dp, borderAccent),
-                                contentPadding = PaddingValues(0.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(38.dp)
-                                    .testTag("mode_${label.lowercase()}_btn")
-                            ) {
-                                Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // Small mode description instruction
-                    Text(
-                        text = when (selectionMode) {
-                            SelectionMode.SINGLE -> "Mode: Masukkan metadata satu per satu untuk gambar terpilih."
-                            SelectionMode.MULTI -> "Mode: Terapkan metadata yang sama ke beberapa gambar sekaligus."
-                            SelectionMode.ALL -> "Mode: Terapkan metadata ke semua gambar yang ada dalam daftar secara otomatis."
-                        },
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.SansSerif,
-                        modifier = Modifier.fillMaxWidth()
-                    )
 
                     // Action controls for deleting (Hapus Terpilih / Clear All Images) if list is not empty
                     if (imagesList.isNotEmpty()) {
@@ -1420,7 +1424,7 @@ fun MainScreen(
                     }
                 )
                 Text(
-                    text = " • war machine hybrid app version 1.4",
+                    text = " • war machine hybrid app version 1.5",
                     fontSize = 9.sp,
                     color = Color.White.copy(alpha = 0.9f),
                     fontStyle = FontStyle.Italic
@@ -1432,6 +1436,32 @@ fun MainScreen(
     // --- Privacy Policy Full-screen Overlay ---
     if (showPrivacyPolicy) {
         PrivacyPolicyScreen(onClose = { showPrivacyPolicy = false })
+    }
+
+    // --- Floating Action Button for Scroll ---
+    if (mainScrollState.maxValue > 0) {
+        SmallFloatingActionButton(
+            onClick = {
+                scope.launch {
+                    if (isPointingDown) {
+                        mainScrollState.animateScrollTo(mainScrollState.maxValue)
+                    } else {
+                        mainScrollState.animateScrollTo(0)
+                    }
+                }
+            },
+            shape = CircleShape,
+            containerColor = Color(0xFF2A3441),
+            contentColor = Color(0xFFF25C05),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+        ) {
+            Icon(
+                imageVector = if (isPointingDown) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
+                contentDescription = "Scroll to top/bottom"
+            )
+        }
     }
 }
 }
