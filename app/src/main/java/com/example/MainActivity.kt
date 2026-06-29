@@ -27,11 +27,11 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -317,7 +317,7 @@ fun MainScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 120.dp, max = 3000.dp)
+                            .heightIn(min = 120.dp, max = 340.dp)
                             .background(Color(0xFF050B18), RoundedCornerShape(8.dp))
                             .border(BorderStroke(1.dp, Color(0xFF4B5563).copy(alpha = 0.5f)), RoundedCornerShape(8.dp))
                             .padding(8.dp)
@@ -335,8 +335,8 @@ fun MainScreen(
                             )
                         } else {
                             LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxSize()
                             ) {
                                 items(imagesList, key = { it.id }) { item ->
                                     val isPng = item.name.endsWith(".png", ignoreCase = true)
@@ -346,12 +346,16 @@ fun MainScreen(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clickable { viewModel.toggleImageSelected(item.id) },
+                                            .background(Color(0xFF101932), RoundedCornerShape(8.dp))
+                                            .border(1.dp, Color(0xFF4B5563), RoundedCornerShape(8.dp))
+                                            .padding(8.dp),
                                         verticalAlignment = Alignment.Top
                                     ) {
                                         Column(
                                             horizontalAlignment = Alignment.CenterHorizontally,
-                                            modifier = Modifier.width(100.dp)
+                                            modifier = Modifier
+                                                .width(100.dp)
+                                                .clickable { viewModel.toggleImageSelected(item.id) }
                                         ) {
                                             Box(
                                                 modifier = Modifier
@@ -430,46 +434,103 @@ fun MainScreen(
 
                                         Spacer(modifier = Modifier.width(12.dp))
 
-                                        // Individual Metadata Fields
-                                        Column(
-                                            modifier = Modifier.weight(1f),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            OutlinedTextField(
-                                                value = item.metadata?.title ?: "",
-                                                onValueChange = { viewModel.updateImageMetadata(item.id, it, item.metadata?.description ?: "", item.metadata?.keywords ?: "") },
-                                                label = { Text("Title", fontSize = 10.sp, color = Color.Gray) },
-                                                textStyle = LocalTextStyle.current.copy(fontSize = 11.sp, color = Color.White),
-                                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                                singleLine = true
-                                            )
-                                            OutlinedTextField(
-                                                value = item.metadata?.description ?: "",
-                                                onValueChange = { viewModel.updateImageMetadata(item.id, item.metadata?.title ?: "", it, item.metadata?.keywords ?: "") },
-                                                label = { Text("Description", fontSize = 10.sp, color = Color.Gray) },
-                                                textStyle = LocalTextStyle.current.copy(fontSize = 11.sp, color = Color.White),
-                                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                                singleLine = true
-                                            )
-                                            OutlinedTextField(
-                                                value = item.metadata?.keywords ?: "",
-                                                onValueChange = { viewModel.updateImageMetadata(item.id, item.metadata?.title ?: "", item.metadata?.description ?: "", it) },
-                                                label = { Text("Keywords", fontSize = 10.sp, color = Color.Gray) },
-                                                textStyle = LocalTextStyle.current.copy(fontSize = 11.sp, color = Color.White),
-                                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                                singleLine = true
-                                            )
-                                            Button(
-                                                onClick = { viewModel.generateMetadataForImage(item.id) },
-                                                modifier = Modifier.fillMaxWidth().height(32.dp),
-                                                contentPadding = PaddingValues(0.dp),
-                                                shape = RoundedCornerShape(4.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A8FF))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                if (item.isGenerating) {
-                                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
-                                                } else {
-                                                    Text("Generate Metadata", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                                Text(
+                                                    text = "Individual Metadata",
+                                                    color = Color(0xFF00A8FF),
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 12.sp
+                                                )
+                                                IconButton(
+                                                    onClick = { viewModel.clearIndividualMetadata(item.id) },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(Icons.Outlined.Delete, contentDescription = "Clear Metadata", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(4.dp))
+
+                                            OutlinedTextField(
+                                                value = item.individualTitle,
+                                                onValueChange = { viewModel.updateIndividualTitle(item.id, it) },
+                                                label = { Text("Title", fontSize = 10.sp) },
+                                                modifier = Modifier.fillMaxWidth().height(60.dp),
+                                                colors = OutlinedTextFieldDefaults.colors(
+                                                    focusedTextColor = Color(0xFF22C55E),
+                                                    unfocusedTextColor = Color(0xFF22C55E),
+                                                    focusedLabelColor = Color(0xFF22C55E),
+                                                    unfocusedLabelColor = Color(0xFF4B5563)
+                                                ),
+                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            OutlinedTextField(
+                                                value = item.individualDescription,
+                                                onValueChange = { viewModel.updateIndividualDescription(item.id, it) },
+                                                label = { Text("Description", fontSize = 10.sp) },
+                                                modifier = Modifier.fillMaxWidth().height(80.dp),
+                                                colors = OutlinedTextFieldDefaults.colors(
+                                                    focusedTextColor = Color(0xFF22C55E),
+                                                    unfocusedTextColor = Color(0xFF22C55E),
+                                                    focusedLabelColor = Color(0xFF22C55E),
+                                                    unfocusedLabelColor = Color(0xFF4B5563)
+                                                ),
+                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            OutlinedTextField(
+                                                value = item.individualKeywords,
+                                                onValueChange = { viewModel.updateIndividualKeywords(item.id, it) },
+                                                label = { Text("Keywords", fontSize = 10.sp) },
+                                                modifier = Modifier.fillMaxWidth().height(100.dp),
+                                                colors = OutlinedTextFieldDefaults.colors(
+                                                    focusedTextColor = Color(0xFF22C55E),
+                                                    unfocusedTextColor = Color(0xFF22C55E),
+                                                    focusedLabelColor = Color(0xFF22C55E),
+                                                    unfocusedLabelColor = Color(0xFF4B5563)
+                                                ),
+                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Button(
+                                                    onClick = { viewModel.generateMetadataForSingleImage(item.id) },
+                                                    enabled = !item.isGeneratingMetadata,
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A8FF)),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    modifier = Modifier.weight(1f).height(38.dp),
+                                                    contentPadding = PaddingValues(0.dp)
+                                                ) {
+                                                    if (item.isGeneratingMetadata) {
+                                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                                    } else {
+                                                        Text("GENERATE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+
+                                                val canInject = item.individualTitle.isNotBlank() || item.individualDescription.isNotBlank() || item.individualKeywords.isNotBlank()
+                                                Button(
+                                                    onClick = { viewModel.injectIndividualMetadata(item.id) },
+                                                    enabled = canInject && !item.isInjectingIndividual,
+                                                    colors = ButtonDefaults.buttonColors(containerColor = if (canInject) Color(0xFF22C55E) else Color(0xFF6C757D)),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    modifier = Modifier.weight(1f).height(38.dp),
+                                                    contentPadding = PaddingValues(0.dp)
+                                                ) {
+                                                    if (item.isInjectingIndividual) {
+                                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                                    } else {
+                                                        Text("INJECT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
                                                 }
                                             }
                                         }
@@ -532,11 +593,29 @@ fun MainScreen(
                     // Action controls for deleting (Hapus Terpilih / Clear All Images) if list is not empty
                     if (imagesList.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(14.dp))
+                        
+                        val activeSelectedSize = imagesList.count { it.isSelected }
+                        Button(
+                            onClick = { viewModel.injectAllIndividualMetadata() },
+                            enabled = activeSelectedSize > 0,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                                .testTag("inject_all_btn")
+                        ) {
+                            Icon(Icons.Default.DownloadForOffline, contentDescription = "Inject All Icon", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("INJECT ALL", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            val activeSelectedSize = imagesList.count { it.isSelected }
                             Button(
                                 onClick = { viewModel.removeSelectedImages() },
                                 enabled = activeSelectedSize > 0,
@@ -614,8 +693,8 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("meta_title_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
+                            focusedTextColor = Color(0xFF1F2937),
+                            unfocusedTextColor = Color(0xFF1F2937),
                             focusedLabelColor = Color(0xFF00A8FF),
                             unfocusedLabelColor = Color(0xFF4B5563),
                             focusedBorderColor = Color(0xFF00A8FF),
@@ -650,8 +729,8 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("meta_desc_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
+                            focusedTextColor = Color(0xFF1F2937),
+                            unfocusedTextColor = Color(0xFF1F2937),
                             focusedLabelColor = Color(0xFF00A8FF),
                             unfocusedLabelColor = Color(0xFF4B5563),
                             focusedBorderColor = Color(0xFF00A8FF),
@@ -689,8 +768,8 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("meta_keywords_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
+                            focusedTextColor = Color(0xFF1F2937),
+                            unfocusedTextColor = Color(0xFF1F2937),
                             focusedLabelColor = Color(0xFF00A8FF),
                             unfocusedLabelColor = Color(0xFF4B5563),
                             focusedBorderColor = Color(0xFF00A8FF),
@@ -725,8 +804,8 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("meta_creator_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
+                            focusedTextColor = Color(0xFF1F2937),
+                            unfocusedTextColor = Color(0xFF1F2937),
                             focusedLabelColor = Color(0xFF00A8FF),
                             unfocusedLabelColor = Color(0xFF4B5563),
                             focusedBorderColor = Color(0xFF00A8FF),
@@ -1103,8 +1182,8 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("api_key_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
+                            focusedTextColor = Color(0xFF1F2937),
+                            unfocusedTextColor = Color(0xFF1F2937),
                             focusedLabelColor = Color(0xFFF25C05),
                             unfocusedLabelColor = Color(0xFF4B5563),
                             focusedBorderColor = Color(0xFFF25C05),
@@ -1172,8 +1251,8 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("concept_prompt_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
+                            focusedTextColor = Color(0xFF1F2937),
+                            unfocusedTextColor = Color(0xFF1F2937),
                             focusedLabelColor = Color(0xFFF25C05),
                             unfocusedLabelColor = Color(0xFF4B5563),
                             focusedBorderColor = Color(0xFFF25C05),
