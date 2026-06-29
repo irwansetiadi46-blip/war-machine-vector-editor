@@ -317,7 +317,7 @@ fun MainScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 120.dp, max = 340.dp)
+                            .heightIn(min = 120.dp, max = 3000.dp)
                             .background(Color(0xFF050B18), RoundedCornerShape(8.dp))
                             .border(BorderStroke(1.dp, Color(0xFF4B5563).copy(alpha = 0.5f)), RoundedCornerShape(8.dp))
                             .padding(8.dp)
@@ -614,8 +614,8 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("meta_title_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
                             focusedLabelColor = Color(0xFF00A8FF),
                             unfocusedLabelColor = Color(0xFF4B5563),
                             focusedBorderColor = Color(0xFF00A8FF),
@@ -650,8 +650,8 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("meta_desc_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
                             focusedLabelColor = Color(0xFF00A8FF),
                             unfocusedLabelColor = Color(0xFF4B5563),
                             focusedBorderColor = Color(0xFF00A8FF),
@@ -689,8 +689,8 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("meta_keywords_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
                             focusedLabelColor = Color(0xFF00A8FF),
                             unfocusedLabelColor = Color(0xFF4B5563),
                             focusedBorderColor = Color(0xFF00A8FF),
@@ -725,8 +725,8 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("meta_creator_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
                             focusedLabelColor = Color(0xFF00A8FF),
                             unfocusedLabelColor = Color(0xFF4B5563),
                             focusedBorderColor = Color(0xFF00A8FF),
@@ -1103,8 +1103,8 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("api_key_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
                             focusedLabelColor = Color(0xFFF25C05),
                             unfocusedLabelColor = Color(0xFF4B5563),
                             focusedBorderColor = Color(0xFFF25C05),
@@ -1172,8 +1172,8 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("concept_prompt_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
                             focusedLabelColor = Color(0xFFF25C05),
                             unfocusedLabelColor = Color(0xFF4B5563),
                             focusedBorderColor = Color(0xFFF25C05),
