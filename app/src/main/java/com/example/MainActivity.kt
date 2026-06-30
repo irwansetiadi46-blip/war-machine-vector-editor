@@ -131,6 +131,11 @@ fun MainScreen(
     val toastMessage by viewModel.toastFlow.collectAsStateWithLifecycle()
     var showPrivacyPolicy by remember { mutableStateOf(false) }
 
+    val titleCharLimit by viewModel.titleCharLimit.collectAsStateWithLifecycle()
+    val descCharLimit by viewModel.descCharLimit.collectAsStateWithLifecycle()
+    val keywordsLimit by viewModel.keywordsLimit.collectAsStateWithLifecycle()
+    val blacklistWords by viewModel.blacklistWords.collectAsStateWithLifecycle()
+
     // Key states for API input logic
     var tempGroqKey by remember { mutableStateOf(groqKey) }
     var tempGeminiKey by remember { mutableStateOf(geminiKey) }
@@ -276,6 +281,383 @@ fun MainScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            // 4. --- CARD AUTO METADATA (Background White, Border Orange `#f25c05`) ---
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(BorderStroke(1.5.dp, Color(0xFFF25C05)), RoundedCornerShape(10.dp)),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = "AUTO METADATA AI",
+                        color = Color(0xFFF25C05),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 15.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Model Selection Select Row
+                    val aiModels = listOf(
+                        Triple("Gemini", "gemini-3.5-flash", "Gemini 3.5 Flash"),
+                        Triple("Gemini", "gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite"),
+                        Triple("Gemini", "gemini-3.1-pro", "Gemini 3.1 Pro"),
+                        Triple("Gemini", "gemini-2.5-flash", "Gemini 2.5 Flash"),
+                        Triple("Gemini", "gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite"),
+                        Triple("Groq", "llama-3.3-70b-versatile", "Groq Llama-3.3")
+                    )
+                    
+                    var expanded by remember { mutableStateOf(false) }
+                    val currentModelLabel = aiModels.find { it.first == selectedProvider && it.second == selectedModel }?.third ?: selectedModel
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Model Aktif:",
+                                color = Color(0xFF4B5563),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = currentModelLabel,
+                                color = Color(0xFF1F2937),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                        
+                        Box {
+                            Button(
+                                onClick = { expanded = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF25C05)),
+                                shape = RoundedCornerShape(6.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                Text("Ganti Model", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                            }
+                            
+                            DropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                aiModels.forEach { (provider, model, label) ->
+                                    val isSelected = selectedProvider == provider && selectedModel == model
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                RadioButton(
+                                                    selected = isSelected,
+                                                    onClick = null,
+                                                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFF25C05))
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = label,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            viewModel.updateDefaultModel(provider)
+                                            viewModel.setSelectedModel(model)
+                                            expanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // API Key Input Status Field
+                    val activeInFocusKey = if (selectedProvider == "Gemini") tempGeminiKey else tempGroqKey
+                    var keyVisibility by remember { mutableStateOf(false) }
+
+                    OutlinedTextField(
+                        value = activeInFocusKey,
+                        onValueChange = {
+                            if (selectedProvider == "Gemini") {
+                                tempGeminiKey = it
+                            } else {
+                                tempGroqKey = it
+                            }
+                        },
+                        enabled = !isOfflineMode,
+                        label = { Text("API Key $selectedProvider") },
+                        placeholder = { Text("Masukkan API Key Anda...") },
+                        singleLine = true,
+                        visualTransformation = if (keyVisibility) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            if (isOfflineMode) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Locked in Offline Mode",
+                                    tint = Color(0xFFF25C05),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else {
+                                Row {
+                                    if (activeInFocusKey.isNotEmpty()) {
+                                        IconButton(onClick = {
+                                            if (selectedProvider == "Gemini") {
+                                                tempGeminiKey = ""
+                                            } else {
+                                                tempGroqKey = ""
+                                            }
+                                        }) {
+                                            Icon(Icons.Default.Close, contentDescription = "Clear Key", tint = Color.Gray)
+                                        }
+                                    }
+                                    IconButton(onClick = { keyVisibility = !keyVisibility }) {
+                                        Icon(
+                                            imageVector = if (keyVisibility) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                            contentDescription = "Toggle Visibility",
+                                            tint = Color.Gray
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("api_key_field"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFF1F2937),
+                            unfocusedTextColor = Color(0xFF1F2937),
+                            focusedLabelColor = Color(0xFFF25C05),
+                            unfocusedLabelColor = Color(0xFF4B5563),
+                            focusedBorderColor = Color(0xFFF25C05),
+                            unfocusedBorderColor = Color(0xFFCCCCCC),
+                            disabledTextColor = Color(0xFF9CA3AF),
+                            disabledBorderColor = Color(0xFFE5E7EB),
+                            disabledLabelColor = Color(0xFF9CA3AF)
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    val savedKeyForProvider = if (selectedProvider == "Gemini") geminiKey else groqKey
+                    val (apiBtnBg, apiBtnText) = when {
+                        isOfflineMode -> {
+                            Color(0xFF6C757D) to "DISABLE"
+                        }
+                        activeInFocusKey.isEmpty() -> {
+                            Color(0xFF6C757D) to "INPUT API"
+                        }
+                        activeInFocusKey != savedKeyForProvider -> {
+                            Color(0xFF22C55E) to "SAVE API"
+                        }
+                        else -> {
+                            Color(0xFF00A8FF) to "ACTIVE"
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            viewModel.saveApiKeys(
+                                groq = tempGroqKey,
+                                gemini = tempGeminiKey,
+                                provider = selectedProvider
+                            )
+                        },
+                        enabled = !isOfflineMode && activeInFocusKey.isNotEmpty() && activeInFocusKey != savedKeyForProvider,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = apiBtnBg,
+                            disabledContainerColor = apiBtnBg
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(38.dp)
+                            .testTag("api_save_btn")
+                    ) {
+                        Text(apiBtnText, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Text("Metadata Configuration", color = Color(0xFF4B5563), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Title Limit: ${titleCharLimit.toInt()} char", fontSize = 11.sp, color = Color(0xFF4B5563), modifier = Modifier.weight(1f))
+                        Slider(
+                            value = titleCharLimit,
+                            onValueChange = { viewModel.setTitleCharLimit(it) },
+                            valueRange = 50f..300f,
+                            modifier = Modifier.weight(2f)
+                        )
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Desc Limit: ${descCharLimit.toInt()} char", fontSize = 11.sp, color = Color(0xFF4B5563), modifier = Modifier.weight(1f))
+                        Slider(
+                            value = descCharLimit,
+                            onValueChange = { viewModel.setDescCharLimit(it) },
+                            valueRange = 100f..500f,
+                            modifier = Modifier.weight(2f)
+                        )
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Keywords: ${keywordsLimit.toInt()}", fontSize = 11.sp, color = Color(0xFF4B5563), modifier = Modifier.weight(1f))
+                        Slider(
+                            value = keywordsLimit,
+                            onValueChange = { viewModel.setKeywordsLimit(it) },
+                            valueRange = 10f..50f,
+                            modifier = Modifier.weight(2f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = blacklistWords,
+                        onValueChange = { viewModel.setBlacklistWords(it) },
+                        label = { Text("Blacklist Words") },
+                        placeholder = { Text("ex: vector, illustration, abstract") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFF1F2937),
+                            unfocusedTextColor = Color(0xFF1F2937),
+                            focusedLabelColor = Color(0xFFF25C05),
+                            unfocusedLabelColor = Color(0xFF4B5563),
+                            focusedBorderColor = Color(0xFFF25C05),
+                            unfocusedBorderColor = Color(0xFFCCCCCC)
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = promptConcept,
+                        onValueChange = { viewModel.setPromptConcept(it) },
+                        label = { Text("Kata Kunci Inti / Deskripsi Singkat") },
+                        placeholder = { Text("Contoh: laptop di meja kayu minimalis, aesthetic lighting...") },
+                        maxLines = 2,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("concept_prompt_field"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFF1F2937),
+                            unfocusedTextColor = Color(0xFF1F2937),
+                            focusedLabelColor = Color(0xFFF25C05),
+                            unfocusedLabelColor = Color(0xFF4B5563),
+                            focusedBorderColor = Color(0xFFF25C05),
+                            unfocusedBorderColor = Color(0xFFCCCCCC)
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = {
+                            if (isOfflineMode) {
+                                if (promptConcept.isBlank()) {
+                                    Toast.makeText(context, "Konsep tidak boleh kosong!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    viewModel.setGeneratingAi(true)
+                                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                        try {
+                                            kotlinx.coroutines.delay(600)
+                                            val resultKeywords = viewModel.offlineKeywordMatcher.matchKeywords(promptConcept, context)
+                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                viewModel.setGeneratingAi(false)
+                                                if (resultKeywords.isEmpty()) {
+                                                    Toast.makeText(context, "Masukkan kata kunci inti atau deskripsi yang lebih spesifik!", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    val intent = android.content.Intent(context, OfflineResultActivity::class.java).apply {
+                                                        putStringArrayListExtra("all_keywords", ArrayList(resultKeywords))
+                                                    }
+                                                    offlineResultLauncher.launch(intent)
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                viewModel.setGeneratingAi(false)
+                                                Toast.makeText(context, "Error Offline Generation: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                viewModel.generateMetadata()
+                            }
+                        },
+                        enabled = !isGeneratingAi,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFF25C05),
+                            disabledContainerColor = Color(0xFFF25C05).copy(alpha = 0.7f),
+                            contentColor = Color.White,
+                            disabledContentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("generate_metadata_btn")
+                    ) {
+                        if (isGeneratingAi) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Generating PROCESS...", fontWeight = FontWeight.Bold, color = Color.White)
+                        } else {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("GENERATE METADATA", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFF3F4F6), RoundedCornerShape(6.dp))
+                            .padding(10.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = "Petunjuk Penggunaan AI:",
+                                color = Color(0xFF1F2937),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "1. Pilih AI Provider & masukkan Kunci API, klik SAVE API untuk mengaktifkan.\n" +
+                                       "2. Tulis konsep detail/deskripsi gambar lalu klik GENERATE METADATA.\n" +
+                                       "3. ATAU centang satu gambar di galeri, lalu klik GENERATE METADATA untuk analisis visual langsung oleh Gemini.",
+                                color = Color(0xFF4B5563),
+                                fontSize = 10.sp,
+                                lineHeight = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Dapatkan Gemini API Key di sini",
+                                color = Color(0xFF2563EB),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable {
+                                    uriHandler.openUri("https://aistudio.google.com/app/apikey")
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
             // 2. --- CARD METADATA INJECTOR (Border Blue `#00a8ff`, Background `#111827`) ---
             Card(
                 modifier = Modifier
@@ -1034,340 +1416,8 @@ fun MainScreen(
                 }
             }
 
-            // 4. --- CARD AUTO METADATA (Background White, Border Orange `#f25c05`) ---
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(BorderStroke(1.5.dp, Color(0xFFF25C05)), RoundedCornerShape(10.dp)),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text(
-                        text = "AUTO METADATA AI",
-                        color = Color(0xFFF25C05),
-                        fontWeight = FontWeight.Black,
-                        fontSize = 15.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Model Selection Select Row
-                    val aiModels = listOf(
-                        Triple("Gemini", "gemini-3.5-flash", "Gemini 3.5 Flash"),
-                        Triple("Gemini", "gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite"),
-                        Triple("Gemini", "gemini-3.1-pro", "Gemini 3.1 Pro"),
-                        Triple("Gemini", "gemini-2.5-flash", "Gemini 2.5 Flash"),
-                        Triple("Gemini", "gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite"),
-                        Triple("Groq", "llama-3.3-70b-versatile", "Groq Llama-3.3")
-                    )
-                    
-                    var expanded by remember { mutableStateOf(false) }
-                    val currentModelLabel = aiModels.find { it.first == selectedProvider && it.second == selectedModel }?.third ?: selectedModel
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Model Aktif:",
-                                color = Color(0xFF4B5563),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = currentModelLabel,
-                                color = Color(0xFF1F2937),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                        
-                        Box {
-                            Button(
-                                onClick = { expanded = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF25C05)),
-                                shape = RoundedCornerShape(6.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                                modifier = Modifier.height(36.dp)
-                            ) {
-                                Text("Ganti Model", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
-                            }
-                            
-                            DropdownMenu(
-                                expanded = expanded,
-                                onDismissRequest = { expanded = false }
-                            ) {
-                                aiModels.forEach { (provider, model, label) ->
-                                    val isSelected = selectedProvider == provider && selectedModel == model
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                RadioButton(
-                                                    selected = isSelected,
-                                                    onClick = null,
-                                                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFF25C05))
-                                                )
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(
-                                                    text = label,
-                                                    fontSize = 13.sp,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                                )
-                                            }
-                                        },
-                                        onClick = {
-                                            viewModel.updateDefaultModel(provider)
-                                            viewModel.setSelectedModel(model)
-                                            expanded = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // API Key Input Status Field
-                    val activeInFocusKey = if (selectedProvider == "Gemini") tempGeminiKey else tempGroqKey
-                    var keyVisibility by remember { mutableStateOf(false) }
-
-                    OutlinedTextField(
-                        value = activeInFocusKey,
-                        onValueChange = {
-                            if (selectedProvider == "Gemini") {
-                                tempGeminiKey = it
-                            } else {
-                                tempGroqKey = it
-                            }
-                        },
-                        enabled = !isOfflineMode,
-                        label = { Text("API Key $selectedProvider") },
-                        placeholder = { Text("Masukkan API Key Anda...") },
-                        singleLine = true,
-                        visualTransformation = if (keyVisibility) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            if (isOfflineMode) {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = "Locked in Offline Mode",
-                                    tint = Color(0xFFF25C05),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            } else {
-                                Row {
-                                    if (activeInFocusKey.isNotEmpty()) {
-                                        IconButton(onClick = {
-                                            if (selectedProvider == "Gemini") {
-                                                tempGeminiKey = ""
-                                            } else {
-                                                tempGroqKey = ""
-                                            }
-                                        }) {
-                                            Icon(Icons.Default.Close, contentDescription = "Clear Key", tint = Color.Gray)
-                                        }
-                                    }
-                                    IconButton(onClick = { keyVisibility = !keyVisibility }) {
-                                        Icon(
-                                            imageVector = if (keyVisibility) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                            contentDescription = "Toggle Visibility",
-                                            tint = Color.Gray
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("api_key_field"),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
-                            focusedLabelColor = Color(0xFFF25C05),
-                            unfocusedLabelColor = Color(0xFF4B5563),
-                            focusedBorderColor = Color(0xFFF25C05),
-                            unfocusedBorderColor = Color(0xFFCCCCCC),
-                            disabledTextColor = Color(0xFF9CA3AF),
-                            disabledBorderColor = Color(0xFFE5E7EB),
-                            disabledLabelColor = Color(0xFF9CA3AF)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // INPUT API Button logic:
-                    // - Grey background if empty inputs: Color(0xFF6C757D), text "INPUT API"
-                    // - Changes to green "SAVE API" if typed key differs from saved Key: Color(0xFF22C55E)
-                    // - Blue "ACTIVE" if key is stored and matches the input: Color(0xFF00A8FF)
-                    val savedKeyForProvider = if (selectedProvider == "Gemini") geminiKey else groqKey
-                    val (apiBtnBg, apiBtnText) = when {
-                        isOfflineMode -> {
-                            Color(0xFF6C757D) to "DISABLE"
-                        }
-                        activeInFocusKey.isEmpty() -> {
-                            Color(0xFF6C757D) to "INPUT API"
-                        }
-                        activeInFocusKey != savedKeyForProvider -> {
-                            Color(0xFF22C55E) to "SAVE API"
-                        }
-                        else -> {
-                            Color(0xFF00A8FF) to "ACTIVE"
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            viewModel.saveApiKeys(
-                                groq = tempGroqKey,
-                                gemini = tempGeminiKey,
-                                provider = selectedProvider
-                            )
-                        },
-                        enabled = !isOfflineMode && activeInFocusKey.isNotEmpty() && activeInFocusKey != savedKeyForProvider,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = apiBtnBg,
-                            disabledContainerColor = apiBtnBg
-                        ),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(38.dp)
-                            .testTag("api_save_btn")
-                    ) {
-                        Text(apiBtnText, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Textarea Kata Kunci Inti / Deskripsi
-                    OutlinedTextField(
-                        value = promptConcept,
-                        onValueChange = { viewModel.setPromptConcept(it) },
-                        label = { Text("Kata Kunci Inti / Deskripsi Singkat") },
-                        placeholder = { Text("Contoh: laptop di meja kayu minimalis, aesthetic lighting...") },
-                        maxLines = 2,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("concept_prompt_field"),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
-                            focusedLabelColor = Color(0xFFF25C05),
-                            unfocusedLabelColor = Color(0xFF4B5563),
-                            focusedBorderColor = Color(0xFFF25C05),
-                            unfocusedBorderColor = Color(0xFFCCCCCC)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Button GENERATE METADATA
-                    Button(
-                        onClick = {
-                            if (isOfflineMode) {
-                                if (promptConcept.isBlank()) {
-                                    Toast.makeText(context, "Konsep tidak boleh kosong!", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    viewModel.setGeneratingAi(true)
-                                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                                        try {
-                                            // Keep the delay for premium feels
-                                            kotlinx.coroutines.delay(600)
-                                            val resultKeywords = viewModel.offlineKeywordMatcher.matchKeywords(promptConcept, context)
-                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                viewModel.setGeneratingAi(false)
-                                                if (resultKeywords.isEmpty()) {
-                                                    Toast.makeText(context, "Masukkan kata kunci inti atau deskripsi yang lebih spesifik!", Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    val intent = android.content.Intent(context, OfflineResultActivity::class.java).apply {
-                                                        putStringArrayListExtra("all_keywords", ArrayList(resultKeywords))
-                                                    }
-                                                    offlineResultLauncher.launch(intent)
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                viewModel.setGeneratingAi(false)
-                                                Toast.makeText(context, "Error Offline Generation: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                viewModel.generateMetadata()
-                            }
-                        },
-                        enabled = !isGeneratingAi,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFF25C05),
-                            disabledContainerColor = Color(0xFFF25C05).copy(alpha = 0.7f),
-                            contentColor = Color.White,
-                            disabledContentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .testTag("generate_metadata_btn")
-                    ) {
-                        if (isGeneratingAi) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Generating PROCESS...", fontWeight = FontWeight.Bold, color = Color.White)
-                        } else {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("GENERATE METADATA", fontWeight = FontWeight.Black, fontSize = 13.sp)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Note Guidance Panel (Background Grey Muda)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFFF3F4F6), RoundedCornerShape(6.dp))
-                            .padding(10.dp)
-                    ) {
-                        Column {
-                            Text(
-                                text = "Petunjuk Penggunaan AI:",
-                                color = Color(0xFF1F2937),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "1. Pilih AI Provider & masukkan Kunci API, klik SAVE API untuk mengaktifkan.\n" +
-                                       "2. Tulis konsep detail/deskripsi gambar lalu klik GENERATE METADATA.\n" +
-                                       "3. ATAU centang satu gambar di galeri, lalu klik GENERATE METADATA untuk analisis visual langsung oleh Gemini.",
-                                color = Color(0xFF4B5563),
-                                fontSize = 10.sp,
-                                lineHeight = 14.sp
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Dapatkan Gemini API Key di sini",
-                                color = Color(0xFF2563EB),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.clickable {
-                                    uriHandler.openUri("https://aistudio.google.com/app/apikey")
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
         } // Close inner Column
+
 
         // --- Custom Footer Container ---
         Column(

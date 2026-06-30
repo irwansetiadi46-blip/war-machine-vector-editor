@@ -82,6 +82,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _promptConcept = MutableStateFlow("")
     val promptConcept = _promptConcept.asStateFlow()
 
+    private val _titleCharLimit = MutableStateFlow(200f)
+    val titleCharLimit = _titleCharLimit.asStateFlow()
+
+    private val _descCharLimit = MutableStateFlow(200f)
+    val descCharLimit = _descCharLimit.asStateFlow()
+
+    private val _keywordsLimit = MutableStateFlow(49f)
+    val keywordsLimit = _keywordsLimit.asStateFlow()
+
+    private val _blacklistWords = MutableStateFlow("")
+    val blacklistWords = _blacklistWords.asStateFlow()
+
     // --- Loading & Injection Progress State ---
     private val _isGeneratingAi = MutableStateFlow(false)
     val isGeneratingAi = _isGeneratingAi.asStateFlow()
@@ -274,6 +286,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setPromptConcept(concept: String) {
         _promptConcept.value = concept
+    }
+
+    fun setTitleCharLimit(value: Float) {
+        _titleCharLimit.value = value
+    }
+
+    fun setDescCharLimit(value: Float) {
+        _descCharLimit.value = value
+    }
+
+    fun setKeywordsLimit(value: Float) {
+        _keywordsLimit.value = value
+    }
+
+    fun setBlacklistWords(value: String) {
+        _blacklistWords.value = value
     }
 
     fun setTitle(value: String) {
@@ -525,14 +553,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isGeneratingAi.value = true
             try {
+                val titleLimit = _titleCharLimit.value.toInt()
+                val descLimit = _descCharLimit.value.toInt()
+                val kwLimit = _keywordsLimit.value.toInt()
+                val blWords = _blacklistWords.value
+                val blacklistInstruction = if (blWords.isNotBlank()) "7. BLACKLIST WORDS: DO NOT include any of these words: $blWords." else ""
+
                 val systemPrompt = """
                     You are an expert Microstock SEO Specialist. Your job is to generate highly accurate metadata (Title, Description, and Keywords) based on the user's input. Don't Use - or _ and odd symbols.
 
                     Strictly follow these rules:
                     1. Language: Always output the Title, Description, and Keywords in English.
-                    2. Title max until 20 words. 
-                    3. Description must be Maximum 200 characters a dynamic combination of concept description and organic visual multi usage targets. and suitable for what.
-                    4. Keywords Quantity: Generate exactly between 42 to 49 high-quality keywords. Quality and relevance are prioritized over quantity.
+                    2. Title max until $titleLimit characters. 
+                    3. Description must be Maximum $descLimit characters a dynamic combination of concept description and organic visual multi usage targets. and suitable for what.
+                    4. Keywords Quantity: Generate exactly $kwLimit high-quality keywords. Quality and relevance are prioritized over quantity.
                     5. Keywords Formatting: 
                        - Separate keywords ONLY with a comma without any spaces after the comma (e.g., keyword1,keyword2,keyword3).
                        - DO NOT include periods, dots, or any other special characters.
@@ -541,6 +575,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                        - Avoid contradictory terms.
                        - Do not repeat root words or redundant variations.
                        - Use only 1 word for each keyword. Don't combine 2 words without spaces to make one word, for example like photoobject, it's wrong and the correct is like this: photo, object.
+                    $blacklistInstruction
 
                     Format output must be strictly valid JSON like this: {"title": "...", "description": "...", "keywords": "keyword1,keyword2,keyword3"}
                 """.trimIndent()
@@ -725,15 +760,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun performGeminiAnalysis(imageItem: ImageItem, bytes: ByteArray, apiKey: String, modelName: String): GeneratedMetadata? {
+        val titleLimit = _titleCharLimit.value.toInt()
+        val descLimit = _descCharLimit.value.toInt()
+        val kwLimit = _keywordsLimit.value.toInt()
+        val blWords = _blacklistWords.value
+        val blacklistInstruction = if (blWords.isNotBlank()) "7. BLACKLIST WORDS: DO NOT include any of these words: $blWords." else ""
+
         val name = imageItem.name.lowercase()
         val systemPrompt = """
             You are an expert Microstock SEO Specialist. Your job is to analyze the provided image/asset and generate highly accurate metadata (Title, Description, and Keywords). Don't Use - or _ and odd symbols.
 
             Strictly follow these rules:
             1. Language: Always output the Title, Description, and Keywords in English.
-            2. Title max until 20 words. 
-            3. Description must be Maximum 200 characters a dynamic combination of concept description and organic visual multi usage targets. and suitable for what.
-            4. Keywords Quantity: Generate exactly between 42 to 49 high-quality keywords. Quality and relevance are prioritized over quantity.
+            2. Title max until $titleLimit characters. 
+            3. Description must be Maximum $descLimit characters a dynamic combination of concept description and organic visual multi usage targets. and suitable for what.
+            4. Keywords Quantity: Generate exactly $kwLimit high-quality keywords. Quality and relevance are prioritized over quantity.
             5. Keywords Formatting: 
                - Separate keywords ONLY with a comma without any spaces after the comma (e.g., keyword1,keyword2,keyword3).
                - DO NOT include periods, dots, or any other special characters.
@@ -742,6 +783,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                - Avoid contradictory terms.
                - Do not repeat root words or redundant variations.
                - Use only 1 word for each keyword. Don't combine 2 words without spaces to make one word, for example like photoobject, it's wrong and the correct is like this: photo, object.
+            $blacklistInstruction
 
             Format output must be strictly valid JSON like this: {"title": "...", "description": "...", "keywords": "keyword1,keyword2,keyword3"}
         """.trimIndent()
