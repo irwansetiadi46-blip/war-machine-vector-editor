@@ -489,33 +489,94 @@ fun MainScreen(
                     
                     Text("Metadata Configuration", color = Color(0xFF4B5563), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     
+                    var titleInput by remember(titleCharLimit) { mutableStateOf(titleCharLimit.toInt().toString()) }
+                    var descInput by remember(descCharLimit) { mutableStateOf(descCharLimit.toInt().toString()) }
+                    var keywordsInput by remember(keywordsLimit) { mutableStateOf(keywordsLimit.toInt().toString()) }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Title Limit: ${titleCharLimit.toInt()} char", fontSize = 11.sp, color = Color(0xFF4B5563), modifier = Modifier.weight(1f))
+                        Text("Title Limit:", fontSize = 11.sp, color = Color(0xFF4B5563), modifier = Modifier.width(65.dp))
+                        OutlinedTextField(
+                            value = titleInput,
+                            onValueChange = { newValue ->
+                                titleInput = newValue
+                                newValue.toFloatOrNull()?.let { num ->
+                                    if(num in 50f..200f) viewModel.setTitleCharLimit(num)
+                                }
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.width(65.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color(0xFF1F2937)),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFFF25C05),
+                                unfocusedBorderColor = Color(0xFFCCCCCC)
+                            )
+                        )
                         Slider(
                             value = titleCharLimit,
                             onValueChange = { viewModel.setTitleCharLimit(it) },
-                            valueRange = 50f..300f,
-                            modifier = Modifier.weight(2f)
+                            valueRange = 50f..200f,
+                            modifier = Modifier.weight(1f).padding(start = 8.dp)
                         )
                     }
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Desc Limit: ${descCharLimit.toInt()} char", fontSize = 11.sp, color = Color(0xFF4B5563), modifier = Modifier.weight(1f))
+                        Text("Desc Limit:", fontSize = 11.sp, color = Color(0xFF4B5563), modifier = Modifier.width(65.dp))
+                        OutlinedTextField(
+                            value = descInput,
+                            onValueChange = { newValue ->
+                                descInput = newValue
+                                newValue.toFloatOrNull()?.let { num ->
+                                    if(num in 100f..300f) viewModel.setDescCharLimit(num)
+                                }
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.width(65.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color(0xFF1F2937)),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFFF25C05),
+                                unfocusedBorderColor = Color(0xFFCCCCCC)
+                            )
+                        )
                         Slider(
                             value = descCharLimit,
                             onValueChange = { viewModel.setDescCharLimit(it) },
-                            valueRange = 100f..500f,
-                            modifier = Modifier.weight(2f)
+                            valueRange = 100f..300f,
+                            modifier = Modifier.weight(1f).padding(start = 8.dp)
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Keywords: ${keywordsLimit.toInt()}", fontSize = 11.sp, color = Color(0xFF4B5563), modifier = Modifier.weight(1f))
+                        Text("Keywords:", fontSize = 11.sp, color = Color(0xFF4B5563), modifier = Modifier.width(65.dp))
+                        OutlinedTextField(
+                            value = keywordsInput,
+                            onValueChange = { newValue ->
+                                keywordsInput = newValue
+                                newValue.toFloatOrNull()?.let { num ->
+                                    if(num in 10f..50f) viewModel.setKeywordsLimit(num)
+                                }
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.width(65.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color(0xFF1F2937)),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFFF25C05),
+                                unfocusedBorderColor = Color(0xFFCCCCCC)
+                            )
+                        )
                         Slider(
                             value = keywordsLimit,
                             onValueChange = { viewModel.setKeywordsLimit(it) },
                             valueRange = 10f..50f,
-                            modifier = Modifier.weight(2f)
+                            modifier = Modifier.weight(1f).padding(start = 8.dp)
                         )
                     }
 
@@ -1474,7 +1535,7 @@ fun MainScreen(
                     }
                 )
                 Text(
-                    text = " • war machine hybrid app version 1.5",
+                    text = " • war machine hybrid app version 1.6",
                     fontSize = 9.sp,
                     color = Color.White.copy(alpha = 0.9f),
                     fontStyle = FontStyle.Italic
