@@ -24,6 +24,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.layout.*
@@ -46,6 +53,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -105,6 +114,7 @@ fun MainScreen(
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     val focusManager = LocalFocusManager.current
     
     // --- State Observables ---
@@ -209,9 +219,10 @@ fun MainScreen(
     val mainScrollState = rememberScrollState()
     val isPointingDown by remember { derivedStateOf { mainScrollState.value < (mainScrollState.maxValue / 2) } }
 
-    Box(modifier = modifier.pointerInput(Unit) {
+    BoxWithConstraints(modifier = modifier.pointerInput(Unit) {
         detectTapGestures(onTap = { focusManager.clearFocus() })
     }) {
+        val screenHeight = constraints.maxHeight.toFloat()
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -799,11 +810,10 @@ fun MainScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Preview Area Container (Scrollable dynamically)
+                    // Preview Area Container (Dynamically resizing)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 120.dp, max = 850.dp)
                             .background(Color(0xFF050B18), RoundedCornerShape(8.dp))
                             .border(BorderStroke(1.dp, Color(0xFF4B5563).copy(alpha = 0.5f)), RoundedCornerShape(8.dp))
                             .padding(8.dp)
@@ -816,15 +826,16 @@ fun MainScreen(
                                 fontSize = 13.sp,
                                 modifier = Modifier
                                     .align(Alignment.Center)
+                                    .padding(vertical = 40.dp)
                                     .testTag("empty_placeholder_text"),
                                 fontFamily = FontFamily.Monospace
                             )
                         } else {
-                            LazyColumn(
+                            Column(
                                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                items(imagesList, key = { it.id }) { item ->
+                                imagesList.forEach { item ->
                                     val isPng = item.name.endsWith(".png", ignoreCase = true)
                                     val isEps = item.name.endsWith(".eps", ignoreCase = true)
                                     val borderColor = if (item.hasMetadata) Color(0xFF22C55E) else Color(0xFF4B5563)
@@ -949,14 +960,24 @@ fun MainScreen(
                                                     val len = item.individualTitle.length
                                                     if (len > 0) Text("Title ($len character)", fontSize = 10.sp) else Text("Title", fontSize = 10.sp)
                                                 },
-                                                modifier = Modifier.fillMaxWidth().height(60.dp),
+                                                modifier = Modifier.fillMaxWidth(),
                                                 colors = OutlinedTextFieldDefaults.colors(
                                                     focusedTextColor = Color(0xFF22C55E),
                                                     unfocusedTextColor = Color(0xFF22C55E),
                                                     focusedLabelColor = Color(0xFF22C55E),
                                                     unfocusedLabelColor = Color(0xFF4B5563)
                                                 ),
-                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                                                trailingIcon = {
+                                                    if (item.individualTitle.isNotEmpty()) {
+                                                        IconButton(onClick = { 
+                                                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualTitle))
+                                                            Toast.makeText(context, "Title disalin", Toast.LENGTH_SHORT).show()
+                                                        }) {
+                                                            Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Title", tint = Color(0xFF00A8FF), modifier = Modifier.size(16.dp))
+                                                        }
+                                                    }
+                                                }
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
                                             OutlinedTextField(
@@ -973,7 +994,17 @@ fun MainScreen(
                                                     focusedLabelColor = Color(0xFF22C55E),
                                                     unfocusedLabelColor = Color(0xFF4B5563)
                                                 ),
-                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                                                trailingIcon = {
+                                                    if (item.individualDescription.isNotEmpty()) {
+                                                        IconButton(onClick = { 
+                                                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualDescription))
+                                                            Toast.makeText(context, "Description disalin", Toast.LENGTH_SHORT).show()
+                                                        }) {
+                                                            Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Description", tint = Color(0xFF00A8FF), modifier = Modifier.size(16.dp))
+                                                        }
+                                                    }
+                                                }
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
                                             OutlinedTextField(
@@ -990,7 +1021,17 @@ fun MainScreen(
                                                     focusedLabelColor = Color(0xFF22C55E),
                                                     unfocusedLabelColor = Color(0xFF4B5563)
                                                 ),
-                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                                                trailingIcon = {
+                                                    if (item.individualKeywords.isNotEmpty()) {
+                                                        IconButton(onClick = { 
+                                                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualKeywords))
+                                                            Toast.makeText(context, "Keywords disalin", Toast.LENGTH_SHORT).show()
+                                                        }) {
+                                                            Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Keywords", tint = Color(0xFF00A8FF), modifier = Modifier.size(16.dp))
+                                                        }
+                                                    }
+                                                }
                                             )
                                             Spacer(modifier = Modifier.height(8.dp))
                                             Row(
@@ -1055,6 +1096,29 @@ fun MainScreen(
                             Icon(Icons.Default.DownloadForOffline, contentDescription = "Inject All Icon", modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("INJECT ALL", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = { viewModel.downloadInjectedFiles() },
+                            enabled = activeSelectedSize > 0 && !isDownloading,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A8FF)),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                                .testTag("download_all_individual_btn")
+                        ) {
+                            if (isDownloading) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("SAVING", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            } else {
+                                Icon(Icons.Default.Save, contentDescription = "Download All", modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("DOWNLOAD ALL", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                         
                         Spacer(modifier = Modifier.height(8.dp))
@@ -1535,7 +1599,7 @@ fun MainScreen(
                     }
                 )
                 Text(
-                    text = " • war machine hybrid app version 1.6",
+                    text = " • war machine hybrid app version 1.7",
                     fontSize = 9.sp,
                     color = Color.White.copy(alpha = 0.9f),
                     fontStyle = FontStyle.Italic
@@ -1547,6 +1611,39 @@ fun MainScreen(
     // --- Privacy Policy Full-screen Overlay ---
     if (showPrivacyPolicy) {
         PrivacyPolicyScreen(onClose = { showPrivacyPolicy = false })
+    }
+
+    // --- Custom Draggable Scroll Handle ---
+    val maxScroll = mainScrollState.maxValue.toFloat()
+    if (maxScroll > 0f) {
+        val handleHeight = 50.dp
+        val handleWidth = 8.dp
+        val handleHeightPx = with(LocalDensity.current) { handleHeight.toPx() }
+        val availableTrack = screenHeight - handleHeightPx
+        val thumbYPercentage = if (maxScroll > 0) mainScrollState.value.toFloat() / maxScroll else 0f
+        val thumbY = thumbYPercentage * availableTrack
+        
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset { androidx.compose.ui.unit.IntOffset(0, thumbY.toInt()) }
+                .padding(end = 4.dp, top = 4.dp, bottom = 4.dp)
+                .width(handleWidth)
+                .height(handleHeight)
+                .background(Color(0xFFF25C05), CircleShape)
+                .draggable(
+                    orientation = Orientation.Vertical,
+                    state = rememberDraggableState { delta ->
+                        if (availableTrack > 0) {
+                            val scrollPercentageDelta = delta / availableTrack
+                            val newScrollValue = (mainScrollState.value + scrollPercentageDelta * maxScroll).toInt()
+                            scope.launch {
+                                mainScrollState.scrollTo(newScrollValue.coerceIn(0, maxScroll.toInt()))
+                            }
+                        }
+                    }
+                )
+        )
     }
 
     // --- Floating Action Button for Scroll ---
@@ -1816,6 +1913,127 @@ fun PrivacyPolicyScreen(onClose: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+fun Button(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    shape: Shape = ButtonDefaults.shape,
+    colors: ButtonColors = ButtonDefaults.buttonColors(),
+    elevation: ButtonElevation? = ButtonDefaults.buttonElevation(),
+    border: BorderStroke? = null,
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    content: @Composable RowScope.() -> Unit
+) {
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (isPressed) 0.95f else 1f, label = "scale")
+    val isGreen = colors.containerColor == Color(0xFF22C55E)
+    val pressedBorderColor = if (isGreen) Color(0xFFF25C05) else Color(0xFF22C55E)
+    val actualBorder = if (isPressed) BorderStroke(2.dp, pressedBorderColor) else border
+
+    androidx.compose.material3.Button(
+        onClick = onClick,
+        modifier = modifier.scale(scale),
+        enabled = enabled,
+        shape = shape,
+        colors = colors,
+        elevation = elevation,
+        border = actualBorder,
+        contentPadding = contentPadding,
+        interactionSource = interactionSource,
+        content = content
+    )
+}
+
+@Composable
+fun IconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    colors: IconButtonColors = IconButtonDefaults.iconButtonColors(),
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    content: @Composable () -> Unit
+) {
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (isPressed) 0.90f else 1f, label = "scale")
+    val isGreen = colors.containerColor == Color(0xFF22C55E)
+    val pressedBorderColor = if (isGreen) Color(0xFFF25C05) else Color(0xFF22C55E)
+    
+    val borderModifier = if (isPressed) Modifier.border(2.dp, pressedBorderColor, CircleShape) else Modifier
+
+    androidx.compose.material3.IconButton(
+        onClick = onClick,
+        modifier = modifier.scale(scale).then(borderModifier),
+        enabled = enabled,
+        colors = colors,
+        interactionSource = interactionSource,
+        content = content
+    )
+}
+
+@Composable
+fun OutlinedButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    shape: Shape = ButtonDefaults.outlinedShape,
+    colors: ButtonColors = ButtonDefaults.outlinedButtonColors(),
+    elevation: ButtonElevation? = null,
+    border: BorderStroke? = ButtonDefaults.outlinedButtonBorder,
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    content: @Composable RowScope.() -> Unit
+) {
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (isPressed) 0.95f else 1f, label = "scale")
+    val isGreen = colors.containerColor == Color(0xFF22C55E)
+    val pressedBorderColor = if (isGreen) Color(0xFFF25C05) else Color(0xFF22C55E)
+    val actualBorder = if (isPressed) BorderStroke(2.dp, pressedBorderColor) else border
+
+    androidx.compose.material3.OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.scale(scale),
+        enabled = enabled,
+        shape = shape,
+        colors = colors,
+        elevation = elevation,
+        border = actualBorder,
+        contentPadding = contentPadding,
+        interactionSource = interactionSource,
+        content = content
+    )
+}
+
+@Composable
+fun SmallFloatingActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    shape: Shape = FloatingActionButtonDefaults.smallShape,
+    containerColor: Color = FloatingActionButtonDefaults.containerColor,
+    contentColor: Color = contentColorFor(containerColor),
+    elevation: FloatingActionButtonElevation = FloatingActionButtonDefaults.elevation(),
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    content: @Composable () -> Unit
+) {
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (isPressed) 0.90f else 1f, label = "scale")
+    val isGreen = containerColor == Color(0xFF22C55E)
+    val pressedBorderColor = if (isGreen) Color(0xFFF25C05) else Color(0xFF22C55E)
+    val borderModifier = if (isPressed) Modifier.border(2.dp, pressedBorderColor, shape) else Modifier
+
+    androidx.compose.material3.SmallFloatingActionButton(
+        onClick = onClick,
+        modifier = modifier.scale(scale).then(borderModifier),
+        shape = shape,
+        containerColor = containerColor,
+        contentColor = contentColor,
+        elevation = elevation,
+        interactionSource = interactionSource,
+        content = content
+    )
 }
 
 @Composable
