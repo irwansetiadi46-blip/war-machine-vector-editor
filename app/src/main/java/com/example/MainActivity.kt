@@ -637,6 +637,10 @@ fun MainScreen(
 
                     Button(
                         onClick = {
+                            if (isGeneratingAi) {
+                                viewModel.cancelGlobalGeneration()
+                                return@Button
+                            }
                             if (isOfflineMode) {
                                 if (promptConcept.isBlank()) {
                                     Toast.makeText(context, "Konsep tidak boleh kosong!", Toast.LENGTH_SHORT).show()
@@ -669,12 +673,9 @@ fun MainScreen(
                                 viewModel.generateMetadata()
                             }
                         },
-                        enabled = !isGeneratingAi,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFF25C05),
-                            disabledContainerColor = Color(0xFFF25C05).copy(alpha = 0.7f),
-                            contentColor = Color.White,
-                            disabledContentColor = Color.White
+                            containerColor = if (isGeneratingAi) Color.Red else Color(0xFFF25C05),
+                            contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(6.dp),
                         modifier = Modifier
@@ -685,7 +686,7 @@ fun MainScreen(
                         if (isGeneratingAi) {
                             CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Generating PROCESS...", fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("Cancel", fontWeight = FontWeight.Bold, color = Color.White)
                         } else {
                             Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
@@ -1040,16 +1041,36 @@ fun MainScreen(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(38.dp)
+                                                        .background(Color.Red.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
+                                                        .border(1.dp, Color.Red, RoundedCornerShape(6.dp))
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .clickable { viewModel.removeIndividualImage(item.id) },
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.size(18.dp))
+                                                }
                                                 Button(
-                                                    onClick = { viewModel.generateMetadataForSingleImage(item.id) },
-                                                    enabled = !item.isGeneratingMetadata,
-                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A8FF)),
+                                                    onClick = {
+                                                        if (item.isGeneratingMetadata) {
+                                                            viewModel.cancelIndividualGeneration(item.id)
+                                                        } else {
+                                                            viewModel.generateMetadataForSingleImage(item.id)
+                                                        }
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = if (item.isGeneratingMetadata) Color.Red else Color(0xFF00A8FF)),
                                                     shape = RoundedCornerShape(6.dp),
                                                     modifier = Modifier.weight(1f).height(38.dp),
                                                     contentPadding = PaddingValues(0.dp)
                                                 ) {
                                                     if (item.isGeneratingMetadata) {
-                                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                                            Spacer(modifier = Modifier.width(4.dp))
+                                                            Text("CANCEL", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                                        }
                                                     } else {
                                                         Text("GENERATE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                     }
@@ -1070,13 +1091,14 @@ fun MainScreen(
                                                         Text("INJECT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                     }
                                                 }
-                                                IconButton(
-                                                    onClick = { viewModel.downloadIndividualFile(item.id) },
-                                                    enabled = item.hasMetadata,
+                                                Box(
                                                     modifier = Modifier
                                                         .size(38.dp)
                                                         .background(if (item.hasMetadata) Color(0xFF00A8FF).copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(6.dp))
                                                         .border(1.dp, if (item.hasMetadata) Color(0xFF00A8FF) else Color(0xFF4B5563), RoundedCornerShape(6.dp))
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .clickable(enabled = item.hasMetadata) { viewModel.downloadIndividualFile(item.id) },
+                                                    contentAlignment = Alignment.Center
                                                 ) {
                                                     Icon(Icons.Default.Download, contentDescription = "Download", tint = if (item.hasMetadata) Color(0xFF00A8FF) else Color(0xFF4B5563), modifier = Modifier.size(18.dp))
                                                 }
@@ -1629,9 +1651,10 @@ fun MainScreen(
     if (isGlobalProcessing) {
         Box(
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 16.dp, end = 16.dp)
-                .background(Color(0xFF22C55E).copy(alpha = 0.9f), RoundedCornerShape(12.dp))
+                .align(Alignment.TopStart)
+                .padding(top = 16.dp, start = 16.dp)
+                .background(Color(0xFF0F172A).copy(alpha = 0.9f), RoundedCornerShape(12.dp))
+                .border(1.dp, Color(0xFF3B82F6), RoundedCornerShape(12.dp))
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -98,6 +98,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isGeneratingAi = MutableStateFlow(false)
     val isGeneratingAi = _isGeneratingAi.asStateFlow()
 
+    private var globalGenerationJob: kotlinx.coroutines.Job? = null
+    private val individualGenerationJobs = mutableMapOf<Int, kotlinx.coroutines.Job>()
+
     private val _isInjecting = MutableStateFlow(false)
     val isInjecting = _isInjecting.asStateFlow()
 
@@ -451,6 +454,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _toastFlow.value = "Gambar terpilih berhasil dihapus."
     }
 
+    fun removeIndividualImage(id: Int) {
+        val remaining = _imagesList.value.filter { it.id != id }
+        _imagesList.value = remaining
+        recalculateMetadataFormFromSelection()
+        _toastFlow.value = "Gambar berhasil dihapus."
+    }
+
     fun clearAllImages() {
         _imagesList.value = emptyList()
         recalculateMetadataFormFromSelection()
@@ -522,6 +532,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun cancelGlobalGeneration() {
+        globalGenerationJob?.cancel()
+        _isGeneratingAi.value = false
+        _isGlobalProcessing.value = false
+        _globalProcessingText.value = ""
+        _imagesList.value = _imagesList.value.map {
+            if (it.isSelected && it.isGeneratingMetadata) it.copy(isGeneratingMetadata = false) else it
+        }
+        _toastFlow.value = "Generate Metadata Dibatalkan"
+    }
+
+    fun cancelIndividualGeneration(id: Int) {
+        individualGenerationJobs[id]?.cancel()
+        individualGenerationJobs.remove(id)
+        _imagesList.value = _imagesList.value.map {
+            if (it.id == id) it.copy(isGeneratingMetadata = false) else it
+        }
+        _toastFlow.value = "Generate Individual Dibatalkan"
+    }
+
     fun clearToast() {
         _toastFlow.value = null
     }
@@ -556,7 +586,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        viewModelScope.launch {
+        globalGenerationJob = viewModelScope.launch {
             _isGeneratingAi.value = true
             try {
                 val titleLimit = _titleCharLimit.value.toInt()
@@ -660,7 +690,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val imageItem = _imagesList.value.find { it.id == id } ?: return
 
-        viewModelScope.launch {
+        val job = viewModelScope.launch {
             _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = true) else it }
             try {
                 val bytes = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri)
@@ -688,11 +718,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false) else it }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
-                _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false) else it }
-                _toastFlow.value = "Error AI Gemini: ${e.localizedMessage ?: e.message}"
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    e.printStackTrace()
+                    _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false) else it }
+                    _toastFlow.value = "Error AI Gemini: ${e.localizedMessage ?: e.message}"
+                }
+            } finally {
+                individualGenerationJobs.remove(imageItem.id)
             }
         }
+        individualGenerationJobs[imageItem.id] = job
     }
 
     fun generateMetadataFromSelectedImage() {
@@ -719,7 +754,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        viewModelScope.launch {
+        globalGenerationJob = viewModelScope.launch {
             _isGeneratingAi.value = true
             _isGlobalProcessing.value = true
             try {
