@@ -138,6 +138,8 @@ fun MainScreen(
     val injectionStatusText by viewModel.injectionStatusText.collectAsStateWithLifecycle()
     val downloadStatusText by viewModel.downloadStatusText.collectAsStateWithLifecycle()
     val isDownloading by viewModel.isDownloading.collectAsStateWithLifecycle()
+    val isGlobalProcessing by viewModel.isGlobalProcessing.collectAsStateWithLifecycle()
+    val globalProcessingText by viewModel.globalProcessingText.collectAsStateWithLifecycle()
     val toastMessage by viewModel.toastFlow.collectAsStateWithLifecycle()
     var showPrivacyPolicy by remember { mutableStateOf(false) }
 
@@ -1068,6 +1070,16 @@ fun MainScreen(
                                                         Text("INJECT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                     }
                                                 }
+                                                IconButton(
+                                                    onClick = { viewModel.downloadIndividualFile(item.id) },
+                                                    enabled = item.hasMetadata,
+                                                    modifier = Modifier
+                                                        .size(38.dp)
+                                                        .background(if (item.hasMetadata) Color(0xFF00A8FF).copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(6.dp))
+                                                        .border(1.dp, if (item.hasMetadata) Color(0xFF00A8FF) else Color(0xFF4B5563), RoundedCornerShape(6.dp))
+                                                ) {
+                                                    Icon(Icons.Default.Download, contentDescription = "Download", tint = if (item.hasMetadata) Color(0xFF00A8FF) else Color(0xFF4B5563), modifier = Modifier.size(18.dp))
+                                                }
                                             }
                                         }
                                     }
@@ -1599,7 +1611,7 @@ fun MainScreen(
                     }
                 )
                 Text(
-                    text = " • war machine hybrid app version 1.7",
+                    text = " • war machine hybrid app version 1.8",
                     fontSize = 9.sp,
                     color = Color.White.copy(alpha = 0.9f),
                     fontStyle = FontStyle.Italic
@@ -1611,6 +1623,32 @@ fun MainScreen(
     // --- Privacy Policy Full-screen Overlay ---
     if (showPrivacyPolicy) {
         PrivacyPolicyScreen(onClose = { showPrivacyPolicy = false })
+    }
+
+    // --- Global Processing Indicator ---
+    if (isGlobalProcessing) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 16.dp, end = 16.dp)
+                .background(Color(0xFF22C55E).copy(alpha = 0.9f), RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = globalProcessingText,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
     }
 
     // --- Custom Draggable Scroll Handle ---

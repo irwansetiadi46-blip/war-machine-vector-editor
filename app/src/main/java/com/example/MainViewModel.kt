@@ -104,6 +104,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isDownloading = MutableStateFlow(false)
     val isDownloading = _isDownloading.asStateFlow()
 
+    private val _isGlobalProcessing = MutableStateFlow(false)
+    val isGlobalProcessing = _isGlobalProcessing.asStateFlow()
+
+    private val _globalProcessingText = MutableStateFlow("")
+    val globalProcessingText = _globalProcessingText.asStateFlow()
+
     private val _injectionProgress = MutableStateFlow(0f)
     val injectionProgress = _injectionProgress.asStateFlow()
 
@@ -715,8 +721,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             _isGeneratingAi.value = true
+            _isGlobalProcessing.value = true
             try {
+                val total = selected.size
+                var completed = 0
                 for (imageItem in selected) {
+                    _globalProcessingText.value = "Generating Process...($completed/$total)"
+
                     _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = true) else it }
                     
                     val bytes = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri)
@@ -746,6 +757,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false) else it }
                         _toastFlow.value = "Respon AI tidak valid JSON untuk ${imageItem.name}."
                     }
+                    completed++
+                    _globalProcessingText.value = "Generating Process...($completed/$total)"
                 }
                 
                 _toastFlow.value = "AI berhasil menganalisis gambar & menghasilkan metadata!"
@@ -755,6 +768,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _toastFlow.value = "Error AI Gemini: ${e.localizedMessage ?: e.message}"
             } finally {
                 _isGeneratingAi.value = false
+                _isGlobalProcessing.value = false
+                _globalProcessingText.value = ""
             }
         }
     }
@@ -1179,11 +1194,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             _isDownloading.value = true
+            _isGlobalProcessing.value = true
             _downloadStatusText.value = "DOWNLOADING..."
 
             try {
-                val filesToSave = mutableMapOf<String, ByteArray>()
+                val total = selected.size
+                var completed = 0
+                val usedNames = mutableSetOf<String>()
+
                 for (item in selected) {
+                    _globalProcessingText.value = "Processing Download...($completed/$total)"
                     val bytesToSave = item.injectedBytes ?: item.originalBytes
                     if (bytesToSave != null) {
                         val ext: String
@@ -1217,65 +1237,107 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         var counter = 1
                         val nameWithoutExt = finalName.substringBeforeLast(".")
                         val extension = if (finalName.contains(".")) ".${finalName.substringAfterLast(".")}" else ""
-                        while (filesToSave.containsKey(uniqueName)) {
+                        while (usedNames.contains(uniqueName)) {
                             uniqueName = "$nameWithoutExt-$counter$extension"
                             counter++
                         }
+                        usedNames.add(uniqueName)
 
-                        filesToSave[uniqueName] = bytesToSave
+                        withContext(Dispatchers.IO) {
+                            try {
+                                val keyLower = uniqueName.lowercase()
+                                val mimeType = when {
+                                    keyLower.endsWith(".png") -> "image/png"
+                                    keyLower.endsWith(".eps") -> "application/postscript"
+                                    else -> "image/jpeg"
+                                }
+                                FileHelper.saveToDownloads(context, uniqueName, mimeType, bytesToSave)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    }
+                    completed++
+                    _globalProcessingText.value = "Processing Download...($completed/$total)"
+                }
+
+                _downloadStatusText.value = "DOWNLOAD DONE"
+                _toastFlow.value = "Semua file berhasil disimpan ke folder Download/WarMachineHybrid"
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _downloadStatusText.value = "DOWNLOAD ERROR"
+                _toastFlow.value = "Terjadi kesalahan saat menyimpan file: ${e.message}"
+            } finally {
+                _isGlobalProcessing.value = false
+                _globalProcessingText.value = ""
+                // Keep the success text for 3 seconds, then clear it
+                kotlinx.coroutines.delay(3000)
+                _downloadStatusText.value = ""
+                _isDownloading.value = false
+            }
+        }
+    }
+
+    fun downloadIndividualFile(id: Int) {
+        val item = _imagesList.value.find { it.id == id }
+        if (item == null) {
+            _toastFlow.value = "Gambar tidak ditemukan!"
+            return
+        }
+        
+        viewModelScope.launch {
+            _toastFlow.value = "Menyimpan gambar..."
+            val bytesToSave = item.injectedBytes ?: item.originalBytes
+            if (bytesToSave != null) {
+                val ext: String
+                val dotIndex = item.name.lastIndexOf('.')
+                if (dotIndex != -1) {
+                    ext = item.name.substring(dotIndex)
+                } else {
+                    ext = when {
+                        item.name.endsWith("png", true) -> ".png"
+                        item.name.endsWith("eps", true) -> ".eps"
+                        else -> ".jpg"
                     }
                 }
-
-                if (filesToSave.isEmpty()) {
-                    _toastFlow.value = "Tidak ada byte gambar valid untuk disimpan."
-                    _downloadStatusText.value = ""
-                    _isDownloading.value = false
-                    return@launch
+                
+                var finalName = ""
+                val metaTitle = item.metadata?.title?.trim()
+                if (!metaTitle.isNullOrEmpty()) {
+                    var sanitized = metaTitle.replace(Regex("[\\\\/:*?\"<>|]"), "")
+                    sanitized = sanitized.replace(Regex("\\s+"), "-").lowercase()
+                    if (sanitized.length > 50) sanitized = sanitized.substring(0, 50)
+                    sanitized = sanitized.trimEnd('-')
+                    if (sanitized.isNotEmpty()) finalName = "$sanitized$ext"
                 }
-
+                if (finalName.isEmpty()) {
+                    val baseName = if (dotIndex != -1) item.name.substring(0, dotIndex) else item.name
+                    finalName = "$baseName$ext"
+                }
+                
                 val hasSucceeded = withContext(Dispatchers.IO) {
                     try {
-                        if (filesToSave.size == 1) {
-                            // Single file download
-                            val entry = filesToSave.entries.first()
-                            val keyLower = entry.key.lowercase()
-                            val mimeType = when {
-                                keyLower.endsWith(".png") -> "image/png"
-                                keyLower.endsWith(".eps") -> "application/postscript"
-                                else -> "image/jpeg"
-                            }
-                            val savedUri = FileHelper.saveToDownloads(context, entry.key, mimeType, entry.value)
-                            savedUri != null
-                        } else {
-                            // Zip download
-                            val zipHeader = "WMH-Metadata-Injected"
-                            val zipBytes = FileHelper.createZipOfBytes(filesToSave)
-                            val savedUri = FileHelper.saveToDownloads(context, "$zipHeader.zip", "application/zip", zipBytes)
-                            savedUri != null
+                        val keyLower = finalName.lowercase()
+                        val mimeType = when {
+                            keyLower.endsWith(".png") -> "image/png"
+                            keyLower.endsWith(".eps") -> "application/postscript"
+                            else -> "image/jpeg"
                         }
+                        val savedUri = FileHelper.saveToDownloads(context, finalName, mimeType, bytesToSave)
+                        savedUri != null
                     } catch (e: Exception) {
                         e.printStackTrace()
                         false
                     }
                 }
-
                 if (hasSucceeded) {
-                    _downloadStatusText.value = "DOWNLOAD DONE"
                     _toastFlow.value = "File berhasil disimpan ke folder Download/WarMachineHybrid"
                 } else {
-                    _downloadStatusText.value = "DOWNLOAD FAILED"
                     _toastFlow.value = "Gagal menyimpan file."
                 }
-
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _downloadStatusText.value = "DOWNLOAD ERROR"
-                _toastFlow.value = "Terjadi kesalahan saat mengemas file: ${e.message}"
-            } finally {
-                // Keep the success text for 3 seconds, then clear it
-                kotlinx.coroutines.delay(3000)
-                _downloadStatusText.value = ""
-                _isDownloading.value = false
+            } else {
+                _toastFlow.value = "Byte file tidak valid."
             }
         }
     }
