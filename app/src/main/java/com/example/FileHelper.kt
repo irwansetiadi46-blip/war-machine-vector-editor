@@ -25,6 +25,24 @@ object FileHelper {
         }
     }
 
+    fun readBase64FromUri(context: Context, uri: Uri): String? {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val outputStream = ByteArrayOutputStream()
+            val base64OutputStream = android.util.Base64OutputStream(outputStream, android.util.Base64.NO_WRAP)
+
+            inputStream?.use { input ->
+                base64OutputStream.use { base64Output ->
+                    input.copyTo(base64Output)
+                }
+            }
+            outputStream.toString("UTF-8")
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
     fun getFileNameFromUri(context: Context, uri: Uri): String {
         var name = ""
         try {

@@ -373,7 +373,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 id = nextId++,
                                 name = name,
                                 uri = uri,
-                                originalBytes = originalBytes,
+                                originalBytes = null, // Set to null to avoid out-of-memory errors
                                 injectedBytes = null,
                                 hasMetadata = hasMeta,
                                 isSelected = isAllMode,
@@ -693,10 +693,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val job = viewModelScope.launch {
             _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = true) else it }
             try {
-                val bytes = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri)
-                if (bytes != null) {
-                    val parsed = performGeminiAnalysis(imageItem, bytes, apiKey, _selectedModel.value)
-                    if (parsed != null) {
+                val parsed = performGeminiAnalysis(imageItem, apiKey, _selectedModel.value)
+                if (parsed != null) {
                         _title.value = parsed.title ?: ""
                         _description.value = parsed.description ?: ""
                         _keywords.value = parsed.keywords ?: ""
@@ -714,9 +712,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false) else it }
                         _toastFlow.value = "Gagal parse respon JSON untuk ${imageItem.name}"
                     }
-                } else {
-                    _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false) else it }
-                }
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
                     e.printStackTrace()
@@ -765,14 +760,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = true) else it }
                     
-                    val bytes = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri)
-                    if (bytes == null) {
-                        _toastFlow.value = "Tidak dapat membaca file gambar: ${imageItem.name}"
-                        _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false) else it }
-                        continue
-                    }
-                    
-                    val parsed = performGeminiAnalysis(imageItem, bytes, apiKey, _selectedModel.value)
+                    val parsed = performGeminiAnalysis(imageItem, apiKey, _selectedModel.value)
                     if (parsed != null) {
                         if (selected.size == 1) {
                             _title.value = parsed.title ?: ""
@@ -809,7 +797,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun performGeminiAnalysis(imageItem: ImageItem, bytes: ByteArray, apiKey: String, modelName: String): GeneratedMetadata? {
+    private suspend fun performGeminiAnalysis(imageItem: ImageItem, apiKey: String, modelName: String): GeneratedMetadata? {
         val titleLimit = _titleCharLimit.value.toInt()
         val descLimit = _descCharLimit.value.toInt()
         val kwLimit = _keywordsLimit.value.toInt()
@@ -841,6 +829,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
 
         val req = if (name.endsWith(".eps")) {
+            val bytes = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri) ?: ByteArray(0)
             val epsText = try {
                 val fullString = String(bytes, java.nio.charset.StandardCharsets.UTF_8)
                 if (fullString.length > 250000) {
@@ -880,7 +869,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         } else {
             val mimeType = if (name.endsWith(".png")) "image/png" else "image/jpeg"
-            val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            val base64Data = FileHelper.readBase64FromUri(context, imageItem.uri) ?: ""
             val concept = _promptConcept.value
             val conceptHint = if (concept.isNotBlank()) "User provided concept/hint: $concept\n" else ""
             
@@ -1239,7 +1228,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 for (item in selected) {
                     _globalProcessingText.value = "Processing Download...($completed/$total)"
-                    val bytesToSave = item.injectedBytes ?: item.originalBytes
+                    val bytesToSave = item.injectedBytes ?: item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
                     if (bytesToSave != null) {
                         val ext: String
                         val dotIndex = item.name.lastIndexOf('.')
@@ -1323,7 +1312,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         
         viewModelScope.launch {
             _toastFlow.value = "Menyimpan gambar..."
-            val bytesToSave = item.injectedBytes ?: item.originalBytes
+            val bytesToSave = item.injectedBytes ?: item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
             if (bytesToSave != null) {
                 val ext: String
                 val dotIndex = item.name.lastIndexOf('.')
