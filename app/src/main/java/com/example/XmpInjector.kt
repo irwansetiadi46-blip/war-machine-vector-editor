@@ -229,9 +229,9 @@ object XmpInjector {
         return null
     }
 
-    fun parseXMP(originalBytes: ByteArray, isPng: Boolean, isEps: Boolean = false): XmpData? {
+    fun parseXMP(originalBytes: ByteArray, isPng: Boolean, isEps: Boolean = false, isSvg: Boolean = false): XmpData? {
         try {
-            val xmlStr = (if (isEps) {
+            val xmlStr = (if (isEps || isSvg) {
                 extractXMPFromEps(originalBytes)
             } else if (isPng) {
                 extractXMPFromPng(originalBytes)
@@ -421,6 +421,72 @@ object XmpInjector {
         return outputStream.toByteArray()
     }
 
+    fun generateAdobeXmpXml(title: String, description: String, keywords: List<String>): String {
+        val titleEsc = escapeXml(title)
+        val descEsc = escapeXml(description)
+        val bagKeywords = keywords.filter { it.isNotBlank() }.joinToString("\n") { kw ->
+            "                  <rdf:li>${escapeXml(kw.trim())}</rdf:li>"
+        }
+
+        return """
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.6-c140 79.160451, 2017/05/06-13:08:12        ">
+   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+      <rdf:Description rdf:about=""
+            xmlns:dc="http://purl.org/dc/elements/1.1/"
+            xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">
+         <dc:format>application/postscript</dc:format>
+         <dc:title>
+            <rdf:Alt>
+               <rdf:li xml:lang="x-default">$titleEsc</rdf:li>
+            </rdf:Alt>
+         </dc:title>
+         <dc:description>
+            <rdf:Alt>
+               <rdf:li xml:lang="x-default">$descEsc</rdf:li>
+            </rdf:Alt>
+         </dc:description>
+         <dc:subject>
+            <rdf:Bag>
+$bagKeywords
+            </rdf:Bag>
+         </dc:subject>
+         <photoshop:Headline>$titleEsc</photoshop:Headline>
+      </rdf:Description>
+   </rdf:RDF>
+</x:xmpmeta>
+        """.trimIndent()
+    }
+
+    private fun buildAdobeClientInjection(title: String, description: String, keywords: List<String>): String {
+        val rawXml = generateAdobeXmpXml(title, description, keywords)
+        val endMarker = "%  &&end XMP packet marker&&"
+        
+        return listOf(
+            "%ADOBeginClientInjection: PageSetup End \"AI11EPS\"",
+            "/currentdistillerparams where",
+            "{pop currentdistillerparams /CoreDistVersion get 5000 lt} {true} ifelse",
+            "{ userdict /AI11_PDFMark5 /cleartomark load put",
+            "userdict /AI11_ReadMetadata_PDFMark5 {flushfile cleartomark } bind put}",
+            "{ userdict /AI11_PDFMark5 /pdfmark load put",
+            "userdict /AI11_ReadMetadata_PDFMark5 {/PUT pdfmark} bind put } ifelse",
+            "[/NamespacePush AI11_PDFMark5",
+            "[/_objdef {vector_design_metadata_stream} /type /stream /OBJ AI11_PDFMark5",
+            "[{vector_design_metadata_stream}",
+            "currentfile 0 ($endMarker)",
+            "/SubFileDecode filter AI11_ReadMetadata_PDFMark5",
+            rawXml,
+            endMarker,
+            "[{vector_design_metadata_stream}",
+            "<</Type /Metadata /Subtype /XML>>",
+            "/PUT AI11_PDFMark5",
+            "[/Document",
+            "1 dict begin /Metadata {vector_design_metadata_stream} def",
+            "currentdict end /BDC AI11_PDFMark5",
+            "%ADOEndClientInjection: PageSetup End \"AI11EPS\"",
+            ""
+        ).joinToString("\n")
+    }
+
     fun injectIntoEps(
         originalBytes: ByteArray,
         title: String,
@@ -430,39 +496,59 @@ object XmpInjector {
     ): ByteArray {
         try {
             val fileStr = String(originalBytes, StandardCharsets.UTF_8)
-            val xmpXml = generateXmpMeta(title, description, keywords, creator)
             
-            val xmpStart = fileStr.indexOf("<x:xmpmeta")
-            val xmpEnd = if (xmpStart != -1) fileStr.indexOf("</x:xmpmeta>", xmpStart) else -1
+            if (title.isBlank() && description.isBlank() && keywords.isEmpty()) {
+                return originalBytes
+            }
             
-            if (xmpStart != -1 && xmpEnd != -1) {
-                val beforeXmp = fileStr.substring(0, xmpStart)
-                val afterXmp = fileStr.substring(xmpEnd + "</x:xmpmeta>".length)
-                val newContent = beforeXmp + xmpXml + afterXmp
+            val validKeywords = keywords.filter { it.isNotBlank() }
+            
+            val headerKomentarParams = mutableListOf("%ADO_ContainsXMP: MainFirst")
+            if (title.isNotBlank()) headerKomentarParams.add("%%Title: $title")
+            if (validKeywords.isNotEmpty()) headerKomentarParams.add("%%Keywords: ${validKeywords.joinToString(", ")}")
+            val headerKomentar = headerKomentarParams.joinToString("\n")
+            
+            val blokInjeksiAdobe = buildAdobeClientInjection(title, description, validKeywords)
+            var hasilEps = fileStr
+            
+            if (headerKomentar.isNotBlank()) {
+                hasilEps = hasilEps.replace(Regex("\\n%%EndComments"), "\n$headerKomentar\n%%EndComments")
+            }
+            
+            hasilEps = hasilEps.replace(Regex("(%%EndComments\\s*)"), "$1\n$blokInjeksiAdobe")
+            
+            val XE_EMC_MARKER = "\n%%EndMetadata\n"
+            hasilEps = hasilEps.replace(Regex("\\nshowpage\\n%%EOF"), "\n${XE_EMC_MARKER}showpage\n%%EOF")
+            
+            return hasilEps.toByteArray(StandardCharsets.UTF_8)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return originalBytes
+        }
+    }
+
+    fun injectIntoSvg(
+        originalBytes: ByteArray,
+        title: String,
+        description: String,
+        keywords: List<String>,
+        creator: String
+    ): ByteArray {
+        try {
+            val fileStr = String(originalBytes, StandardCharsets.UTF_8)
+            val validKeywords = keywords.filter { it.isNotBlank() }
+            val xmlMetadata = generateAdobeXmpXml(title, description, validKeywords)
+            
+            val bungkusMetadataSvg = "<metadata id=\"metadata-vector-engine\">\n$xmlMetadata\n</metadata>"
+            
+            val metadataRegex = Regex("<metadata[\\s\\S]*?<\\/metadata>")
+            if (metadataRegex.containsMatchIn(fileStr)) {
+                val newContent = fileStr.replaceFirst(metadataRegex, bungkusMetadataSvg)
                 return newContent.toByteArray(StandardCharsets.UTF_8)
             } else {
-                // Insert after standard postscript header
-                val headerIdx = fileStr.indexOf("\n")
-                if (headerIdx != -1) {
-                    val before = fileStr.substring(0, headerIdx + 1)
-                    val after = fileStr.substring(headerIdx + 1)
-                    val xpacketBlock = """
-                        %XMP_Begin
-                        <?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
-                        $xmpXml
-                        <?xpacket end="w"?>
-                        %XMP_End
-                    """.trimIndent() + "\n"
-                    val newContent = before + xpacketBlock + after
-                    return newContent.toByteArray(StandardCharsets.UTF_8)
-                } else {
-                    val xpacketBlock = """
-                        <?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
-                        $xmpXml
-                        <?xpacket end="w"?>
-                    """.trimIndent() + "\n"
-                    return (xpacketBlock + fileStr).toByteArray(StandardCharsets.UTF_8)
-                }
+                val svgTagRegex = Regex("(<svg[^>]*>)")
+                val newContent = fileStr.replaceFirst(svgTagRegex, "$1\n$bungkusMetadataSvg")
+                return newContent.toByteArray(StandardCharsets.UTF_8)
             }
         } catch (e: Exception) {
             e.printStackTrace()

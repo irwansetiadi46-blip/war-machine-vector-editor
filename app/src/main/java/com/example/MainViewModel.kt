@@ -12,6 +12,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okio.BufferedSink
+import java.io.OutputStreamWriter
 
 data class ImageItem(
     val id: Int,
@@ -352,8 +356,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val name = FileHelper.getFileNameFromUri(context, uri)
                     val nameLower = name.lowercase()
                     
-                    // Accept Jpeg, Png, and Eps
-                    if (nameLower.endsWith(".png") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".eps")) {
+                    // Accept Jpeg, Png, Eps, and Svg
+                    if (nameLower.endsWith(".png") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".eps") || nameLower.endsWith(".svg")) {
                         val originalBytes = FileHelper.readBytesFromUri(context, uri)
                         
                         var hasMeta = false
@@ -362,7 +366,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (originalBytes != null) {
                             val isPng = nameLower.endsWith(".png")
                             val isEps = nameLower.endsWith(".eps")
-                            meta = XmpInjector.parseXMP(originalBytes, isPng = isPng, isEps = isEps)
+                            val isSvg = nameLower.endsWith(".svg")
+                            meta = XmpInjector.parseXMP(originalBytes, isPng = isPng, isEps = isEps, isSvg = isSvg)
                             if (meta != null && (meta.title.isNotBlank() || meta.description.isNotBlank() || meta.keywords.isNotBlank() || meta.creator.isNotBlank())) {
                                 hasMeta = true
                             }
@@ -695,19 +700,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val parsed = performGeminiAnalysis(imageItem, apiKey, _selectedModel.value)
                 if (parsed != null) {
-                        _title.value = parsed.title ?: ""
-                        _description.value = parsed.description ?: ""
-                        _keywords.value = parsed.keywords ?: ""
+                        val metaTitle = parsed.title ?: ""
+                        val metaDesc = parsed.description ?: ""
+                        val metaKeywordsString = parsed.keywords ?: ""
+
+                        var injectedBytes: ByteArray? = null
+                        var newestXmpData: XmpData? = null
+                        try {
+                            val bytesToInject = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri)
+                            if (bytesToInject != null) {
+                                val nameLower = imageItem.name.lowercase()
+                                val keywordsList = if (metaKeywordsString.isNotBlank()) metaKeywordsString.split(",").map { it.trim() }.filter { it.isNotEmpty() } else emptyList()
+                                injectedBytes = when {
+                                    nameLower.endsWith(".png") -> XmpInjector.injectIntoPng(bytesToInject, metaTitle, metaDesc, keywordsList, "")
+                                    nameLower.endsWith(".eps") -> XmpInjector.injectIntoEps(bytesToInject, metaTitle, metaDesc, keywordsList, "")
+                                    nameLower.endsWith(".svg") -> XmpInjector.injectIntoSvg(bytesToInject, metaTitle, metaDesc, keywordsList, "")
+                                    else -> XmpInjector.injectIntoJpeg(bytesToInject, metaTitle, metaDesc, keywordsList, "")
+                                }
+                                newestXmpData = XmpData(title = metaTitle, description = metaDesc, keywords = metaKeywordsString, creator = "")
+                                
+                                val mimeType = when {
+                                    nameLower.endsWith(".png") -> "image/png"
+                                    nameLower.endsWith(".eps") -> "application/postscript"
+                                    nameLower.endsWith(".svg") -> "image/svg+xml"
+                                    else -> "image/jpeg"
+                                }
+                                FileHelper.saveToDownloads(context, imageItem.name, mimeType, injectedBytes)
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
 
                         _imagesList.value = _imagesList.value.map { 
                             if (it.id == imageItem.id) it.copy(
-                                individualTitle = parsed.title ?: "",
-                                individualDescription = parsed.description ?: "",
-                                individualKeywords = parsed.keywords ?: "",
+                                individualTitle = metaTitle,
+                                individualDescription = metaDesc,
+                                individualKeywords = metaKeywordsString,
+                                injectedBytes = injectedBytes ?: it.injectedBytes,
+                                hasMetadata = injectedBytes != null || it.hasMetadata,
+                                metadata = newestXmpData ?: it.metadata,
                                 isGeneratingMetadata = false
                             ) else it
                         }
-                        _toastFlow.value = "Berhasil generate metadata untuk ${imageItem.name}"
+                        _toastFlow.value = "Berhasil generate & otomatis tersimpan untuk ${imageItem.name}"
                     } else {
                         _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false) else it }
                         _toastFlow.value = "Gagal parse respon JSON untuk ${imageItem.name}"
@@ -768,11 +803,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _keywords.value = parsed.keywords ?: ""
                         }
                         
+                        val metaTitle = parsed.title ?: ""
+                        val metaDesc = parsed.description ?: ""
+                        val metaKeywordsString = parsed.keywords ?: ""
+
+                        var injectedBytes: ByteArray? = null
+                        var newestXmpData: XmpData? = null
+                        try {
+                            val bytesToInject = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri)
+                            if (bytesToInject != null) {
+                                val nameLower = imageItem.name.lowercase()
+                                val keywordsList = if (metaKeywordsString.isNotBlank()) metaKeywordsString.split(",").map { it.trim() }.filter { it.isNotEmpty() } else emptyList()
+                                injectedBytes = when {
+                                    nameLower.endsWith(".png") -> XmpInjector.injectIntoPng(bytesToInject, metaTitle, metaDesc, keywordsList, "")
+                                    nameLower.endsWith(".eps") -> XmpInjector.injectIntoEps(bytesToInject, metaTitle, metaDesc, keywordsList, "")
+                                    nameLower.endsWith(".svg") -> XmpInjector.injectIntoSvg(bytesToInject, metaTitle, metaDesc, keywordsList, "")
+                                    else -> XmpInjector.injectIntoJpeg(bytesToInject, metaTitle, metaDesc, keywordsList, "")
+                                }
+                                newestXmpData = XmpData(title = metaTitle, description = metaDesc, keywords = metaKeywordsString, creator = "")
+                                
+                                val mimeType = when {
+                                    nameLower.endsWith(".png") -> "image/png"
+                                    nameLower.endsWith(".eps") -> "application/postscript"
+                                    nameLower.endsWith(".svg") -> "image/svg+xml"
+                                    else -> "image/jpeg"
+                                }
+                                FileHelper.saveToDownloads(context, imageItem.name, mimeType, injectedBytes)
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        
                         _imagesList.value = _imagesList.value.map { 
                             if (it.id == imageItem.id) it.copy(
-                                individualTitle = parsed.title ?: "",
-                                individualDescription = parsed.description ?: "",
-                                individualKeywords = parsed.keywords ?: "",
+                                individualTitle = metaTitle,
+                                individualDescription = metaDesc,
+                                individualKeywords = metaKeywordsString,
+                                injectedBytes = injectedBytes ?: it.injectedBytes,
+                                hasMetadata = injectedBytes != null || it.hasMetadata,
+                                metadata = newestXmpData ?: it.metadata,
                                 isGeneratingMetadata = false
                             ) else it
                         }
@@ -828,12 +897,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
 
-        val req = if (name.endsWith(".eps")) {
+        val resp = if (name.endsWith(".eps") || name.endsWith(".svg")) {
             val bytes = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri) ?: ByteArray(0)
             val epsText = try {
                 val fullString = String(bytes, java.nio.charset.StandardCharsets.UTF_8)
                 if (fullString.length > 250000) {
-                    fullString.substring(0, 250000) + "\n...[truncated EPS content]..."
+                    fullString.substring(0, 250000) + "\n...[truncated content]..."
                 } else {
                     fullString
                 }
@@ -843,21 +912,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             val concept = _promptConcept.value
             val conceptHint = if (concept.isNotBlank()) "User provided concept/hint: $concept\n" else ""
-
+            
             val userPromptEps = """
                 $conceptHint
-                Analyze this EPS (Encapsulated PostScript) vector file code. Inspect metadata tags, labels, font comments, layer names, coordinates, and shape parameters inside the PostScript content. Deducing what visual concept, template style, interface mock, or illustrative graphic is defined in this PostScript vector, generate professional microstock metadata (Title, Description, and Keywords).
+                Analyze this EPS/SVG vector file code. Inspect metadata tags, labels, font comments, layer names, coordinates, and shape parameters inside the content. Deducing what visual concept, template style, interface mock, or illustrative graphic is defined in this vector, generate professional microstock metadata (Title, Description, and Keywords).
 
                 System Rules:
                 $systemPrompt
 
-                EPS Code to analyze:
-                ```postscript
+                Vector Code to analyze:
+                ```
                 $epsText
                 ```
             """.trimIndent()
 
-            GeminiRequest(
+            val req = GeminiRequest(
                 contents = listOf(
                     GeminiContent(
                         parts = listOf(
@@ -867,9 +936,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ),
                 generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
             )
+            withContext(Dispatchers.IO) {
+                NetworkClient.apiService.getGeminiContent(url, req)
+            }
         } else {
             val mimeType = if (name.endsWith(".png")) "image/png" else "image/jpeg"
-            val base64Data = FileHelper.readBase64FromUri(context, imageItem.uri) ?: ""
             val concept = _promptConcept.value
             val conceptHint = if (concept.isNotBlank()) "User provided concept/hint: $concept\n" else ""
             
@@ -877,26 +948,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 $conceptHint
                 Analyze this image and generate professional microstock metadata in JSON format according to system rules.
             """.trimIndent()
+            
+            val fullTextPrompt = "$systemPrompt\n\n$userPrompt"
+            val requestBody = object : RequestBody() {
+                override fun contentType() = "application/json".toMediaType()
 
-            GeminiRequest(
-                contents = listOf(
-                    GeminiContent(
-                        parts = listOf(
-                            GeminiPart(text = "$systemPrompt\n\n$userPrompt"),
-                            GeminiPart(
-                                inlineData = GeminiInlineData(
-                                    mimeType = mimeType,
-                                    data = base64Data
-                                )
-                            )
-                        )
-                    )
-                ),
-                generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
-            )
+                override fun writeTo(sink: BufferedSink) {
+                    val writer = OutputStreamWriter(sink.outputStream(), "UTF-8")
+                    val escapedText = gson.toJson(fullTextPrompt)
+                    
+                    writer.write("{\"contents\":[{\"parts\":[{\"text\":")
+                    writer.write(escapedText)
+                    writer.write("},{\"inlineData\":{\"mimeType\":\"$mimeType\",\"data\":\"")
+                    writer.flush()
+                    
+                    val inputStream = context.contentResolver.openInputStream(imageItem.uri)
+                    val base64OutputStream = android.util.Base64OutputStream(sink.outputStream(), android.util.Base64.NO_WRAP)
+                    
+                    inputStream?.use { input ->
+                        base64OutputStream.use { base64Output ->
+                            input.copyTo(base64Output)
+                        }
+                    }
+                    
+                    writer.write("\"}}]}]},\"generationConfig\":{\"responseMimeType\":\"application/json\"}}")
+                    writer.flush()
+                }
+            }
+
+            withContext(Dispatchers.IO) {
+                NetworkClient.apiService.getGeminiContentStream(url, requestBody)
+            }
         }
 
-        val resp = NetworkClient.apiService.getGeminiContent(url, req)
         val resultText = resp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
 
         val cleanJson = extractJson(resultText)
@@ -966,6 +1050,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         nameLower.endsWith(".eps") -> {
                             XmpInjector.injectIntoEps(bytesToInject, metaTitle, metaDesc, keywordsList, metaCreator)
+                        }
+                        nameLower.endsWith(".svg") -> {
+                            XmpInjector.injectIntoSvg(bytesToInject, metaTitle, metaDesc, keywordsList, metaCreator)
                         }
                         else -> {
                             XmpInjector.injectIntoJpeg(bytesToInject, metaTitle, metaDesc, keywordsList, metaCreator)
@@ -1043,8 +1130,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     XmpInjector.injectIntoPng(bytesToInject, metaTitle, metaDesc, keywordsList, metaCreator)
                                 }
                                 nameLower.endsWith(".eps") -> {
-                                    XmpInjector.injectIntoEps(bytesToInject, metaTitle, metaDesc, keywordsList, metaCreator)
-                                }
+                            XmpInjector.injectIntoEps(bytesToInject, metaTitle, metaDesc, keywordsList, metaCreator)
+                        }
+                        nameLower.endsWith(".svg") -> {
+                            XmpInjector.injectIntoSvg(bytesToInject, metaTitle, metaDesc, keywordsList, metaCreator)
+                        }
                                 else -> {
                                     XmpInjector.injectIntoJpeg(bytesToInject, metaTitle, metaDesc, keywordsList, metaCreator)
                                 }
@@ -1141,14 +1231,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     )
                                 }
                                 nameLower.endsWith(".eps") -> {
-                                    XmpInjector.injectIntoEps(
-                                        bytesToInject,
-                                        metaTitle,
-                                        metaDesc,
-                                        keywordsList,
-                                        metaCreator
-                                    )
-                                }
+                            XmpInjector.injectIntoEps(bytesToInject, metaTitle, metaDesc, keywordsList, metaCreator)
+                        }
+                        nameLower.endsWith(".svg") -> {
+                            XmpInjector.injectIntoSvg(bytesToInject, metaTitle, metaDesc, keywordsList, metaCreator)
+                        }
                                 else -> {
                                     XmpInjector.injectIntoJpeg(
                                         bytesToInject,
@@ -1273,6 +1360,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 val mimeType = when {
                                     keyLower.endsWith(".png") -> "image/png"
                                     keyLower.endsWith(".eps") -> "application/postscript"
+                                    keyLower.endsWith(".svg") -> "image/svg+xml"
                                     else -> "image/jpeg"
                                 }
                                 FileHelper.saveToDownloads(context, uniqueName, mimeType, bytesToSave)
@@ -1346,6 +1434,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val mimeType = when {
                             keyLower.endsWith(".png") -> "image/png"
                             keyLower.endsWith(".eps") -> "application/postscript"
+                                    keyLower.endsWith(".svg") -> "image/svg+xml"
                             else -> "image/jpeg"
                         }
                         val savedUri = FileHelper.saveToDownloads(context, finalName, mimeType, bytesToSave)
