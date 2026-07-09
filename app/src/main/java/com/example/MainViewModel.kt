@@ -950,40 +950,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             """.trimIndent()
             
             val fullTextPrompt = "$systemPrompt\n\n$userPrompt"
-            val requestBody = object : RequestBody() {
-                override fun contentType() = "application/json".toMediaType()
-
-                override fun writeTo(sink: BufferedSink) {
-                    val writer = OutputStreamWriter(sink.outputStream(), "UTF-8")
-                    val escapedText = gson.toJson(fullTextPrompt)
-                    
-                    writer.write("{\"contents\":[{\"parts\":[{\"text\":")
-                    writer.write(escapedText)
-                    writer.write("},{\"inlineData\":{\"mimeType\":\"$mimeType\",\"data\":\"")
-                    writer.flush()
-                    
-                    val inputStream = context.contentResolver.openInputStream(imageItem.uri)
-                    
-                    val noCloseOutputStream = object : java.io.FilterOutputStream(sink.outputStream()) {
-                        override fun close() {
-                            flush()
-                        }
-                    }
-                    
-                    val base64OutputStream = android.util.Base64OutputStream(noCloseOutputStream, android.util.Base64.NO_WRAP)
-                    
-                    inputStream?.use { input ->
-                        input.copyTo(base64OutputStream)
-                    }
-                    base64OutputStream.close()
-                    
-                    writer.write("\"}}]}]},\"generationConfig\":{\"responseMimeType\":\"application/json\"}}")
-                    writer.flush()
-                }
-            }
-
+            val base64Data = FileHelper.readBase64FromUri(context, imageItem.uri) ?: ""
+            val req = GeminiRequest(
+                contents = listOf(
+                    GeminiContent(
+                        parts = listOf(
+                            GeminiPart(text = fullTextPrompt),
+                            GeminiPart(inlineData = GeminiInlineData(mimeType = mimeType, data = base64Data))
+                        )
+                    )
+                ),
+                generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
+            )
             withContext(Dispatchers.IO) {
-                NetworkClient.apiService.getGeminiContentStream(url, requestBody)
+                NetworkClient.apiService.getGeminiContent(url, req)
             }
         }
 
