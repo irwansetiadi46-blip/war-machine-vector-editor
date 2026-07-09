@@ -80,12 +80,6 @@ interface ApiService {
         @Url url: String,
         @Body body: GeminiRequest
     ): GeminiResponse
-
-    @POST
-    suspend fun getGeminiContentStream(
-        @Url url: String,
-        @Body body: okhttp3.RequestBody
-    ): GeminiResponse
 }
 
 object NetworkClient {

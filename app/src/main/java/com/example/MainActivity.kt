@@ -841,6 +841,7 @@ fun MainScreen(
                                 imagesList.forEach { item ->
                                     val isPng = item.name.endsWith(".png", ignoreCase = true)
                                     val isEps = item.name.endsWith(".eps", ignoreCase = true)
+                                    val isSvg = item.name.endsWith(".svg", ignoreCase = true)
                                     val borderColor = if (item.hasMetadata) Color(0xFF22C55E) else Color(0xFF4B5563)
                                     
                                     Row(
@@ -864,11 +865,14 @@ fun MainScreen(
                                                     .border(BorderStroke(2.dp, borderColor), RoundedCornerShape(6.dp))
                                                     .clip(RoundedCornerShape(6.dp))
                                             ) {
-                                                if (isEps) {
+                                                if (isEps || isSvg) {
+                                                    val badgeText = if (isEps) "EPS VECTOR" else "SVG VECTOR"
+                                                    val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
+                                                    val iconTint = if (isEps) Color(0xFF818CF8) else Color(0xFF14B8A6)
                                                     Box(
                                                         modifier = Modifier
                                                             .fillMaxSize()
-                                                            .background(Color(0xFF4F46E5).copy(alpha = 0.15f)),
+                                                            .background(badgeColor.copy(alpha = 0.15f)),
                                                         contentAlignment = Alignment.Center
                                                     ) {
                                                         Column(
@@ -878,18 +882,18 @@ fun MainScreen(
                                                         ) {
                                                             Icon(
                                                                 imageVector = Icons.Default.Description,
-                                                                contentDescription = "EPS Vector",
-                                                                tint = Color(0xFF818CF8),
+                                                                contentDescription = badgeText,
+                                                                tint = iconTint,
                                                                 modifier = Modifier.size(32.dp)
                                                             )
                                                             Spacer(modifier = Modifier.height(4.dp))
                                                             Surface(
-                                                                color = Color(0xFF4F46E5),
+                                                                color = badgeColor,
                                                                 shape = RoundedCornerShape(3.dp),
                                                                 modifier = Modifier.padding(horizontal = 2.dp)
                                                             ) {
                                                                 Text(
-                                                                    text = "EPS VECTOR",
+                                                                    text = badgeText,
                                                                     color = Color.White,
                                                                     fontSize = 8.sp,
                                                                     fontWeight = FontWeight.Bold,

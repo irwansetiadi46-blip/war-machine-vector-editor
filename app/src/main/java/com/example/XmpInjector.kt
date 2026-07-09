@@ -229,10 +229,28 @@ object XmpInjector {
         return null
     }
 
+    fun extractXMPFromSvg(bytes: ByteArray): String? {
+        try {
+            val str = String(bytes, StandardCharsets.UTF_8)
+            val startIdx = str.indexOf("<x:xmpmeta")
+            if (startIdx != -1) {
+                val endIdx = str.indexOf("</x:xmpmeta>", startIdx)
+                if (endIdx != -1) {
+                    return str.substring(startIdx, endIdx + "</x:xmpmeta>".length)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
+
     fun parseXMP(originalBytes: ByteArray, isPng: Boolean, isEps: Boolean = false, isSvg: Boolean = false): XmpData? {
         try {
-            val xmlStr = (if (isEps || isSvg) {
+            val xmlStr = (if (isEps) {
                 extractXMPFromEps(originalBytes)
+            } else if (isSvg) {
+                extractXMPFromSvg(originalBytes)
             } else if (isPng) {
                 extractXMPFromPng(originalBytes)
             } else {
@@ -421,15 +439,16 @@ object XmpInjector {
         return outputStream.toByteArray()
     }
 
-    fun generateAdobeXmpXml(title: String, description: String, keywords: List<String>): String {
-        val titleEsc = escapeXml(title)
-        val descEsc = escapeXml(description)
-        val bagKeywords = keywords.filter { it.isNotBlank() }.joinToString("\n") { kw ->
-            "                  <rdf:li>${escapeXml(kw.trim())}</rdf:li>"
-        }
+    fun bangunXmpXml(title: String, description: String, keywords: List<String>): String {
+        val titleEsc = escapeXml(title.trim())
+        val descEsc = escapeXml(description.trim())
+        val bagKeywords = keywords
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .map { kw -> "                  <rdf:li>${escapeXml(kw)}</rdf:li>" }
+            .joinToString("\n")
 
-        return """
-<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.6-c140 79.160451, 2017/05/06-13:08:12        ">
+        return """<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.6-c140 79.160451, 2017/05/06-13:08:12        ">
    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
       <rdf:Description rdf:about=""
             xmlns:dc="http://purl.org/dc/elements/1.1/"
@@ -453,14 +472,13 @@ $bagKeywords
          <photoshop:Headline>$titleEsc</photoshop:Headline>
       </rdf:Description>
    </rdf:RDF>
-</x:xmpmeta>
-        """.trimIndent()
+</x:xmpmeta>"""
     }
 
-    private fun buildAdobeClientInjection(title: String, description: String, keywords: List<String>): String {
-        val rawXml = generateAdobeXmpXml(title, description, keywords)
+    fun bangunAdobeClientInjection(title: String, description: String, keywords: List<String>): String {
+        val xmlMentah = bangunXmpXml(title, description, keywords)
         val endMarker = "%  &&end XMP packet marker&&"
-        
+
         return listOf(
             "%ADOBeginClientInjection: PageSetup End \"AI11EPS\"",
             "/currentdistillerparams where",
@@ -474,7 +492,7 @@ $bagKeywords
             "[{vector_design_metadata_stream}",
             "currentfile 0 ($endMarker)",
             "/SubFileDecode filter AI11_ReadMetadata_PDFMark5",
-            rawXml,
+            xmlMentah,
             endMarker,
             "[{vector_design_metadata_stream}",
             "<</Type /Metadata /Subtype /XML>>",
@@ -492,34 +510,58 @@ $bagKeywords
         title: String,
         description: String,
         keywords: List<String>,
-        creator: String
+        creator: String = ""
     ): ByteArray {
         try {
             val fileStr = String(originalBytes, StandardCharsets.UTF_8)
-            
-            if (title.isBlank() && description.isBlank() && keywords.isEmpty()) {
+            val metaTitle = title.trim()
+            val metaDesc = description.trim()
+            val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
+
+            if (metaTitle.isEmpty() && metaDesc.isEmpty() && cleanKeywords.isEmpty()) {
                 return originalBytes
             }
-            
-            val validKeywords = keywords.filter { it.isNotBlank() }
-            
-            val headerKomentarParams = mutableListOf("%ADO_ContainsXMP: MainFirst")
-            if (title.isNotBlank()) headerKomentarParams.add("%%Title: $title")
-            if (validKeywords.isNotEmpty()) headerKomentarParams.add("%%Keywords: ${validKeywords.joinToString(", ")}")
-            val headerKomentar = headerKomentarParams.joinToString("\n")
-            
-            val blokInjeksiAdobe = buildAdobeClientInjection(title, description, validKeywords)
-            var hasilEps = fileStr
-            
-            if (headerKomentar.isNotBlank()) {
-                hasilEps = hasilEps.replace(Regex("\\n%%EndComments"), "\n$headerKomentar\n%%EndComments")
+
+            // 1. Buat standard PostScript Header Komentar
+            val headerKomentarList = mutableListOf<String>()
+            headerKomentarList.add("%ADO_ContainsXMP: MainFirst")
+            if (metaTitle.isNotEmpty()) {
+                headerKomentarList.add("%%Title: $metaTitle")
             }
-            
-            hasilEps = hasilEps.replace(Regex("(%%EndComments\\s*)"), "$1\n$blokInjeksiAdobe")
-            
-            val XE_EMC_MARKER = "\n%%EndMetadata\n"
-            hasilEps = hasilEps.replace(Regex("\\nshowpage\\n%%EOF"), "\n${XE_EMC_MARKER}showpage\n%%EOF")
-            
+            if (cleanKeywords.isNotEmpty()) {
+                headerKomentarList.add("%%Keywords: ${cleanKeywords.joinToString(", ")}")
+            }
+            val headerKomentar = headerKomentarList.joinToString("\n")
+
+            // 2. Buat Blok Stream Adobe XML Injection
+            val blokInjeksiAdobe = bangunAdobeClientInjection(metaTitle, metaDesc, cleanKeywords)
+            var hasilEps = fileStr
+
+            // 3. Suntikkan %%Title & %%Keywords tepat sebelum %%EndComments di header berkas
+            if (headerKomentar.isNotEmpty()) {
+                val endCommentsRegex = Regex("(\\r?\\n%%EndComments)")
+                if (hasilEps.contains(endCommentsRegex)) {
+                    hasilEps = hasilEps.replace(endCommentsRegex, "\n$headerKomentar$1")
+                }
+            }
+
+            // 4. Suntikkan XML Adobe Stream tepat di bawah struktur %%EndComments
+            val endCommentsAndSpaceRegex = Regex("(%%EndComments\\s*)")
+            if (hasilEps.contains(endCommentsAndSpaceRegex)) {
+                hasilEps = hasilEps.replace(endCommentsAndSpaceRegex, "$1\n$blokInjeksiAdobe")
+            }
+
+            // 5. Kunci dengan marker penutup tepat sebelum perintah cetak showpage/EOF berkas
+            val showpageEofRegex = Regex("(\\r?\\nshowpage\\r?\\n%%EOF)")
+            if (hasilEps.contains(showpageEofRegex)) {
+                hasilEps = hasilEps.replace(showpageEofRegex, "\n%%EndMetadata\nshowpage\n%%EOF")
+            } else {
+                val showpageEofFallback = Regex("\\nshowpage\\n%%EOF")
+                if (hasilEps.contains(showpageEofFallback)) {
+                    hasilEps = hasilEps.replace(showpageEofFallback, "\n\n%%EndMetadata\nshowpage\n%%EOF")
+                }
+            }
+
             return hasilEps.toByteArray(StandardCharsets.UTF_8)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -531,25 +573,27 @@ $bagKeywords
         originalBytes: ByteArray,
         title: String,
         description: String,
-        keywords: List<String>,
-        creator: String
+        keywords: List<String>
     ): ByteArray {
         try {
             val fileStr = String(originalBytes, StandardCharsets.UTF_8)
-            val validKeywords = keywords.filter { it.isNotBlank() }
-            val xmlMetadata = generateAdobeXmpXml(title, description, validKeywords)
-            
+            val metaTitle = title.trim()
+            val metaDesc = description.trim()
+            val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
+
+            val xmlMetadata = bangunXmpXml(metaTitle, metaDesc, cleanKeywords)
             val bungkusMetadataSvg = "<metadata id=\"metadata-vector-engine\">\n$xmlMetadata\n</metadata>"
-            
-            val metadataRegex = Regex("<metadata[\\s\\S]*?<\\/metadata>")
-            if (metadataRegex.containsMatchIn(fileStr)) {
-                val newContent = fileStr.replaceFirst(metadataRegex, bungkusMetadataSvg)
-                return newContent.toByteArray(StandardCharsets.UTF_8)
+
+            var hasilSvg = fileStr
+            if (hasilSvg.contains("<metadata")) {
+                val metadataRegex = Regex("<metadata[\\s\\S]*?</metadata>")
+                hasilSvg = hasilSvg.replace(metadataRegex, bungkusMetadataSvg)
             } else {
-                val svgTagRegex = Regex("(<svg[^>]*>)")
-                val newContent = fileStr.replaceFirst(svgTagRegex, "$1\n$bungkusMetadataSvg")
-                return newContent.toByteArray(StandardCharsets.UTF_8)
+                val svgOpenTagRegex = Regex("(<svg[^>]*>)")
+                hasilSvg = hasilSvg.replace(svgOpenTagRegex, "$1\n$bungkusMetadataSvg")
             }
+
+            return hasilSvg.toByteArray(StandardCharsets.UTF_8)
         } catch (e: Exception) {
             e.printStackTrace()
             return originalBytes
