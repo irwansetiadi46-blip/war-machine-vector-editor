@@ -386,6 +386,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                         e.printStackTrace()
                                     }
                                 }
+                            } else if (isEps) {
+                                val base64Jpg = EpsRenderer.renderEpsToJpegBase64(context, originalBytes)
+                                if (base64Jpg != null) {
+                                    try {
+                                        val decoded = android.util.Base64.decode(base64Jpg, android.util.Base64.NO_WRAP)
+                                        val tempFile = java.io.File(context.cacheDir, "preview_eps_${System.currentTimeMillis()}_$nextId.jpg")
+                                        tempFile.writeBytes(decoded)
+                                        previewUri = Uri.fromFile(tempFile)
+                                        previewBytes = decoded
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
                             } else if (isPng || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg")) {
                                 previewUri = uri
                                 previewBytes = originalBytes
@@ -856,14 +869,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val req = if (imageItem.previewUri != null) {
             val isSvg = name.endsWith(".svg")
+            val isEps = name.endsWith(".eps")
             val mimeType = if (isSvg) "image/png" else if (name.endsWith(".png")) "image/png" else "image/jpeg"
             val base64Data = FileHelper.readBase64FromUri(context, imageItem.previewUri) ?: ""
             val concept = _promptConcept.value
             val conceptHint = if (concept.isNotBlank()) "User provided concept/hint: $concept\n" else ""
             
+            val assetType = if (isSvg) "SVG Vector graphic" else if (isEps) "EPS Vector graphic" else "Photo/Illustration"
+            
             val userPrompt = """
                 $conceptHint
-                Analyze this image and generate professional microstock metadata in JSON format according to system rules.
+                This image is a visual render of a $assetType.
+                Analyze this image and generate highly accurate, professional microstock metadata in JSON format according to system rules.
+                Include relevant microstock keywords (such as vector, illustration, graphic, design element, etc. if appropriate for the visual style).
             """.trimIndent()
 
             GeminiRequest(
