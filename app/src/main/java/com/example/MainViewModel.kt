@@ -27,7 +27,9 @@ data class ImageItem(
     val individualKeywords: String = "",
     val individualCreator: String = "",
     val isGeneratingMetadata: Boolean = false,
-    val isInjectingIndividual: Boolean = false
+    val isInjectingIndividual: Boolean = false,
+    val previewUri: Uri? = null,
+    val previewBytes: ByteArray? = null
 )
 
 data class GeneratedMetadata(
@@ -359,6 +361,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         var hasMeta = false
                         var meta: XmpData? = null
 
+                        var previewUri: Uri? = null
+                        var previewBytes: ByteArray? = null
+
                         if (originalBytes != null) {
                             val isPng = nameLower.endsWith(".png")
                             val isEps = nameLower.endsWith(".eps")
@@ -366,6 +371,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             meta = XmpInjector.parseXMP(originalBytes, isPng = isPng, isEps = isEps, isSvg = isSvg)
                             if (meta != null && (meta.title.isNotBlank() || meta.description.isNotBlank() || meta.keywords.isNotBlank() || meta.creator.isNotBlank())) {
                                 hasMeta = true
+                            }
+
+                            if (isSvg) {
+                                val base64Png = SvgRenderer.renderSvgToPngBase64(context, originalBytes)
+                                if (base64Png != null) {
+                                    try {
+                                        val decoded = android.util.Base64.decode(base64Png, android.util.Base64.NO_WRAP)
+                                        val tempFile = java.io.File(context.cacheDir, "preview_svg_${System.currentTimeMillis()}_$nextId.png")
+                                        tempFile.writeBytes(decoded)
+                                        previewUri = Uri.fromFile(tempFile)
+                                        previewBytes = decoded
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
+                            } else if (isPng || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg")) {
+                                previewUri = uri
+                                previewBytes = originalBytes
                             }
                         }
 
@@ -378,7 +401,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 injectedBytes = null,
                                 hasMetadata = hasMeta,
                                 isSelected = isAllMode,
-                                metadata = meta
+                                metadata = meta,
+                                previewUri = previewUri,
+                                previewBytes = previewBytes
                             )
                         )
                     }
@@ -829,7 +854,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
 
-        val req = if (name.endsWith(".svg")) {
+        val req = if (imageItem.previewUri != null) {
+            val isSvg = name.endsWith(".svg")
+            val mimeType = if (isSvg) "image/png" else if (name.endsWith(".png")) "image/png" else "image/jpeg"
+            val base64Data = FileHelper.readBase64FromUri(context, imageItem.previewUri) ?: ""
+            val concept = _promptConcept.value
+            val conceptHint = if (concept.isNotBlank()) "User provided concept/hint: $concept\n" else ""
+            
+            val userPrompt = """
+                $conceptHint
+                Analyze this image and generate professional microstock metadata in JSON format according to system rules.
+            """.trimIndent()
+
+            GeminiRequest(
+                contents = listOf(
+                    GeminiContent(
+                        parts = listOf(
+                            GeminiPart(text = "$systemPrompt\n\n$userPrompt"),
+                            GeminiPart(
+                                inlineData = GeminiInlineData(
+                                    mimeType = mimeType,
+                                    data = base64Data
+                                )
+                            )
+                        )
+                    )
+                ),
+                generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
+            )
+        } else if (name.endsWith(".svg")) {
             val bytes = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri) ?: ByteArray(0)
             val base64SvgPng = SvgRenderer.renderSvgToPngBase64(context, bytes)
             

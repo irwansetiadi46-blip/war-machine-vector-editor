@@ -865,7 +865,33 @@ fun MainScreen(
                                                     .border(BorderStroke(2.dp, borderColor), RoundedCornerShape(6.dp))
                                                     .clip(RoundedCornerShape(6.dp))
                                             ) {
-                                                if (isEps || isSvg) {
+                                                if (item.previewUri != null) {
+                                                    Box(modifier = Modifier.fillMaxSize()) {
+                                                        AsyncImage(
+                                                            model = item.previewUri,
+                                                            contentDescription = item.name,
+                                                            modifier = Modifier.fillMaxSize(),
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                        if (isSvg || isEps) {
+                                                            val badgeText = if (isEps) "EPS" else "SVG"
+                                                            val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
+                                                            Surface(
+                                                                color = badgeColor.copy(alpha = 0.85f),
+                                                                shape = RoundedCornerShape(bottomStart = 4.dp),
+                                                                modifier = Modifier.align(Alignment.TopEnd)
+                                                            ) {
+                                                                Text(
+                                                                    text = badgeText,
+                                                                    color = Color.White,
+                                                                    fontSize = 8.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                } else if (isEps || isSvg) {
                                                     val badgeText = if (isEps) "EPS VECTOR" else "SVG VECTOR"
                                                     val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
                                                     val iconTint = if (isEps) Color(0xFF818CF8) else Color(0xFF14B8A6)
