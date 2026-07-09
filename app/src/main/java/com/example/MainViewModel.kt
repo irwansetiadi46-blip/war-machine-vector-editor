@@ -829,12 +829,87 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
 
-        val req = if (name.endsWith(".eps") || name.endsWith(".svg")) {
+        val req = if (name.endsWith(".svg")) {
+            val bytes = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri) ?: ByteArray(0)
+            val base64SvgPng = SvgRenderer.renderSvgToPngBase64(context, bytes)
+            
+            val concept = _promptConcept.value
+            val conceptHint = if (concept.isNotBlank()) "User provided concept/hint: $concept\n" else ""
+            
+            val textContent = try {
+                val fullString = String(bytes, java.nio.charset.StandardCharsets.UTF_8)
+                if (fullString.length > 100000) {
+                    fullString.substring(0, 100000) + "\n...[truncated SVG content]..."
+                } else {
+                    fullString
+                }
+            } catch (e: Exception) {
+                ""
+            }
+
+            if (base64SvgPng != null) {
+                val userPromptSvg = """
+                    $conceptHint
+                    Analyze BOTH the provided visual image (which is a high-fidelity render of the SVG vector) AND the SVG source code.
+                    Inspect paths, colors, shapes, visual layout, and graphic style in the visual image. Cross-reference them with class names, label attributes, IDs, and path data in the SVG source code.
+                    Generate professional microstock metadata (Title, Description, and Keywords) that is perfectly accurate and highly relevant to the actual design, utility, visual themes, and colors of this vector asset.
+                    
+                    System Rules:
+                    $systemPrompt
+                    
+                    SVG Source Code for reference:
+                    ```xml
+                    $textContent
+                    ```
+                """.trimIndent()
+
+                GeminiRequest(
+                    contents = listOf(
+                        GeminiContent(
+                            parts = listOf(
+                                GeminiPart(text = userPromptSvg),
+                                GeminiPart(
+                                    inlineData = GeminiInlineData(
+                                        mimeType = "image/png",
+                                        data = base64SvgPng
+                                    )
+                                )
+                            )
+                        )
+                    ),
+                    generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
+                )
+            } else {
+                val userPromptSvgNoRender = """
+                    $conceptHint
+                    Analyze this SVG vector file code. Inspect metadata tags, labels, class names, path details, coordinates, and color properties inside the vector content. Deducing what visual concept, template style, interface mock, or illustrative graphic is defined in this vector, generate professional microstock metadata (Title, Description, and Keywords).
+                    
+                    System Rules:
+                    $systemPrompt
+                    
+                    SVG Code to analyze:
+                    ```xml
+                    $textContent
+                    ```
+                """.trimIndent()
+
+                GeminiRequest(
+                    contents = listOf(
+                        GeminiContent(
+                            parts = listOf(
+                                GeminiPart(text = userPromptSvgNoRender)
+                            )
+                        )
+                    ),
+                    generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
+                )
+            }
+        } else if (name.endsWith(".eps")) {
             val bytes = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri) ?: ByteArray(0)
             val textContent = try {
                 val fullString = String(bytes, java.nio.charset.StandardCharsets.UTF_8)
-                if (fullString.length > 250000) {
-                    fullString.substring(0, 250000) + "\n...[truncated vector content]..."
+                if (fullString.length > 200000) {
+                    fullString.substring(0, 200000) + "\n...[truncated vector content]..."
                 } else {
                     fullString
                 }
@@ -845,16 +920,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val concept = _promptConcept.value
             val conceptHint = if (concept.isNotBlank()) "User provided concept/hint: $concept\n" else ""
 
-            val fileTypeUpper = if (name.endsWith(".eps")) "EPS" else "SVG"
-            val userPromptVector = """
+            val userPromptEps = """
                 $conceptHint
-                Analyze this $fileTypeUpper vector file code. Inspect metadata tags, labels, class names, path details, coordinates, and color properties inside the vector content. Deducing what visual concept, template style, interface mock, or illustrative graphic is defined in this vector, generate professional microstock metadata (Title, Description, and Keywords).
-
+                Analyze this EPS (Encapsulated PostScript) vector file code. 
+                Inspect metadata tags, title headers, keywords, labels, creator notes, fonts, layer descriptions, coordinate structures, paths, shapes, transformations, and color operators (like CMYK/RGB fills and strokes).
+                Reconstruct the visual representation mentally from the paths, curves, color schemes, and structural layout defined in this PostScript vector code. 
+                Generate highly accurate, professional microstock metadata (Title, Description, and Keywords) that is perfectly relevant to the actual design, theme, and utility of the graphic.
+                
                 System Rules:
                 $systemPrompt
-
-                $fileTypeUpper Code to analyze:
-                ```xml
+                
+                EPS Code to analyze:
+                ```postscript
                 $textContent
                 ```
             """.trimIndent()
@@ -863,7 +940,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 contents = listOf(
                     GeminiContent(
                         parts = listOf(
-                            GeminiPart(text = userPromptVector)
+                            GeminiPart(text = userPromptEps)
                         )
                     )
                 ),

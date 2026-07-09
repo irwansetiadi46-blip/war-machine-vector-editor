@@ -439,7 +439,7 @@ object XmpInjector {
         return outputStream.toByteArray()
     }
 
-    fun bangunXmpXml(title: String, description: String, keywords: List<String>): String {
+    fun bangunXmpXml(title: String, description: String, keywords: List<String>, mimeType: String = "application/postscript"): String {
         val titleEsc = escapeXml(title.trim())
         val descEsc = escapeXml(description.trim())
         val bagKeywords = keywords
@@ -453,7 +453,7 @@ object XmpInjector {
       <rdf:Description rdf:about=""
             xmlns:dc="http://purl.org/dc/elements/1.1/"
             xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">
-         <dc:format>application/postscript</dc:format>
+         <dc:format>$mimeType</dc:format>
          <dc:title>
             <rdf:Alt>
                <rdf:li xml:lang="x-default">$titleEsc</rdf:li>
@@ -476,7 +476,15 @@ $bagKeywords
     }
 
     fun bangunAdobeClientInjection(title: String, description: String, keywords: List<String>): String {
-        val xmlMentah = bangunXmpXml(title, description, keywords)
+        val xmlMentah = bangunXmpXml(title, description, keywords, "application/postscript")
+        
+        // Wrap the XMP inside standard packet markers for Adobe and ExifTool scan compatibility
+        val xmpPacket = """
+            <?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+            $xmlMentah
+            <?xpacket end="w"?>
+        """.trimIndent()
+        
         val endMarker = "%  &&end XMP packet marker&&"
 
         return listOf(
@@ -492,7 +500,7 @@ $bagKeywords
             "[{vector_design_metadata_stream}",
             "currentfile 0 ($endMarker)",
             "/SubFileDecode filter AI11_ReadMetadata_PDFMark5",
-            xmlMentah,
+            xmpPacket,
             endMarker,
             "[{vector_design_metadata_stream}",
             "<</Type /Metadata /Subtype /XML>>",
@@ -522,14 +530,22 @@ $bagKeywords
                 return originalBytes
             }
 
-            // 1. Buat standard PostScript Header Komentar
+            // 1. Buat standard PostScript Header Komentar dengan redundansi maksimal untuk kompabilitas Microstock
             val headerKomentarList = mutableListOf<String>()
             headerKomentarList.add("%ADO_ContainsXMP: MainFirst")
             if (metaTitle.isNotEmpty()) {
                 headerKomentarList.add("%%Title: $metaTitle")
             }
+            if (metaDesc.isNotEmpty()) {
+                headerKomentarList.add("%Description: $metaDesc")
+                headerKomentarList.add("%%Description: $metaDesc")
+                headerKomentarList.add("%Caption: $metaDesc")
+                headerKomentarList.add("%%Caption: $metaDesc")
+            }
             if (cleanKeywords.isNotEmpty()) {
-                headerKomentarList.add("%%Keywords: ${cleanKeywords.joinToString(", ")}")
+                val kwStr = cleanKeywords.joinToString(", ")
+                headerKomentarList.add("%%Keywords: $kwStr")
+                headerKomentarList.add("%Keywords: $kwStr")
             }
             val headerKomentar = headerKomentarList.joinToString("\n")
 
@@ -537,7 +553,7 @@ $bagKeywords
             val blokInjeksiAdobe = bangunAdobeClientInjection(metaTitle, metaDesc, cleanKeywords)
             var hasilEps = fileStr
 
-            // 3. Suntikkan %%Title & %%Keywords tepat sebelum %%EndComments di header berkas
+            // 3. Suntikkan %%Title, Description & %%Keywords tepat sebelum %%EndComments di header berkas
             if (headerKomentar.isNotEmpty()) {
                 val endCommentsRegex = Regex("(\\r?\\n%%EndComments)")
                 if (hasilEps.contains(endCommentsRegex)) {
@@ -581,7 +597,7 @@ $bagKeywords
             val metaDesc = description.trim()
             val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
 
-            val xmlMetadata = bangunXmpXml(metaTitle, metaDesc, cleanKeywords)
+            val xmlMetadata = bangunXmpXml(metaTitle, metaDesc, cleanKeywords, "image/svg+xml")
             val bungkusMetadataSvg = "<metadata id=\"metadata-vector-engine\">\n$xmlMetadata\n</metadata>"
 
             var hasilSvg = fileStr
