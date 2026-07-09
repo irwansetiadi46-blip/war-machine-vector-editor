@@ -963,13 +963,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     writer.flush()
                     
                     val inputStream = context.contentResolver.openInputStream(imageItem.uri)
-                    val base64OutputStream = android.util.Base64OutputStream(sink.outputStream(), android.util.Base64.NO_WRAP)
                     
-                    inputStream?.use { input ->
-                        base64OutputStream.use { base64Output ->
-                            input.copyTo(base64Output)
+                    val noCloseOutputStream = object : java.io.FilterOutputStream(sink.outputStream()) {
+                        override fun close() {
+                            flush()
                         }
                     }
+                    
+                    val base64OutputStream = android.util.Base64OutputStream(noCloseOutputStream, android.util.Base64.NO_WRAP)
+                    
+                    inputStream?.use { input ->
+                        input.copyTo(base64OutputStream)
+                    }
+                    base64OutputStream.close()
                     
                     writer.write("\"}}]}]},\"generationConfig\":{\"responseMimeType\":\"application/json\"}}")
                     writer.flush()
