@@ -72,6 +72,28 @@ object SvgToEpsConverter {
                 vbHeight = artboardHeight
             }
 
+            // Ensure Microstock Artboard Compliance (minimum 500pt x 500pt, e.g. 1000pt scale for small viewports like 24x24)
+            if (hasViewBox) {
+                val maxVb = maxOf(vbWidth, vbHeight)
+                if (maxVb < 500f) {
+                    val microstockScale = 1000f / maxVb
+                    artboardWidth = vbWidth * microstockScale
+                    artboardHeight = vbHeight * microstockScale
+                } else {
+                    artboardWidth = vbWidth
+                    artboardHeight = vbHeight
+                }
+            } else {
+                val maxArt = maxOf(artboardWidth, artboardHeight)
+                if (maxArt < 500f) {
+                    val microstockScale = 1000f / maxArt
+                    artboardWidth *= microstockScale
+                    artboardHeight *= microstockScale
+                    vbWidth = artboardWidth
+                    vbHeight = artboardHeight
+                }
+            }
+
             val scaleX = artboardWidth / vbWidth
             val scaleY = artboardHeight / vbHeight
 
@@ -580,8 +602,8 @@ object SvgToEpsConverter {
                         val rx = tokenizer.nextNumber() ?: break
                         val ry = tokenizer.nextNumber() ?: break
                         val xAxisRotation = tokenizer.nextNumber() ?: break
-                        val largeArcFlag = tokenizer.nextNumber() ?: break
-                        val sweepFlag = tokenizer.nextNumber() ?: break
+                        val largeArcFlag = tokenizer.nextFlag() ?: break
+                        val sweepFlag = tokenizer.nextFlag() ?: break
                         val x = tokenizer.nextNumber() ?: break
                         val y = tokenizer.nextNumber() ?: break
 
@@ -805,6 +827,17 @@ object SvgToEpsConverter {
                 return null
             }
             return d.substring(start, pos).toFloatOrNull()
+        }
+
+        fun nextFlag(): Float? {
+            skipWhitespaceAndCommas()
+            if (pos >= len) return null
+            val c = d[pos]
+            if (c == '0' || c == '1') {
+                pos++
+                return if (c == '1') 1f else 0f
+            }
+            return nextNumber()
         }
 
         private fun skipWhitespaceAndCommas() {

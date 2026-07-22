@@ -1476,17 +1476,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
                             val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
 
-                            val base64Png = SvgRenderer.renderSvgToPngBase64(context, baseBytes)
-                            val jpgBytes = if (base64Png != null) {
-                                val decodedPng = android.util.Base64.decode(base64Png, android.util.Base64.NO_WRAP)
-                                val bitmap = android.graphics.BitmapFactory.decodeByteArray(decodedPng, 0, decodedPng.size)
-                                if (bitmap != null) {
-                                    val baos = ByteArrayOutputStream()
-                                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, baos)
-                                    val rawJpg = baos.toByteArray()
-                                    bitmap.recycle()
-                                    XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
-                                } else null
+                            val rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
+                            val jpgBytes = if (rawJpg != null) {
+                                XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
                             } else null
 
                             val zipMap = mutableMapOf<String, ByteArray>()
@@ -1568,17 +1560,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
                                 val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
 
-                                val base64Png = SvgRenderer.renderSvgToPngBase64(context, baseBytes)
-                                val jpgBytes = if (base64Png != null) {
-                                    val decodedPng = android.util.Base64.decode(base64Png, android.util.Base64.NO_WRAP)
-                                    val bitmap = android.graphics.BitmapFactory.decodeByteArray(decodedPng, 0, decodedPng.size)
-                                    if (bitmap != null) {
-                                        val baos = ByteArrayOutputStream()
-                                        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, baos)
-                                        val rawJpg = baos.toByteArray()
-                                        bitmap.recycle()
-                                        XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
-                                    } else null
+                                val rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
+                                val jpgBytes = if (rawJpg != null) {
+                                    XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
                                 } else null
 
                                 zipMap["$uniqueBaseName/$uniqueBaseName.svg"] = svgBytes

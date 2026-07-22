@@ -592,21 +592,54 @@ $bagKeywords
         keywords: List<String>
     ): ByteArray {
         try {
-            val fileStr = String(originalBytes, StandardCharsets.UTF_8)
             val metaTitle = title.trim()
             val metaDesc = description.trim()
             val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
 
-            val xmlMetadata = bangunXmpXml(metaTitle, metaDesc, cleanKeywords, "image/svg+xml")
-            val bungkusMetadataSvg = "<metadata id=\"metadata-vector-engine\">\n$xmlMetadata\n</metadata>"
+            if (metaTitle.isEmpty() && metaDesc.isEmpty() && cleanKeywords.isEmpty()) {
+                return originalBytes
+            }
+
+            val fileStr = String(originalBytes, StandardCharsets.UTF_8)
+            val titleEsc = escapeXml(metaTitle)
+            val descEsc = escapeXml(metaDesc)
+            val bagKeywords = cleanKeywords
+                .map { kw -> "          <rdf:li>${escapeXml(kw)}</rdf:li>" }
+                .joinToString("\n")
+
+            val svgRdfXml = """<metadata id="metadata-xmp">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+           xmlns:dc="http://purl.org/dc/elements/1.1/"
+           xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">
+    <rdf:Description rdf:about="">
+      <dc:format>image/svg+xml</dc:format>
+      <dc:title>
+        <rdf:Alt>
+          <rdf:li xml:lang="x-default">$titleEsc</rdf:li>
+        </rdf:Alt>
+      </dc:title>
+      <dc:description>
+        <rdf:Alt>
+          <rdf:li xml:lang="x-default">$descEsc</rdf:li>
+        </rdf:Alt>
+      </dc:description>
+      <dc:subject>
+        <rdf:Bag>
+$bagKeywords
+        </rdf:Bag>
+      </dc:subject>
+      <photoshop:Headline>$titleEsc</photoshop:Headline>
+    </rdf:Description>
+  </rdf:RDF>
+</metadata>"""
 
             var hasilSvg = fileStr
             if (hasilSvg.contains("<metadata")) {
                 val metadataRegex = Regex("<metadata[\\s\\S]*?</metadata>")
-                hasilSvg = hasilSvg.replace(metadataRegex, bungkusMetadataSvg)
+                hasilSvg = hasilSvg.replace(metadataRegex, svgRdfXml)
             } else {
                 val svgOpenTagRegex = Regex("(<svg[^>]*>)")
-                hasilSvg = hasilSvg.replace(svgOpenTagRegex, "$1\n$bungkusMetadataSvg")
+                hasilSvg = hasilSvg.replace(svgOpenTagRegex, "$1\n$svgRdfXml")
             }
 
             return hasilSvg.toByteArray(StandardCharsets.UTF_8)
