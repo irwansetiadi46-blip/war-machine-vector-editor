@@ -13,6 +13,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+import java.io.ByteArrayOutputStream
+
+enum class SvgExportFormat {
+    SVG,
+    EPS,
+    ZIP_SVG_EPS_JPG
+}
+
+data class SvgExportDialogState(
+    val isIndividual: Boolean,
+    val itemId: Int? = null,
+    val svgCount: Int = 1
+)
+
 data class ImageItem(
     val id: Int,
     val name: String,
@@ -123,6 +137,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _downloadStatusText = MutableStateFlow("")
     val downloadStatusText = _downloadStatusText.asStateFlow()
+
+    private val _svgExportDialogState = MutableStateFlow<SvgExportDialogState?>(null)
+    val svgExportDialogState = _svgExportDialogState.asStateFlow()
 
     private val _isOfflineMode = MutableStateFlow(false)
     val isOfflineMode = _isOfflineMode.asStateFlow()
@@ -1372,8 +1389,133 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- ZIP and Download ---
-    fun downloadInjectedFiles() {
+    // --- SVG Export Dialog Trigger & Handlers ---
+    fun showSvgExportDialogForIndividual(id: Int) {
+        val item = _imagesList.value.find { it.id == id } ?: return
+        if (item.name.endsWith(".svg", ignoreCase = true)) {
+            _svgExportDialogState.value = SvgExportDialogState(isIndividual = true, itemId = id, svgCount = 1)
+        } else {
+            downloadIndividualFile(id)
+        }
+    }
+
+    fun showSvgExportDialogForBulk() {
+        val selected = _imagesList.value.filter { it.isSelected }
+        if (selected.isEmpty()) {
+            _toastFlow.value = "Pilih gambar yang ingin didownload!"
+            return
+        }
+        val svgCount = selected.count { it.name.endsWith(".svg", ignoreCase = true) }
+        if (svgCount > 0) {
+            _svgExportDialogState.value = SvgExportDialogState(isIndividual = false, svgCount = svgCount)
+        } else {
+            downloadInjectedFiles()
+        }
+    }
+
+    fun dismissSvgExportDialog() {
+        _svgExportDialogState.value = null
+    }
+
+    fun confirmSvgExportFormat(format: SvgExportFormat) {
+        val dialogState = _svgExportDialogState.value ?: return
+        _svgExportDialogState.value = null
+        if (dialogState.isIndividual) {
+            val itemId = dialogState.itemId ?: return
+            downloadIndividualFileWithFormat(itemId, format)
+        } else {
+            downloadInjectedFilesWithFormat(format)
+        }
+    }
+
+    fun downloadIndividualFileWithFormat(id: Int, format: SvgExportFormat) {
+        val item = _imagesList.value.find { it.id == id } ?: return
+
+        viewModelScope.launch {
+            _toastFlow.value = "Memproses dan menyimpan..."
+            _isDownloading.value = true
+            _isGlobalProcessing.value = true
+            _globalProcessingText.value = "Processing Export..."
+
+            try {
+                val baseBytes = item.injectedBytes ?: item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
+                if (baseBytes == null) {
+                    _toastFlow.value = "Byte file tidak valid."
+                    return@launch
+                }
+
+                val metaTitle = item.metadata?.title?.trim() ?: ""
+                val metaDesc = item.metadata?.description?.trim() ?: ""
+                val metaKeywordsStr = item.metadata?.keywords ?: ""
+                val keywordsList = metaKeywordsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                val metaCreator = item.metadata?.creator?.trim() ?: ""
+
+                val dotIndex = item.name.lastIndexOf('.')
+                val baseNameRaw = if (dotIndex != -1) item.name.substring(0, dotIndex) else item.name
+
+                var sanitizedTitle = ""
+                if (metaTitle.isNotEmpty()) {
+                    sanitizedTitle = metaTitle.replace(Regex("[\\\\/:*?\"<>|]"), "").replace(Regex("\\s+"), "-").lowercase()
+                    if (sanitizedTitle.length > 50) sanitizedTitle = sanitizedTitle.substring(0, 50).trimEnd('-')
+                }
+                val baseName = if (sanitizedTitle.isNotEmpty()) sanitizedTitle else baseNameRaw
+
+                withContext(Dispatchers.IO) {
+                    when (format) {
+                        SvgExportFormat.SVG -> {
+                            val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
+                            val fileName = "$baseName.svg"
+                            FileHelper.saveToDownloads(context, fileName, "image/svg+xml", svgBytes)
+                        }
+                        SvgExportFormat.EPS -> {
+                            val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
+                            val fileName = "$baseName.eps"
+                            FileHelper.saveToDownloads(context, fileName, "application/postscript", epsBytes)
+                        }
+                        SvgExportFormat.ZIP_SVG_EPS_JPG -> {
+                            val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
+                            val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
+
+                            val base64Png = SvgRenderer.renderSvgToPngBase64(context, baseBytes)
+                            val jpgBytes = if (base64Png != null) {
+                                val decodedPng = android.util.Base64.decode(base64Png, android.util.Base64.NO_WRAP)
+                                val bitmap = android.graphics.BitmapFactory.decodeByteArray(decodedPng, 0, decodedPng.size)
+                                if (bitmap != null) {
+                                    val baos = ByteArrayOutputStream()
+                                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, baos)
+                                    val rawJpg = baos.toByteArray()
+                                    bitmap.recycle()
+                                    XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
+                                } else null
+                            } else null
+
+                            val zipMap = mutableMapOf<String, ByteArray>()
+                            zipMap["$baseName.svg"] = svgBytes
+                            zipMap["$baseName.eps"] = epsBytes
+                            if (jpgBytes != null) {
+                                zipMap["$baseName.jpg"] = jpgBytes
+                            }
+
+                            val zipBytes = FileHelper.createZipOfBytes(zipMap)
+                            val zipName = "${baseName}_bundle.zip"
+                            FileHelper.saveToDownloads(context, zipName, "application/zip", zipBytes)
+                        }
+                    }
+                }
+
+                _toastFlow.value = "File berhasil disimpan ke folder Download/WarMachineHybrid"
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _toastFlow.value = "Gagal menyimpan file: ${e.message}"
+            } finally {
+                _isGlobalProcessing.value = false
+                _globalProcessingText.value = ""
+                _isDownloading.value = false
+            }
+        }
+    }
+
+    fun downloadInjectedFilesWithFormat(format: SvgExportFormat) {
         val selected = _imagesList.value.filter { it.isSelected }
         if (selected.isEmpty()) {
             _toastFlow.value = "Pilih gambar yang ingin didownload!"
@@ -1390,65 +1532,141 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 var completed = 0
                 val usedNames = mutableSetOf<String>()
 
-                for (item in selected) {
-                    _globalProcessingText.value = "Processing Download...($completed/$total)"
-                    val bytesToSave = item.injectedBytes ?: item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
-                    if (bytesToSave != null) {
-                        val ext: String
-                        val dotIndex = item.name.lastIndexOf('.')
-                        if (dotIndex != -1) {
-                            ext = item.name.substring(dotIndex)
-                        } else {
-                            ext = when {
-                                item.name.endsWith("png", true) -> ".png"
-                                item.name.endsWith("eps", true) -> ".eps"
-                                item.name.endsWith("svg", true) -> ".svg"
-                                else -> ".jpg"
+                if (format == SvgExportFormat.ZIP_SVG_EPS_JPG) {
+                    val zipMap = mutableMapOf<String, ByteArray>()
+
+                    for (item in selected) {
+                        _globalProcessingText.value = "Processing Zip...($completed/$total)"
+                        val baseBytes = item.injectedBytes ?: item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
+                        if (baseBytes != null) {
+                            val isSvg = item.name.endsWith(".svg", ignoreCase = true)
+                            val metaTitle = item.metadata?.title?.trim() ?: ""
+                            val metaDesc = item.metadata?.description?.trim() ?: ""
+                            val metaKeywordsStr = item.metadata?.keywords ?: ""
+                            val keywordsList = metaKeywordsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                            val metaCreator = item.metadata?.creator?.trim() ?: ""
+
+                            val dotIndex = item.name.lastIndexOf('.')
+                            val baseNameRaw = if (dotIndex != -1) item.name.substring(0, dotIndex) else item.name
+
+                            var sanitizedTitle = ""
+                            if (metaTitle.isNotEmpty()) {
+                                sanitizedTitle = metaTitle.replace(Regex("[\\\\/:*?\"<>|]"), "").replace(Regex("\\s+"), "-").lowercase()
+                                if (sanitizedTitle.length > 50) sanitizedTitle = sanitizedTitle.substring(0, 50).trimEnd('-')
                             }
-                        }
+                            val baseName = if (sanitizedTitle.isNotEmpty()) sanitizedTitle else baseNameRaw
 
-                        var finalName = ""
-                        val metaTitle = item.metadata?.title?.trim()
-                        if (!metaTitle.isNullOrEmpty()) {
-                            var sanitized = metaTitle.replace(Regex("[\\\\/:*?\"<>|]"), "")
-                            sanitized = sanitized.replace(Regex("\\s+"), "-").lowercase()
-                            if (sanitized.length > 50) sanitized = sanitized.substring(0, 50)
-                            sanitized = sanitized.trimEnd('-')
-                            if (sanitized.isNotEmpty()) finalName = "$sanitized$ext"
-                        }
-                        
-                        if (finalName.isEmpty()) {
-                            val baseName = if (dotIndex != -1) item.name.substring(0, dotIndex) else item.name
-                            finalName = "$baseName$ext"
-                        }
-                        
-                        var uniqueName = finalName
-                        var counter = 1
-                        val nameWithoutExt = finalName.substringBeforeLast(".")
-                        val extension = if (finalName.contains(".")) ".${finalName.substringAfterLast(".")}" else ""
-                        while (usedNames.contains(uniqueName)) {
-                            uniqueName = "$nameWithoutExt-$counter$extension"
-                            counter++
-                        }
-                        usedNames.add(uniqueName)
+                            var uniqueBaseName = baseName
+                            var counter = 1
+                            while (usedNames.contains(uniqueBaseName)) {
+                                uniqueBaseName = "$baseName-$counter"
+                                counter++
+                            }
+                            usedNames.add(uniqueBaseName)
 
-                        withContext(Dispatchers.IO) {
-                            try {
-                                val keyLower = uniqueName.lowercase()
-                                val mimeType = when {
-                                    keyLower.endsWith(".png") -> "image/png"
-                                    keyLower.endsWith(".eps") -> "application/postscript"
-                                    keyLower.endsWith(".svg") -> "image/svg+xml"
-                                    else -> "image/jpeg"
+                            if (isSvg) {
+                                val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
+                                val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
+
+                                val base64Png = SvgRenderer.renderSvgToPngBase64(context, baseBytes)
+                                val jpgBytes = if (base64Png != null) {
+                                    val decodedPng = android.util.Base64.decode(base64Png, android.util.Base64.NO_WRAP)
+                                    val bitmap = android.graphics.BitmapFactory.decodeByteArray(decodedPng, 0, decodedPng.size)
+                                    if (bitmap != null) {
+                                        val baos = ByteArrayOutputStream()
+                                        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, baos)
+                                        val rawJpg = baos.toByteArray()
+                                        bitmap.recycle()
+                                        XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
+                                    } else null
+                                } else null
+
+                                zipMap["$uniqueBaseName/$uniqueBaseName.svg"] = svgBytes
+                                zipMap["$uniqueBaseName/$uniqueBaseName.eps"] = epsBytes
+                                if (jpgBytes != null) {
+                                    zipMap["$uniqueBaseName/$uniqueBaseName.jpg"] = jpgBytes
                                 }
-                                FileHelper.saveToDownloads(context, uniqueName, mimeType, bytesToSave)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
+                            } else {
+                                val ext = if (dotIndex != -1) item.name.substring(dotIndex) else ".jpg"
+                                zipMap["$uniqueBaseName$ext"] = baseBytes
                             }
                         }
+                        completed++
                     }
-                    completed++
-                    _globalProcessingText.value = "Processing Download...($completed/$total)"
+
+                    _globalProcessingText.value = "Creating Master Zip Archive..."
+                    val zipBytes = withContext(Dispatchers.IO) { FileHelper.createZipOfBytes(zipMap) }
+                    val masterZipName = "WarMachine_SVG_Bundle_${System.currentTimeMillis()}.zip"
+                    withContext(Dispatchers.IO) {
+                        FileHelper.saveToDownloads(context, masterZipName, "application/zip", zipBytes)
+                    }
+
+                } else {
+                    for (item in selected) {
+                        _globalProcessingText.value = "Processing Download...($completed/$total)"
+                        val baseBytes = item.injectedBytes ?: item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
+                        if (baseBytes != null) {
+                            val isSvg = item.name.endsWith(".svg", ignoreCase = true)
+                            val metaTitle = item.metadata?.title?.trim() ?: ""
+                            val metaDesc = item.metadata?.description?.trim() ?: ""
+                            val metaKeywordsStr = item.metadata?.keywords ?: ""
+                            val keywordsList = metaKeywordsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                            val metaCreator = item.metadata?.creator?.trim() ?: ""
+
+                            val dotIndex = item.name.lastIndexOf('.')
+                            val baseNameRaw = if (dotIndex != -1) item.name.substring(0, dotIndex) else item.name
+
+                            var sanitizedTitle = ""
+                            if (metaTitle.isNotEmpty()) {
+                                sanitizedTitle = metaTitle.replace(Regex("[\\\\/:*?\"<>|]"), "").replace(Regex("\\s+"), "-").lowercase()
+                                if (sanitizedTitle.length > 50) sanitizedTitle = sanitizedTitle.substring(0, 50).trimEnd('-')
+                            }
+                            val baseName = if (sanitizedTitle.isNotEmpty()) sanitizedTitle else baseNameRaw
+
+                            withContext(Dispatchers.IO) {
+                                if (isSvg) {
+                                    if (format == SvgExportFormat.EPS) {
+                                        val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
+                                        var uniqueName = "$baseName.eps"
+                                        var counter = 1
+                                        while (usedNames.contains(uniqueName)) {
+                                            uniqueName = "$baseName-$counter.eps"
+                                            counter++
+                                        }
+                                        usedNames.add(uniqueName)
+                                        FileHelper.saveToDownloads(context, uniqueName, "application/postscript", epsBytes)
+                                    } else {
+                                        val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
+                                        var uniqueName = "$baseName.svg"
+                                        var counter = 1
+                                        while (usedNames.contains(uniqueName)) {
+                                            uniqueName = "$baseName-$counter.svg"
+                                            counter++
+                                        }
+                                        usedNames.add(uniqueName)
+                                        FileHelper.saveToDownloads(context, uniqueName, "image/svg+xml", svgBytes)
+                                    }
+                                } else {
+                                    val ext = if (dotIndex != -1) item.name.substring(dotIndex) else ".jpg"
+                                    var uniqueName = "$baseName$ext"
+                                    var counter = 1
+                                    while (usedNames.contains(uniqueName)) {
+                                        uniqueName = "$baseName-$counter$ext"
+                                        counter++
+                                    }
+                                    usedNames.add(uniqueName)
+
+                                    val mimeType = when {
+                                        ext.endsWith(".png", true) -> "image/png"
+                                        ext.endsWith(".eps", true) -> "application/postscript"
+                                        else -> "image/jpeg"
+                                    }
+                                    FileHelper.saveToDownloads(context, uniqueName, mimeType, baseBytes)
+                                }
+                            }
+                        }
+                        completed++
+                    }
                 }
 
                 _downloadStatusText.value = "DOWNLOAD DONE"
@@ -1461,7 +1679,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 _isGlobalProcessing.value = false
                 _globalProcessingText.value = ""
-                // Keep the success text for 3 seconds, then clear it
                 kotlinx.coroutines.delay(3000)
                 _downloadStatusText.value = ""
                 _isDownloading.value = false
@@ -1469,68 +1686,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // --- ZIP and Download ---
+    fun downloadInjectedFiles() {
+        showSvgExportDialogForBulk()
+    }
+
     fun downloadIndividualFile(id: Int) {
-        val item = _imagesList.value.find { it.id == id }
-        if (item == null) {
-            _toastFlow.value = "Gambar tidak ditemukan!"
-            return
-        }
-        
-        viewModelScope.launch {
-            _toastFlow.value = "Menyimpan gambar..."
-            val bytesToSave = item.injectedBytes ?: item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
-            if (bytesToSave != null) {
-                val ext: String
-                val dotIndex = item.name.lastIndexOf('.')
-                if (dotIndex != -1) {
-                    ext = item.name.substring(dotIndex)
-                } else {
-                    ext = when {
-                        item.name.endsWith("png", true) -> ".png"
-                        item.name.endsWith("eps", true) -> ".eps"
-                        item.name.endsWith("svg", true) -> ".svg"
-                        else -> ".jpg"
-                    }
-                }
-                
-                var finalName = ""
-                val metaTitle = item.metadata?.title?.trim()
-                if (!metaTitle.isNullOrEmpty()) {
-                    var sanitized = metaTitle.replace(Regex("[\\\\/:*?\"<>|]"), "")
-                    sanitized = sanitized.replace(Regex("\\s+"), "-").lowercase()
-                    if (sanitized.length > 50) sanitized = sanitized.substring(0, 50)
-                    sanitized = sanitized.trimEnd('-')
-                    if (sanitized.isNotEmpty()) finalName = "$sanitized$ext"
-                }
-                if (finalName.isEmpty()) {
-                    val baseName = if (dotIndex != -1) item.name.substring(0, dotIndex) else item.name
-                    finalName = "$baseName$ext"
-                }
-                
-                val hasSucceeded = withContext(Dispatchers.IO) {
-                    try {
-                        val keyLower = finalName.lowercase()
-                        val mimeType = when {
-                            keyLower.endsWith(".png") -> "image/png"
-                            keyLower.endsWith(".eps") -> "application/postscript"
-                            keyLower.endsWith(".svg") -> "image/svg+xml"
-                            else -> "image/jpeg"
-                        }
-                        val savedUri = FileHelper.saveToDownloads(context, finalName, mimeType, bytesToSave)
-                        savedUri != null
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        false
-                    }
-                }
-                if (hasSucceeded) {
-                    _toastFlow.value = "File berhasil disimpan ke folder Download/WarMachineHybrid"
-                } else {
-                    _toastFlow.value = "Gagal menyimpan file."
-                }
-            } else {
-                _toastFlow.value = "Byte file tidak valid."
-            }
-        }
+        showSvgExportDialogForIndividual(id)
     }
 }

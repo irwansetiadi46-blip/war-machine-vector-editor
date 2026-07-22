@@ -17,6 +17,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.window.Dialog
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
@@ -141,6 +142,7 @@ fun MainScreen(
     val isGlobalProcessing by viewModel.isGlobalProcessing.collectAsStateWithLifecycle()
     val globalProcessingText by viewModel.globalProcessingText.collectAsStateWithLifecycle()
     val toastMessage by viewModel.toastFlow.collectAsStateWithLifecycle()
+    val svgExportDialogState by viewModel.svgExportDialogState.collectAsStateWithLifecycle()
     var showPrivacyPolicy by remember { mutableStateOf(false) }
 
     val titleCharLimit by viewModel.titleCharLimit.collectAsStateWithLifecycle()
@@ -224,6 +226,14 @@ fun MainScreen(
     BoxWithConstraints(modifier = modifier.pointerInput(Unit) {
         detectTapGestures(onTap = { focusManager.clearFocus() })
     }) {
+        svgExportDialogState?.let { state ->
+            SvgExportDialog(
+                state = state,
+                onDismiss = { viewModel.dismissSvgExportDialog() },
+                onConfirm = { format -> viewModel.confirmSvgExportFormat(format) }
+            )
+        }
+
         val screenHeight = constraints.maxHeight.toFloat()
         Column(
             modifier = Modifier
@@ -1663,7 +1673,7 @@ fun MainScreen(
                     }
                 )
                 Text(
-                    text = " • war machine hybrid app version 1.9",
+                    text = " • war machine hybrid app version 2.0.0",
                     fontSize = 9.sp,
                     color = Color.White.copy(alpha = 0.9f),
                     fontStyle = FontStyle.Italic
@@ -2140,5 +2150,159 @@ fun PrivacyPolicySection(
             fontWeight = FontWeight.Bold
         )
         content()
+    }
+}
+
+@Composable
+fun SvgExportDialog(
+    state: SvgExportDialogState,
+    onDismiss: () -> Unit,
+    onConfirm: (SvgExportFormat) -> Unit
+) {
+    var selectedFormat by remember { mutableStateOf(SvgExportFormat.SVG) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF1E293B),
+            border = BorderStroke(1.5.dp, Color(0xFF00A8FF)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Start,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color(0xFF00A8FF).copy(alpha = 0.2f), RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Code,
+                            contentDescription = null,
+                            tint = Color(0xFF00A8FF),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Save As - Format Export SVG",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        Text(
+                            text = if (state.isIndividual) "Pilih format export untuk file SVG:" else "Ditemukan ${state.svgCount} file SVG. Pilih format export:",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Options List
+                val options = listOf(
+                    Triple(
+                        SvgExportFormat.SVG,
+                        "Svg",
+                        "File Vector SVG (.svg) dengan Metadata XMP"
+                    ),
+                    Triple(
+                        SvgExportFormat.EPS,
+                        "Eps",
+                        "Convert Vector EPS (.eps) untuk Microstock dengan Metadata"
+                    ),
+                    Triple(
+                        SvgExportFormat.ZIP_SVG_EPS_JPG,
+                        "Zip (Svg+Eps+Jpg)",
+                        "Bundel Lengkap Microstock (.svg + .eps + .jpg) dengan Metadata"
+                    )
+                )
+
+                options.forEach { (format, title, description) ->
+                    val isSelected = selectedFormat == format
+                    val borderColor = if (isSelected) Color(0xFF00A8FF) else Color(0xFF334155)
+                    val bgColor = if (isSelected) Color(0xFF00A8FF).copy(alpha = 0.15f) else Color(0xFF0F172A)
+
+                    Surface(
+                        onClick = { selectedFormat = format },
+                        shape = RoundedCornerShape(10.dp),
+                        color = bgColor,
+                        border = BorderStroke(1.5.dp, borderColor),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(12.dp)
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { selectedFormat = format },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = Color(0xFF00A8FF),
+                                    unselectedColor = Color(0xFF64748B)
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = title,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = description,
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF94A3B8))
+                    ) {
+                        Text("Batal", fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = { onConfirm(selectedFormat) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A8FF)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Download", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 }
