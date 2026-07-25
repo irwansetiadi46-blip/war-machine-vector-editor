@@ -49,6 +49,31 @@ object SvgRenderer {
     suspend fun renderSvgToHighResJpgBytes(context: Context, svgBytes: ByteArray, targetLongEdge: Int = 4000): ByteArray? {
         return withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { continuation ->
+                var webView: WebView? = null
+                var isResumed = false
+
+                fun cleanupAndResume(result: ByteArray?) {
+                    if (!isResumed) {
+                        isResumed = true
+                        try {
+                            webView?.stopLoading()
+                            webView?.destroy()
+                            webView = null
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        if (continuation.isActive) {
+                            continuation.resume(result)
+                        }
+                    }
+                }
+
+                val timeoutHandler = Handler(Looper.getMainLooper())
+                val timeoutRunnable = Runnable {
+                    cleanupAndResume(null)
+                }
+                timeoutHandler.postDelayed(timeoutRunnable, 6000)
+
                 try {
                     val aspectRatio = getSvgAspectRatio(svgBytes)
                     val (targetWidth, targetHeight) = if (aspectRatio >= 1.0f) {
@@ -57,16 +82,17 @@ object SvgRenderer {
                         Pair((targetLongEdge * aspectRatio).toInt().coerceAtLeast(100), targetLongEdge)
                     }
 
-                    val webView = WebView(context)
-                    webView.isVerticalScrollBarEnabled = false
-                    webView.isHorizontalScrollBarEnabled = false
+                    val view = WebView(context)
+                    webView = view
+                    view.isVerticalScrollBarEnabled = false
+                    view.isHorizontalScrollBarEnabled = false
 
-                    val settings = webView.settings
+                    val settings = view.settings
                     settings.javaScriptEnabled = false
                     settings.useWideViewPort = true
                     settings.loadWithOverviewMode = true
 
-                    webView.layout(0, 0, targetWidth, targetHeight)
+                    view.layout(0, 0, targetWidth, targetHeight)
 
                     val svgBase64 = android.util.Base64.encodeToString(svgBytes, android.util.Base64.NO_WRAP)
                     val html = """
@@ -95,33 +121,61 @@ object SvgRenderer {
                         </html>
                     """.trimIndent()
 
-                    webView.webViewClient = object : WebViewClient() {
-                        override fun onPageFinished(view: WebView?, url: String?) {
+                    view.webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(v: WebView?, url: String?) {
                             Handler(Looper.getMainLooper()).postDelayed({
+                                timeoutHandler.removeCallbacks(timeoutRunnable)
                                 try {
-                                    val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+                                    var bitmap: Bitmap? = try {
+                                        Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+                                    } catch (oom: Throwable) {
+                                        System.gc()
+                                        try {
+                                            val fallbackEdge = 2500
+                                            val (fw, fh) = if (aspectRatio >= 1.0f) {
+                                                Pair(fallbackEdge, (fallbackEdge / aspectRatio).toInt().coerceAtLeast(100))
+                                            } else {
+                                                Pair((fallbackEdge * aspectRatio).toInt().coerceAtLeast(100), fallbackEdge)
+                                            }
+                                            Bitmap.createBitmap(fw, fh, Bitmap.Config.ARGB_8888)
+                                        } catch (_: Throwable) {
+                                            null
+                                        }
+                                    }
+
+                                    if (bitmap == null) {
+                                        cleanupAndResume(null)
+                                        return@postDelayed
+                                    }
+
                                     val canvas = Canvas(bitmap)
                                     canvas.drawColor(Color.WHITE)
-                                    webView.draw(canvas)
+                                    v?.draw(canvas)
 
                                     val outputStream = ByteArrayOutputStream()
-                                    bitmap.compress(Bitmap.CompressFormat.JPEG, 95, outputStream)
+                                    bitmap.compress(Bitmap.CompressFormat.JPEG, 92, outputStream)
                                     val rawJpgBytes = outputStream.toByteArray()
 
                                     bitmap.recycle()
-                                    continuation.resume(rawJpgBytes)
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                    continuation.resume(null)
+                                    cleanupAndResume(rawJpgBytes)
+                                } catch (t: Throwable) {
+                                    t.printStackTrace()
+                                    cleanupAndResume(null)
                                 }
                             }, 200)
                         }
                     }
 
-                    webView.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "utf-8", null)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    continuation.resume(null)
+                    view.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "utf-8", null)
+
+                    continuation.invokeOnCancellation {
+                        timeoutHandler.removeCallbacks(timeoutRunnable)
+                        cleanupAndResume(null)
+                    }
+                } catch (t: Throwable) {
+                    t.printStackTrace()
+                    timeoutHandler.removeCallbacks(timeoutRunnable)
+                    cleanupAndResume(null)
                 }
             }
         }
@@ -130,18 +184,44 @@ object SvgRenderer {
     suspend fun renderSvgToPngBase64(context: Context, svgBytes: ByteArray): String? {
         return withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { continuation ->
+                var webView: WebView? = null
+                var isResumed = false
+
+                fun cleanupAndResume(result: String?) {
+                    if (!isResumed) {
+                        isResumed = true
+                        try {
+                            webView?.stopLoading()
+                            webView?.destroy()
+                            webView = null
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        if (continuation.isActive) {
+                            continuation.resume(result)
+                        }
+                    }
+                }
+
+                val timeoutHandler = Handler(Looper.getMainLooper())
+                val timeoutRunnable = Runnable {
+                    cleanupAndResume(null)
+                }
+                timeoutHandler.postDelayed(timeoutRunnable, 5000)
+
                 try {
-                    val webView = WebView(context)
-                    webView.isVerticalScrollBarEnabled = false
-                    webView.isHorizontalScrollBarEnabled = false
+                    val view = WebView(context)
+                    webView = view
+                    view.isVerticalScrollBarEnabled = false
+                    view.isHorizontalScrollBarEnabled = false
                     
-                    val settings = webView.settings
+                    val settings = view.settings
                     settings.javaScriptEnabled = false
                     settings.useWideViewPort = true
                     settings.loadWithOverviewMode = true
                     
                     val size = 512
-                    webView.layout(0, 0, size, size)
+                    view.layout(0, 0, size, size)
 
                     val svgBase64 = android.util.Base64.encodeToString(svgBytes, android.util.Base64.NO_WRAP)
                     val html = """
@@ -169,13 +249,14 @@ object SvgRenderer {
                         </html>
                     """.trimIndent()
 
-                    webView.webViewClient = object : WebViewClient() {
-                        override fun onPageFinished(view: WebView?, url: String?) {
+                    view.webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(v: WebView?, url: String?) {
                             Handler(Looper.getMainLooper()).postDelayed({
+                                timeoutHandler.removeCallbacks(timeoutRunnable)
                                 try {
                                     val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
                                     val canvas = Canvas(bitmap)
-                                    webView.draw(canvas)
+                                    v?.draw(canvas)
                                     
                                     val outputStream = ByteArrayOutputStream()
                                     bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
@@ -183,22 +264,29 @@ object SvgRenderer {
                                     val base64String = android.util.Base64.encodeToString(pngBytes, android.util.Base64.NO_WRAP)
                                     
                                     bitmap.recycle()
-                                    continuation.resume(base64String)
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                    continuation.resume(null)
+                                    cleanupAndResume(base64String)
+                                } catch (t: Throwable) {
+                                    t.printStackTrace()
+                                    cleanupAndResume(null)
                                 }
                             }, 150)
                         }
                     }
 
-                    webView.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "utf-8", null)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    continuation.resume(null)
+                    view.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "utf-8", null)
+
+                    continuation.invokeOnCancellation {
+                        timeoutHandler.removeCallbacks(timeoutRunnable)
+                        cleanupAndResume(null)
+                    }
+                } catch (t: Throwable) {
+                    t.printStackTrace()
+                    timeoutHandler.removeCallbacks(timeoutRunnable)
+                    cleanupAndResume(null)
                 }
             }
         }
     }
 }
+
 

@@ -77,10 +77,14 @@ object FileHelper {
         return baos.toByteArray()
     }
 
-    fun saveToDownloads(context: Context, fileName: String, mimeType: String, bytes: ByteArray): Uri? {
+    suspend fun saveStreamToDownloads(
+        context: Context,
+        fileName: String,
+        mimeType: String,
+        writer: suspend (java.io.OutputStream) -> Unit
+    ): Uri? {
         val resolver = context.contentResolver
-        
-        // Ensure path/extension correctness
+
         val cleanFileName = if (!fileName.contains(".")) {
             if (mimeType == "application/zip") "$fileName.zip" else "$fileName.jpg"
         } else {
@@ -96,10 +100,7 @@ object FileHelper {
             }
         }
 
-        val collectionUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            MediaStore.Downloads.EXTERNAL_CONTENT_URI
-        } else {
-            // Android 9 and below
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             val dir = File(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                 "WarMachineHybrid"
@@ -108,42 +109,47 @@ object FileHelper {
                 dir.mkdirs()
             }
             val file = File(dir, cleanFileName)
-            try {
-                file.writeBytes(bytes)
-                // Register in MediaStore
+            return try {
+                file.outputStream().buffered().use { out ->
+                    writer(out)
+                }
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DATA, file.absolutePath)
                     put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                 }
                 resolver.insert(MediaStore.Files.getContentUri("external"), values)
+                Uri.fromFile(file)
             } catch (e: Exception) {
                 e.printStackTrace()
-                return null
+                null
             }
-            return Uri.fromFile(file)
         }
 
+        val collectionUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
         val itemUri = resolver.insert(collectionUri, contentValues)
         if (itemUri != null) {
             try {
                 resolver.openOutputStream(itemUri)?.use { out ->
-                    out.write(bytes)
+                    writer(out)
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    contentValues.clear()
-                    contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    resolver.update(itemUri, contentValues, null, null)
-                }
+                contentValues.clear()
+                contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(itemUri, contentValues, null, null)
             } catch (e: Exception) {
                 e.printStackTrace()
                 try {
                     resolver.delete(itemUri, null, null)
-                } catch (delEx: Exception) {
-                    // Ignore
-                }
+                } catch (_: Exception) {}
                 return null
             }
         }
         return itemUri
     }
+
+    suspend fun saveToDownloads(context: Context, fileName: String, mimeType: String, bytes: ByteArray): Uri? {
+        return saveStreamToDownloads(context, fileName, mimeType) { out ->
+            out.write(bytes)
+        }
+    }
 }
+
