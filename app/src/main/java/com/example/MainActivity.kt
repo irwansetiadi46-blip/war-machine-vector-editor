@@ -876,12 +876,17 @@ fun MainScreen(
                                                     .clip(RoundedCornerShape(6.dp))
                                             ) {
                                                 if (item.previewUri != null) {
-                                                    Box(modifier = Modifier.fillMaxSize()) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(Color(0xFF0F172A)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
                                                         AsyncImage(
                                                             model = item.previewUri,
                                                             contentDescription = item.name,
                                                             modifier = Modifier.fillMaxSize(),
-                                                            contentScale = ContentScale.Crop
+                                                            contentScale = ContentScale.Fit
                                                         )
                                                         if (isSvg || isEps) {
                                                             val badgeText = if (isEps) "EPS" else "SVG"
@@ -939,12 +944,19 @@ fun MainScreen(
                                                         }
                                                     }
                                                 } else {
-                                                    AsyncImage(
-                                                        model = item.uri,
-                                                        contentDescription = item.name,
-                                                        modifier = Modifier.fillMaxSize(),
-                                                        contentScale = ContentScale.Crop
-                                                    )
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(Color(0xFF0F172A)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        AsyncImage(
+                                                            model = item.uri,
+                                                            contentDescription = item.name,
+                                                            modifier = Modifier.fillMaxSize(),
+                                                            contentScale = ContentScale.Fit
+                                                        )
+                                                    }
                                                 }
                                             }
 

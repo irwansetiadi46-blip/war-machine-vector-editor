@@ -894,12 +894,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             
             val assetType = if (isSvg) "SVG Vector graphic" else if (isEps) "EPS Vector graphic" else "Photo/Illustration"
             
-            val userPrompt = """
+            val userPrompt = if (isEps) {
+                val bytes = imageItem.originalBytes ?: FileHelper.readBytesFromUri(context, imageItem.uri) ?: ByteArray(0)
+                val textContent = try {
+                    val fullString = String(bytes, java.nio.charset.StandardCharsets.UTF_8)
+                    if (fullString.length > 100000) {
+                        fullString.substring(0, 100000) + "\n...[truncated EPS content]..."
+                    } else {
+                        fullString
+                    }
+                } catch (e: Exception) { "" }
+
+                """
+                $conceptHint
+                Analyze BOTH the provided visual image (which is an accurate visual render of the EPS vector graphic) AND the EPS source code/header.
+                Inspect shapes, colors, layout, subject matter, style, and visual composition in the rendered image, and cross-reference them with title headers, metadata tags, layer labels, comments, and PostScript vector structures in the EPS source code.
+                Generate highly accurate, professional microstock metadata (Title, Description, and Keywords) that perfectly describes the visual subject, vector style, theme, color scheme, and microstock utility of this asset.
+                
+                System Rules:
+                $systemPrompt
+                
+                EPS Source Code / Header:
+                ```postscript
+                $textContent
+                ```
+                """.trimIndent()
+            } else {
+                """
                 $conceptHint
                 This image is a visual render of a $assetType.
                 Analyze this image and generate highly accurate, professional microstock metadata in JSON format according to system rules.
                 Include relevant microstock keywords (such as vector, illustration, graphic, design element, etc. if appropriate for the visual style).
-            """.trimIndent()
+                """.trimIndent()
+            }
 
             GeminiRequest(
                 contents = listOf(
