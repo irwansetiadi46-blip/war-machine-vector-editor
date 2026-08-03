@@ -72,28 +72,6 @@ object SvgToEpsConverter {
                 vbHeight = artboardHeight
             }
 
-            // Ensure Microstock Artboard Compliance (minimum 500pt x 500pt, e.g. 1000pt scale for small viewports like 24x24)
-            if (hasViewBox) {
-                val maxVb = maxOf(vbWidth, vbHeight)
-                if (maxVb < 500f) {
-                    val microstockScale = 1000f / maxVb
-                    artboardWidth = vbWidth * microstockScale
-                    artboardHeight = vbHeight * microstockScale
-                } else {
-                    artboardWidth = vbWidth
-                    artboardHeight = vbHeight
-                }
-            } else {
-                val maxArt = maxOf(artboardWidth, artboardHeight)
-                if (maxArt < 500f) {
-                    val microstockScale = 1000f / maxArt
-                    artboardWidth *= microstockScale
-                    artboardHeight *= microstockScale
-                    vbWidth = artboardWidth
-                    vbHeight = artboardHeight
-                }
-            }
-
             val scaleX = artboardWidth / vbWidth
             val scaleY = artboardHeight / vbHeight
 
@@ -109,7 +87,7 @@ object SvgToEpsConverter {
             psBuilder.append("%!PS-Adobe-3.0 EPSF-3.0\n")
             psBuilder.append("%%Creator: WarMachineHybrid SVG Converter\n")
             if (title.isNotEmpty()) psBuilder.append("%%Title: $title\n")
-            psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", artboardWidth.toInt(), artboardHeight.toInt()))
+            psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", ceil(artboardWidth).toInt(), ceil(artboardHeight).toInt()))
             psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0 0 %.3f %.3f\n", artboardWidth, artboardHeight))
             psBuilder.append(String.format(Locale.US, "%%%%DocumentMedia: Canvas %.3f %.3f 0 () ()\n", artboardWidth, artboardHeight))
             psBuilder.append("%%LanguageLevel: 2\n")
