@@ -442,49 +442,35 @@ object XmpInjector {
     fun bangunXmpXml(title: String, description: String, keywords: List<String>, mimeType: String = "application/postscript"): String {
         val titleEsc = escapeXml(title.trim())
         val descEsc = escapeXml(description.trim())
-        val bagKeywords = keywords
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .map { kw -> "                  <rdf:li>${escapeXml(kw)}</rdf:li>" }
-            .joinToString("\n")
+        val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
+        val bagKeywords = cleanKeywords.joinToString("\n") { kw -> "    <rdf:li>${escapeXml(kw)}</rdf:li>" }
 
-        return """<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.6-c140 79.160451, 2017/05/06-13:08:12        ">
-   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-      <rdf:Description rdf:about=""
-            xmlns:dc="http://purl.org/dc/elements/1.1/"
-            xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">
-         <dc:format>$mimeType</dc:format>
-         <dc:title>
-            <rdf:Alt>
-               <rdf:li xml:lang="x-default">$titleEsc</rdf:li>
-            </rdf:Alt>
-         </dc:title>
-         <dc:description>
-            <rdf:Alt>
-               <rdf:li xml:lang="x-default">$descEsc</rdf:li>
-            </rdf:Alt>
-         </dc:description>
-         <dc:subject>
-            <rdf:Bag>
-$bagKeywords
-            </rdf:Bag>
-         </dc:subject>
-         <photoshop:Headline>$titleEsc</photoshop:Headline>
-      </rdf:Description>
-   </rdf:RDF>
-</x:xmpmeta>"""
+        val sb = java.lang.StringBuilder()
+        sb.append("<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n")
+        sb.append("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n")
+        sb.append("  <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n")
+        sb.append("    <rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n")
+        if (titleEsc.isNotEmpty()) {
+            sb.append("      <dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">$titleEsc</rdf:li></rdf:Alt></dc:title>\n")
+        }
+        if (descEsc.isNotEmpty()) {
+            sb.append("      <dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">$descEsc</rdf:li></rdf:Alt></dc:description>\n")
+        }
+        if (cleanKeywords.isNotEmpty()) {
+            sb.append("      <dc:subject><rdf:Bag>\n$bagKeywords\n      </rdf:Bag></dc:subject>\n")
+        }
+        if (titleEsc.isNotEmpty()) {
+            sb.append("      <photoshop:Headline>$titleEsc</photoshop:Headline>\n")
+        }
+        sb.append("    </rdf:Description>\n")
+        sb.append("  </rdf:RDF>\n")
+        sb.append("</x:xmpmeta>\n")
+        sb.append("<?xpacket end=\"w\"?>")
+        return sb.toString()
     }
 
     fun bangunAdobeClientInjection(title: String, description: String, keywords: List<String>): String {
-        val xmlMentah = bangunXmpXml(title, description, keywords, "application/postscript")
-        
-        // Wrap the XMP inside standard packet markers for Adobe and ExifTool scan compatibility
-        val xmpPacket = """
-            <?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
-            $xmlMentah
-            <?xpacket end="w"?>
-        """.trimIndent()
-        
+        val xmpPacket = bangunXmpXml(title, description, keywords, "application/postscript")
         val endMarker = "%  &&end XMP packet marker&&"
 
         return listOf(
@@ -536,16 +522,9 @@ $bagKeywords
             if (metaTitle.isNotEmpty()) {
                 headerKomentarList.add("%%Title: $metaTitle")
             }
-            if (metaDesc.isNotEmpty()) {
-                headerKomentarList.add("%Description: $metaDesc")
-                headerKomentarList.add("%%Description: $metaDesc")
-                headerKomentarList.add("%Caption: $metaDesc")
-                headerKomentarList.add("%%Caption: $metaDesc")
-            }
             if (cleanKeywords.isNotEmpty()) {
                 val kwStr = cleanKeywords.joinToString(", ")
                 headerKomentarList.add("%%Keywords: $kwStr")
-                headerKomentarList.add("%Keywords: $kwStr")
             }
             val headerKomentar = headerKomentarList.joinToString("\n")
 
@@ -557,24 +536,34 @@ $bagKeywords
             if (headerKomentar.isNotEmpty()) {
                 val endCommentsRegex = Regex("(\\r?\\n%%EndComments)")
                 if (hasilEps.contains(endCommentsRegex)) {
-                    hasilEps = hasilEps.replace(endCommentsRegex, "\n$headerKomentar$1")
+                    val quotedHeader = java.util.regex.Matcher.quoteReplacement(headerKomentar)
+                    hasilEps = hasilEps.replace(endCommentsRegex, "\n" + quotedHeader + "\$1")
                 }
             }
 
             // 4. Suntikkan XML Adobe Stream tepat di bawah struktur %%EndComments
             val endCommentsAndSpaceRegex = Regex("(%%EndComments\\s*)")
             if (hasilEps.contains(endCommentsAndSpaceRegex)) {
-                hasilEps = hasilEps.replace(endCommentsAndSpaceRegex, "$1\n$blokInjeksiAdobe")
+                val quotedBlok = java.util.regex.Matcher.quoteReplacement(blokInjeksiAdobe)
+                hasilEps = hasilEps.replace(endCommentsAndSpaceRegex, "\$1\n" + quotedBlok)
             }
 
             // 5. Kunci dengan marker penutup tepat sebelum perintah cetak showpage/EOF berkas
+            val pageTrailer = listOf(
+                "%ADOBeginClientInjection: PageTrailer Start \"AI11EPS\"",
+                "[/EMC AI11_PDFMark5",
+                "[/NamespacePop AI11_PDFMark5",
+                "%ADOEndClientInjection: PageTrailer Start \"AI11EPS\"",
+                ""
+            ).joinToString("\n")
+
             val showpageEofRegex = Regex("(\\r?\\nshowpage\\r?\\n%%EOF)")
             if (hasilEps.contains(showpageEofRegex)) {
-                hasilEps = hasilEps.replace(showpageEofRegex, "\n%%EndMetadata\nshowpage\n%%EOF")
+                hasilEps = hasilEps.replace(showpageEofRegex, "\n" + pageTrailer + "showpage\n%%EOF")
             } else {
                 val showpageEofFallback = Regex("\\nshowpage\\n%%EOF")
                 if (hasilEps.contains(showpageEofFallback)) {
-                    hasilEps = hasilEps.replace(showpageEofFallback, "\n\n%%EndMetadata\nshowpage\n%%EOF")
+                    hasilEps = hasilEps.replace(showpageEofFallback, "\n\n" + pageTrailer + "showpage\n%%EOF")
                 }
             }
 

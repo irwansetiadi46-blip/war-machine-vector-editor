@@ -61,15 +61,37 @@ object SvgToEpsConverter {
             val widthAttr = root.getAttribute("width").trim()
             val heightAttr = root.getAttribute("height").trim()
 
+            if (vbWidth <= 0f || vbWidth.isNaN() || vbWidth.isInfinite()) vbWidth = 512f
+            if (vbHeight <= 0f || vbHeight.isNaN() || vbHeight.isInfinite()) vbHeight = 512f
+
             var artboardWidth = parseLengthToPt(widthAttr, if (hasViewBox) vbWidth else 512f)
             var artboardHeight = parseLengthToPt(heightAttr, if (hasViewBox) vbHeight else 512f)
 
-            if (artboardWidth <= 0f) artboardWidth = vbWidth
-            if (artboardHeight <= 0f) artboardHeight = vbHeight
+            if (artboardWidth <= 0f || artboardWidth.isNaN() || artboardWidth.isInfinite()) artboardWidth = vbWidth
+            if (artboardHeight <= 0f || artboardHeight.isNaN() || artboardHeight.isInfinite()) artboardHeight = vbHeight
 
             if (!hasViewBox) {
                 vbWidth = artboardWidth
                 vbHeight = artboardHeight
+            }
+
+            // Ensure Microstock Artboard Compliance (Adobe Stock minimum 15 MP, maximum 65 MP; e.g. 16 MP standard = 4000x4000pt)
+            val currentArea = artboardWidth * artboardHeight
+            val minAreaMicrostock = 16_000_000f // 16 Megapixels (complies with Adobe Stock >= 15 MP & Shutterstock >= 4 MP)
+            val maxAreaMicrostock = 60_000_000f // 60 Megapixels (complies with Adobe Stock <= 65 MP limit)
+
+            if (currentArea < minAreaMicrostock && currentArea > 0f) {
+                val scaleUp = sqrt(minAreaMicrostock / currentArea)
+                if (scaleUp.isFinite() && !scaleUp.isNaN()) {
+                    artboardWidth *= scaleUp
+                    artboardHeight *= scaleUp
+                }
+            } else if (currentArea > maxAreaMicrostock && currentArea > 0f) {
+                val scaleDown = sqrt(maxAreaMicrostock / currentArea)
+                if (scaleDown.isFinite() && !scaleDown.isNaN()) {
+                    artboardWidth *= scaleDown
+                    artboardHeight *= scaleDown
+                }
             }
 
             val scaleX = artboardWidth / vbWidth
@@ -87,7 +109,7 @@ object SvgToEpsConverter {
             psBuilder.append("%!PS-Adobe-3.0 EPSF-3.0\n")
             psBuilder.append("%%Creator: WarMachineHybrid SVG Converter\n")
             if (title.isNotEmpty()) psBuilder.append("%%Title: $title\n")
-            psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", ceil(artboardWidth).toInt(), ceil(artboardHeight).toInt()))
+            psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", artboardWidth.toInt(), artboardHeight.toInt()))
             psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0 0 %.3f %.3f\n", artboardWidth, artboardHeight))
             psBuilder.append(String.format(Locale.US, "%%%%DocumentMedia: Canvas %.3f %.3f 0 () ()\n", artboardWidth, artboardHeight))
             psBuilder.append("%%LanguageLevel: 2\n")
