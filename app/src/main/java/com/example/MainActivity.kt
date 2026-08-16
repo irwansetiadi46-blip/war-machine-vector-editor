@@ -525,7 +525,7 @@ fun MainScreen(
                             onValueChange = { newValue ->
                                 titleInput = newValue
                                 newValue.toFloatOrNull()?.let { num ->
-                                    if(num in 50f..200f) viewModel.setTitleCharLimit(num)
+                                    if(num in 100f..200f) viewModel.setTitleCharLimit(num)
                                 }
                             },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -540,7 +540,7 @@ fun MainScreen(
                         Slider(
                             value = titleCharLimit,
                             onValueChange = { viewModel.setTitleCharLimit(it) },
-                            valueRange = 50f..200f,
+                            valueRange = 100f..200f,
                             modifier = Modifier.weight(1f).padding(start = 8.dp)
                         )
                     }
@@ -554,7 +554,7 @@ fun MainScreen(
                             onValueChange = { newValue ->
                                 descInput = newValue
                                 newValue.toFloatOrNull()?.let { num ->
-                                    if(num in 100f..300f) viewModel.setDescCharLimit(num)
+                                    if(num in 100f..200f) viewModel.setDescCharLimit(num)
                                 }
                             },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -569,7 +569,7 @@ fun MainScreen(
                         Slider(
                             value = descCharLimit,
                             onValueChange = { viewModel.setDescCharLimit(it) },
-                            valueRange = 100f..300f,
+                            valueRange = 100f..200f,
                             modifier = Modifier.weight(1f).padding(start = 8.dp)
                         )
                     }
