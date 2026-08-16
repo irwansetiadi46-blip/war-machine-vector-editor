@@ -866,7 +866,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             Strictly follow these rules:
             1. Language: Always output the Title, Description, and Keywords in English.
-            2. Title max until $titleLimit characters. 
+            2. Title max until $titleLimit characters(100-200). 
             3. Description must be Maximum $descLimit characters a dynamic combination of concept description and organic visual multi usage targets. and suitable for what.
             4. Keywords Quantity: Generate exactly $kwLimit high-quality keywords. Quality and relevance are prioritized over quantity.
             5. Keywords Formatting: 
@@ -909,7 +909,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 $conceptHint
                 Analyze BOTH the provided visual image (which is an accurate visual render of the EPS vector graphic) AND the EPS source code/header.
                 Inspect shapes, colors, layout, subject matter, style, and visual composition in the rendered image, and cross-reference them with title headers, metadata tags, layer labels, comments, and PostScript vector structures in the EPS source code.
-                Generate highly accurate, professional microstock metadata (Title, Description, and Keywords) that perfectly describes the visual subject, vector style, theme, color scheme, and microstock utility of this asset.
+                Generate highly accurate, professional microstock metadata (Title(Title max until $titleLimit characters.), Description, and Keywords) that perfectly describes the visual subject, vector style, theme, color scheme, and microstock utility of this asset.
                 
                 System Rules:
                 $systemPrompt
@@ -967,7 +967,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     $conceptHint
                     Analyze BOTH the provided visual image (which is a high-fidelity render of the SVG vector) AND the SVG source code.
                     Inspect paths, colors, shapes, visual layout, and graphic style in the visual image. Cross-reference them with class names, label attributes, IDs, and path data in the SVG source code.
-                    Generate professional microstock metadata (Title, Description, and Keywords) that is perfectly accurate and highly relevant to the actual design, utility, visual themes, and colors of this vector asset.
+                    Generate professional microstock metadata (Title(Title max until $titleLimit characters.), Description, and Keywords) that is perfectly accurate and highly relevant to the actual design, utility, visual themes, and colors of this vector asset.
                     
                     System Rules:
                     $systemPrompt
@@ -1483,7 +1483,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 var sanitizedTitle = ""
                 if (metaTitle.isNotEmpty()) {
                     sanitizedTitle = metaTitle.replace(Regex("[\\\\/:*?\"<>|]"), "").replace(Regex("\\s+"), "-").lowercase()
-                    if (sanitizedTitle.length > 50) sanitizedTitle = sanitizedTitle.substring(0, 50).trimEnd('-')
+                    if (sanitizedTitle.length > 200) sanitizedTitle = sanitizedTitle.substring(0, 200).trimEnd('-')
                 }
                 val baseName = if (sanitizedTitle.isNotEmpty()) sanitizedTitle else baseNameRaw
 
