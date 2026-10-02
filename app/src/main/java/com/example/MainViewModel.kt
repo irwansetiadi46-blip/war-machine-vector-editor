@@ -98,10 +98,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _promptConcept = MutableStateFlow("")
     val promptConcept = _promptConcept.asStateFlow()
 
-    private val _titleCharLimit = MutableStateFlow(200f)
+    private val _savedPromptConcept = MutableStateFlow("")
+    val savedPromptConcept = _savedPromptConcept.asStateFlow()
+
+    private val _titleCharLimit = MutableStateFlow(100f)
     val titleCharLimit = _titleCharLimit.asStateFlow()
 
-    private val _descCharLimit = MutableStateFlow(200f)
+    private val _descCharLimit = MutableStateFlow(150f)
     val descCharLimit = _descCharLimit.asStateFlow()
 
     private val _keywordsLimit = MutableStateFlow(49f)
@@ -109,6 +112,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _blacklistWords = MutableStateFlow("")
     val blacklistWords = _blacklistWords.asStateFlow()
+
+    private val _savedBlacklistWords = MutableStateFlow("")
+    val savedBlacklistWords = _savedBlacklistWords.asStateFlow()
+
+    private val _isAutoInjectionEnabled = MutableStateFlow(false)
+    val isAutoInjectionEnabled = _isAutoInjectionEnabled.asStateFlow()
 
     // --- Loading & Injection Progress State ---
     private val _isGeneratingAi = MutableStateFlow(false)
@@ -268,6 +277,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _title.value = ""          // Leave empty as required by user in offline mode
                 _description.value = ""    // Leave empty as required by user in offline mode
                 _toastFlow.value = "Offline Keywords berhasil digenerate (${resultKeywords.size} kata kunci)!"
+
+                if (_isAutoInjectionEnabled.value) {
+                    withContext(Dispatchers.Main) {
+                        val hasSelected = _imagesList.value.any { it.isSelected }
+                        if (hasSelected) {
+                            injectMetadata()
+                        } else if (_imagesList.value.isNotEmpty()) {
+                            selectAllImages(true)
+                            injectMetadata()
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 _toastFlow.value = "Error Offline Generation: ${e.message}"
             } finally {
@@ -284,6 +305,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedProvider.value = prefs.getString("selected_provider", "Gemini") ?: "Gemini"
         _creator.value = prefs.getString("saved_creator", "") ?: ""
         _isOfflineMode.value = prefs.getBoolean("is_offline_mode", false)
+
+        // Auto-load persistent slider limits
+        _titleCharLimit.value = prefs.getFloat("saved_title_limit", 100f)
+        _descCharLimit.value = prefs.getFloat("saved_desc_limit", 150f)
+        _keywordsLimit.value = prefs.getFloat("saved_keywords_limit", 49f)
+
+        // Auto-load saved Kata Kunci Inti & Blacklist Words
+        val savedConcept = prefs.getString("saved_prompt_concept", "") ?: ""
+        val savedBlacklist = prefs.getString("saved_blacklist_words", "") ?: ""
+        _promptConcept.value = savedConcept
+        _savedPromptConcept.value = savedConcept
+        _blacklistWords.value = savedBlacklist
+        _savedBlacklistWords.value = savedBlacklist
+
+        // Auto-load Auto Injection preference
+        _isAutoInjectionEnabled.value = prefs.getBoolean("is_auto_injection", false)
         
         updateDefaultModel(_selectedProvider.value)
     }
@@ -316,20 +353,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _promptConcept.value = concept
     }
 
-    fun setTitleCharLimit(value: Float) {
-        _titleCharLimit.value = value
+    fun savePromptConceptPermanent() {
+        val concept = _promptConcept.value
+        if (concept.isBlank()) {
+            return
+        }
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("saved_prompt_concept", concept).apply()
+        _savedPromptConcept.value = concept
+        _toastFlow.value = "Kata kunci inti berhasil disimpan!"
     }
 
-    fun setDescCharLimit(value: Float) {
-        _descCharLimit.value = value
-    }
-
-    fun setKeywordsLimit(value: Float) {
-        _keywordsLimit.value = value
+    fun clearPromptConceptPermanent() {
+        _promptConcept.value = ""
+        _savedPromptConcept.value = ""
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().remove("saved_prompt_concept").apply()
+        _toastFlow.value = "Kata kunci inti dihapus"
     }
 
     fun setBlacklistWords(value: String) {
         _blacklistWords.value = value
+    }
+
+    fun saveBlacklistWordsPermanent() {
+        val bl = _blacklistWords.value
+        if (bl.isBlank()) {
+            return
+        }
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("saved_blacklist_words", bl).apply()
+        _savedBlacklistWords.value = bl
+        _toastFlow.value = "Blacklist words berhasil disimpan!"
+    }
+
+    fun clearBlacklistWordsPermanent() {
+        _blacklistWords.value = ""
+        _savedBlacklistWords.value = ""
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().remove("saved_blacklist_words").apply()
+        _toastFlow.value = "Blacklist words dihapus"
+    }
+
+    fun setAutoInjectionEnabled(enabled: Boolean) {
+        _isAutoInjectionEnabled.value = enabled
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("is_auto_injection", enabled).apply()
+    }
+
+    fun setTitleCharLimit(value: Float) {
+        _titleCharLimit.value = value
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putFloat("saved_title_limit", value).apply()
+    }
+
+    fun setDescCharLimit(value: Float) {
+        _descCharLimit.value = value
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putFloat("saved_desc_limit", value).apply()
+    }
+
+    fun setKeywordsLimit(value: Float) {
+        _keywordsLimit.value = value
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putFloat("saved_keywords_limit", value).apply()
     }
 
     fun setTitle(value: String) {
@@ -500,6 +587,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // Keep selections
             }
         }
+        recalculateMetadataFormFromSelection()
+    }
+
+    fun selectAllImages(selected: Boolean = true) {
+        _imagesList.value = _imagesList.value.map { it.copy(isSelected = selected) }
         recalculateMetadataFormFromSelection()
     }
 
@@ -717,6 +809,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _description.value = parsed.description ?: ""
                     _keywords.value = parsed.keywords ?: ""
                     _toastFlow.value = "AI berhasil menghasilkan metadata!"
+
+                    if (_isAutoInjectionEnabled.value) {
+                        val hasSelected = _imagesList.value.any { it.isSelected }
+                        if (hasSelected) {
+                            injectMetadata()
+                        } else if (_imagesList.value.isNotEmpty()) {
+                            selectAllImages(true)
+                            injectMetadata()
+                        }
+                    }
                 } else {
                     _toastFlow.value = "Respon AI tidak valid JSON."
                 }
@@ -764,6 +866,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             ) else it
                         }
                         _toastFlow.value = "Berhasil generate metadata untuk ${imageItem.name}"
+                        if (_isAutoInjectionEnabled.value) {
+                            injectIndividualMetadata(imageItem.id)
+                        }
                     } else {
                         _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false) else it }
                         _toastFlow.value = "Gagal parse respon JSON untuk ${imageItem.name}"
@@ -841,6 +946,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 
                 _toastFlow.value = "AI berhasil menganalisis gambar & menghasilkan metadata!"
+                if (_isAutoInjectionEnabled.value) {
+                    injectAllIndividualMetadata()
+                }
                 
             } catch (e: Exception) {
                 e.printStackTrace()

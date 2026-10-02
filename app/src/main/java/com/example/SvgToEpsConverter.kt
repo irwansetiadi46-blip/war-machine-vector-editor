@@ -17,6 +17,23 @@ import kotlin.math.tan
 
 object SvgToEpsConverter {
 
+    data class GradientStopDef(val offset: Float, val r: Float, val g: Float, val b: Float)
+
+    data class SvgGradientDef(
+        val id: String,
+        val isRadial: Boolean,
+        val x1Str: String = "0%",
+        val y1Str: String = "0%",
+        val x2Str: String = "100%",
+        val y2Str: String = "0%",
+        val cxStr: String = "50%",
+        val cyStr: String = "50%",
+        val rStr: String = "50%",
+        val isUserSpace: Boolean = false,
+        val stops: List<GradientStopDef> = emptyList(),
+        val transform: String = ""
+    )
+
     fun convertSvgToEps(
         svgBytes: ByteArray,
         title: String = "",
@@ -100,9 +117,10 @@ object SvgToEpsConverter {
             // 3. Collect Defs, IDs, Styles, and Gradients
             val idMap = mutableMapOf<String, Element>()
             val gradientMap = mutableMapOf<String, String>() // id -> fallback hex color
+            val fullGradientMap = mutableMapOf<String, SvgGradientDef>()
             val cssClassMap = parseCssStyles(root)
 
-            indexElementsAndGradients(root, idMap, gradientMap)
+            indexElementsAndGradients(root, idMap, gradientMap, fullGradientMap)
 
             // 4. Build EPS PostScript Content
             val psBuilder = StringBuilder()
@@ -112,7 +130,7 @@ object SvgToEpsConverter {
             psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", artboardWidth.toInt(), artboardHeight.toInt()))
             psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0 0 %.3f %.3f\n", artboardWidth, artboardHeight))
             psBuilder.append(String.format(Locale.US, "%%%%DocumentMedia: Canvas %.3f %.3f 0 () ()\n", artboardWidth, artboardHeight))
-            psBuilder.append("%%LanguageLevel: 2\n")
+            psBuilder.append("%%LanguageLevel: 3\n")
             psBuilder.append("%%Pages: 1\n")
             psBuilder.append("%%EndComments\n\n")
 
@@ -125,7 +143,7 @@ object SvgToEpsConverter {
 
             // Recursive traversal of SVG DOM
             val defaultStyle = StyleContext()
-            processChildrenNodes(root, defaultStyle, psBuilder, idMap, gradientMap, cssClassMap)
+            processChildrenNodes(root, defaultStyle, psBuilder, idMap, gradientMap, fullGradientMap, cssClassMap)
 
             psBuilder.append("grestore\n")
             psBuilder.append("showpage\n%%EOF\n")
@@ -154,13 +172,14 @@ object SvgToEpsConverter {
         sb: StringBuilder,
         idMap: Map<String, Element>,
         gradientMap: Map<String, String>,
+        fullGradientMap: Map<String, SvgGradientDef>,
         cssClassMap: Map<String, Map<String, String>>
     ) {
         val childNodes = parent.childNodes
         for (i in 0 until childNodes.length) {
             val node = childNodes.item(i)
             if (node.nodeType == Node.ELEMENT_NODE) {
-                processNode(node as Element, parentStyle, sb, idMap, gradientMap, cssClassMap)
+                processNode(node as Element, parentStyle, sb, idMap, gradientMap, fullGradientMap, cssClassMap)
             }
         }
     }
@@ -171,6 +190,7 @@ object SvgToEpsConverter {
         sb: StringBuilder,
         idMap: Map<String, Element>,
         gradientMap: Map<String, String>,
+        fullGradientMap: Map<String, SvgGradientDef>,
         cssClassMap: Map<String, Map<String, String>>
     ) {
         val tagName = element.tagName.lowercase(Locale.US)
@@ -203,7 +223,7 @@ object SvgToEpsConverter {
                     }
                 }
 
-                processChildrenNodes(element, nodeStyle, sb, idMap, gradientMap, cssClassMap)
+                processChildrenNodes(element, nodeStyle, sb, idMap, gradientMap, fullGradientMap, cssClassMap)
                 sb.append("grestore\n")
             }
 
@@ -222,7 +242,7 @@ object SvgToEpsConverter {
                         if (transformStr.isNotEmpty()) {
                             sb.append(convertSvgTransformToPostScript(transformStr))
                         }
-                        processNode(targetElem, nodeStyle, sb, idMap, gradientMap, cssClassMap)
+                        processNode(targetElem, nodeStyle, sb, idMap, gradientMap, fullGradientMap, cssClassMap)
                         sb.append("grestore\n")
                     }
                 }
@@ -250,17 +270,27 @@ object SvgToEpsConverter {
                 sb.append("newpath\n")
                 sb.append(pathCommands)
 
-                // Render Fill
-                val fillRgb = parseColorToRgb(nodeStyle.fill ?: "black", gradientMap)
-                if (fillRgb != null) {
-                    sb.append("gsave\n")
-                    sb.append(String.format(Locale.US, "%.3f %.3f %.3f setrgbcolor\n", fillRgb[0], fillRgb[1], fillRgb[2]))
-                    if (nodeStyle.fillRule == "evenodd") {
-                        sb.append("eofill\n")
-                    } else {
-                        sb.append("fill\n")
+                // Render Fill (with Gradient Shading or flat color)
+                val fillStr = nodeStyle.fill ?: "black"
+                val gradId = if (fillStr.startsWith("url(")) {
+                    fillStr.substringAfter("url(").substringBefore(")").removePrefix("#").removeSurrounding("'", "\"").trim()
+                } else null
+
+                val gradDef = if (gradId != null) fullGradientMap[gradId] else null
+                if (gradDef != null && gradDef.stops.isNotEmpty()) {
+                    writeGradientShading(sb, gradDef, nodeStyle.fillRule)
+                } else {
+                    val fillRgb = parseColorToRgb(fillStr, gradientMap)
+                    if (fillRgb != null) {
+                        sb.append("gsave\n")
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f setrgbcolor\n", fillRgb[0], fillRgb[1], fillRgb[2]))
+                        if (nodeStyle.fillRule == "evenodd") {
+                            sb.append("eofill\n")
+                        } else {
+                            sb.append("fill\n")
+                        }
+                        sb.append("grestore\n")
                     }
-                    sb.append("grestore\n")
                 }
 
                 // Render Stroke
@@ -951,7 +981,8 @@ object SvgToEpsConverter {
     private fun indexElementsAndGradients(
         element: Element,
         idMap: MutableMap<String, Element>,
-        gradientMap: MutableMap<String, String>
+        gradientMap: MutableMap<String, String>,
+        fullGradientMap: MutableMap<String, SvgGradientDef>
     ) {
         val idAttr = element.getAttribute("id").trim()
         if (idAttr.isNotEmpty()) {
@@ -961,16 +992,57 @@ object SvgToEpsConverter {
         val tagName = element.tagName.lowercase(Locale.US)
         if (tagName == "lineargradient" || tagName == "radialgradient") {
             if (idAttr.isNotEmpty()) {
+                val isRadial = tagName == "radialgradient"
+                val stopsList = mutableListOf<GradientStopDef>()
                 val stops = element.getElementsByTagName("stop")
                 var firstColor = "#000000"
-                if (stops.length > 0) {
-                    val firstStop = stops.item(0) as Element
-                    val colorAttr = firstStop.getAttribute("stop-color").trim()
-                    val styleAttr = firstStop.getAttribute("style").trim()
+
+                for (s in 0 until stops.length) {
+                    val stopElem = stops.item(s) as Element
+                    val offsetStr = stopElem.getAttribute("offset").trim()
+                    val offset = if (offsetStr.endsWith("%")) {
+                        (offsetStr.dropLast(1).toFloatOrNull() ?: 0f) / 100f
+                    } else {
+                        offsetStr.toFloatOrNull() ?: if (stops.length > 1) (s.toFloat() / (stops.length - 1)) else 0f
+                    }
+
+                    val colorAttr = stopElem.getAttribute("stop-color").trim()
+                    val styleAttr = stopElem.getAttribute("style").trim()
                     val styleMap = parseStyleDeclarations(styleAttr)
-                    firstColor = colorAttr.ifEmpty { styleMap["stop-color"] ?: "#000000" }
+                    val stopColorStr = colorAttr.ifEmpty { styleMap["stop-color"] ?: "#000000" }
+                    if (s == 0) firstColor = stopColorStr
+
+                    val rgb = parseColorToRgb(stopColorStr, gradientMap) ?: floatArrayOf(0f, 0f, 0f)
+                    stopsList.add(GradientStopDef(offset.coerceIn(0f, 1f), rgb[0], rgb[1], rgb[2]))
                 }
+
+                if (stopsList.isEmpty()) {
+                    stopsList.add(GradientStopDef(0f, 0f, 0f, 0f))
+                    stopsList.add(GradientStopDef(1f, 1f, 1f, 1f))
+                } else if (stopsList.size == 1) {
+                    stopsList.add(GradientStopDef(1f, stopsList[0].r, stopsList[0].g, stopsList[0].b))
+                }
+                stopsList.sortBy { it.offset }
                 gradientMap[idAttr] = firstColor
+
+                val gradUnits = element.getAttribute("gradientUnits").trim()
+                val isUserSpace = gradUnits.equals("userSpaceOnUse", ignoreCase = true)
+                val gradTransform = element.getAttribute("gradientTransform").trim()
+
+                fullGradientMap[idAttr] = SvgGradientDef(
+                    id = idAttr,
+                    isRadial = isRadial,
+                    x1Str = element.getAttribute("x1").ifEmpty { "0%" },
+                    y1Str = element.getAttribute("y1").ifEmpty { "0%" },
+                    x2Str = element.getAttribute("x2").ifEmpty { "100%" },
+                    y2Str = element.getAttribute("y2").ifEmpty { "0%" },
+                    cxStr = element.getAttribute("cx").ifEmpty { "50%" },
+                    cyStr = element.getAttribute("cy").ifEmpty { "50%" },
+                    rStr = element.getAttribute("r").ifEmpty { "50%" },
+                    isUserSpace = isUserSpace,
+                    stops = stopsList,
+                    transform = gradTransform
+                )
             }
         }
 
@@ -978,8 +1050,103 @@ object SvgToEpsConverter {
         for (i in 0 until childNodes.length) {
             val child = childNodes.item(i)
             if (child.nodeType == Node.ELEMENT_NODE) {
-                indexElementsAndGradients(child as Element, idMap, gradientMap)
+                indexElementsAndGradients(child as Element, idMap, gradientMap, fullGradientMap)
             }
+        }
+    }
+
+    private fun writeGradientShading(
+        sb: StringBuilder,
+        grad: SvgGradientDef,
+        fillRule: String?
+    ) {
+        sb.append("gsave\n")
+        if (fillRule == "evenodd") {
+            sb.append("eoclip\n")
+        } else {
+            sb.append("clip\n")
+        }
+        sb.append("newpath\n")
+
+        if (grad.transform.isNotEmpty()) {
+            sb.append(convertSvgTransformToPostScript(grad.transform))
+        }
+
+        val stops = grad.stops
+        if (grad.isRadial) {
+            val cx = parseCoordinateOrPercent(grad.cxStr, 256f)
+            val cy = parseCoordinateOrPercent(grad.cyStr, 256f)
+            val r = parseCoordinateOrPercent(grad.rStr, 256f)
+
+            sb.append("<<\n")
+            sb.append("  /ShadingType 3\n")
+            sb.append("  /ColorSpace /DeviceRGB\n")
+            sb.append(String.format(Locale.US, "  /Coords [%.3f %.3f 0.0 %.3f %.3f %.3f]\n", cx, cy, cx, cy, r))
+            writeFunction(sb, stops)
+            sb.append("  /Extend [true true]\n")
+            sb.append(">> shfill\n")
+        } else {
+            val x1 = parseCoordinateOrPercent(grad.x1Str, 512f)
+            val y1 = parseCoordinateOrPercent(grad.y1Str, 512f)
+            val x2 = parseCoordinateOrPercent(grad.x2Str, 512f)
+            val y2 = parseCoordinateOrPercent(grad.y2Str, 512f)
+
+            sb.append("<<\n")
+            sb.append("  /ShadingType 2\n")
+            sb.append("  /ColorSpace /DeviceRGB\n")
+            sb.append(String.format(Locale.US, "  /Coords [%.3f %.3f %.3f %.3f]\n", x1, y1, x2, y2))
+            writeFunction(sb, stops)
+            sb.append("  /Extend [true true]\n")
+            sb.append(">> shfill\n")
+        }
+
+        sb.append("grestore\n")
+    }
+
+    private fun writeFunction(sb: StringBuilder, stops: List<GradientStopDef>) {
+        if (stops.size == 2) {
+            val s0 = stops[0]
+            val s1 = stops[1]
+            sb.append("  /Function <<\n")
+            sb.append("    /FunctionType 2\n")
+            sb.append("    /Domain [0.0 1.0]\n")
+            sb.append(String.format(Locale.US, "    /C0 [%.3f %.3f %.3f]\n", s0.r, s0.g, s0.b))
+            sb.append(String.format(Locale.US, "    /C1 [%.3f %.3f %.3f]\n", s1.r, s1.g, s1.b))
+            sb.append("    /N 1.0\n")
+            sb.append("  >>\n")
+        } else if (stops.size > 2) {
+            val segCount = stops.size - 1
+            sb.append("  /Function <<\n")
+            sb.append("    /FunctionType 3\n")
+            sb.append("    /Domain [0.0 1.0]\n")
+            sb.append("    /Functions [\n")
+            for (i in 0 until segCount) {
+                val s0 = stops[i]
+                val s1 = stops[i + 1]
+                sb.append(String.format(Locale.US, "      << /FunctionType 2 /Domain [0.0 1.0] /C0 [%.3f %.3f %.3f] /C1 [%.3f %.3f %.3f] /N 1.0 >>\n", s0.r, s0.g, s0.b, s1.r, s1.g, s1.b))
+            }
+            sb.append("    ]\n")
+            val boundsStr = (1 until segCount).map { String.format(Locale.US, "%.3f", stops[it].offset) }.joinToString(" ")
+            sb.append("    /Bounds [$boundsStr]\n")
+            val encodeStr = (0 until segCount).joinToString(" ") { "0.0 1.0" }
+            sb.append("    /Encode [$encodeStr]\n")
+            sb.append("  >>\n")
+        } else {
+            val s0 = stops.firstOrNull() ?: GradientStopDef(0f, 0f, 0f, 0f)
+            sb.append("  /Function << /FunctionType 2 /Domain [0.0 1.0] ")
+            sb.append(String.format(Locale.US, "/C0 [%.3f %.3f %.3f] /C1 [%.3f %.3f %.3f] /N 1.0 >>\n", s0.r, s0.g, s0.b, s0.r, s0.g, s0.b))
+        }
+    }
+
+    private fun parseCoordinateOrPercent(valueStr: String, baseSize: Float): Float {
+        val s = valueStr.trim()
+        if (s.isEmpty()) return 0f
+        return if (s.endsWith("%")) {
+            val pct = s.dropLast(1).toFloatOrNull() ?: 0f
+            (pct / 100f) * baseSize
+        } else {
+            val num = s.toFloatOrNull() ?: 0f
+            if (num in 0f..1f && baseSize > 1f) num * baseSize else num
         }
     }
 

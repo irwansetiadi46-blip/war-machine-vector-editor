@@ -215,12 +215,13 @@ object XmpInjector {
 
     fun extractXMPFromEps(bytes: ByteArray): String? {
         try {
-            val str = String(bytes, StandardCharsets.UTF_8)
+            val str = String(bytes, StandardCharsets.ISO_8859_1)
             val startIdx = str.indexOf("<x:xmpmeta")
             if (startIdx != -1) {
                 val endIdx = str.indexOf("</x:xmpmeta>", startIdx)
                 if (endIdx != -1) {
-                    return str.substring(startIdx, endIdx + "</x:xmpmeta>".length)
+                    val xmlIso = str.substring(startIdx, endIdx + "</x:xmpmeta>".length)
+                    return String(xmlIso.toByteArray(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8)
                 }
             }
         } catch (e: Exception) {
@@ -507,71 +508,175 @@ object XmpInjector {
         creator: String = ""
     ): ByteArray {
         try {
-            val fileStr = String(originalBytes, StandardCharsets.UTF_8)
             val metaTitle = title.trim()
             val metaDesc = description.trim()
             val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
+            val metaCreator = creator.trim()
 
-            if (metaTitle.isEmpty() && metaDesc.isEmpty() && cleanKeywords.isEmpty()) {
+            if (metaTitle.isEmpty() && metaDesc.isEmpty() && cleanKeywords.isEmpty() && metaCreator.isEmpty()) {
                 return originalBytes
             }
 
-            // 1. Buat standard PostScript Header Komentar dengan redundansi maksimal untuk kompabilitas Microstock
-            val headerKomentarList = mutableListOf<String>()
-            headerKomentarList.add("%ADO_ContainsXMP: MainFirst")
-            if (metaTitle.isNotEmpty()) {
-                headerKomentarList.add("%%Title: $metaTitle")
-            }
-            if (cleanKeywords.isNotEmpty()) {
-                val kwStr = cleanKeywords.joinToString(", ")
-                headerKomentarList.add("%%Keywords: $kwStr")
-            }
-            val headerKomentar = headerKomentarList.joinToString("\n")
+            // Check if DOS EPS binary header is present (Magic: 0xC5D0D3C6)
+            val isDosEps = originalBytes.size >= 30 &&
+                    (originalBytes[0].toInt() and 0xFF) == 0xC5 &&
+                    (originalBytes[1].toInt() and 0xFF) == 0xD0 &&
+                    (originalBytes[2].toInt() and 0xFF) == 0xD3 &&
+                    (originalBytes[3].toInt() and 0xFF) == 0xC6
 
-            // 2. Buat Blok Stream Adobe XML Injection
-            val blokInjeksiAdobe = bangunAdobeClientInjection(metaTitle, metaDesc, cleanKeywords)
-            var hasilEps = fileStr
+            if (isDosEps) {
+                val psOffset = getUInt32LE(originalBytes, 4)
+                val psLength = getUInt32LE(originalBytes, 8)
+                var wmfOffset = getUInt32LE(originalBytes, 12)
+                val wmfLength = getUInt32LE(originalBytes, 16)
+                var tiffOffset = getUInt32LE(originalBytes, 20)
+                val tiffLength = getUInt32LE(originalBytes, 24)
 
-            // 3. Suntikkan %%Title, Description & %%Keywords tepat sebelum %%EndComments di header berkas
-            if (headerKomentar.isNotEmpty()) {
-                val endCommentsRegex = Regex("(\\r?\\n%%EndComments)")
-                if (hasilEps.contains(endCommentsRegex)) {
-                    val quotedHeader = java.util.regex.Matcher.quoteReplacement(headerKomentar)
-                    hasilEps = hasilEps.replace(endCommentsRegex, "\n" + quotedHeader + "\$1")
+                if (psOffset in 30..originalBytes.size && psLength > 0 && psOffset + psLength <= originalBytes.size) {
+                    val rawPsBytes = originalBytes.copyOfRange(psOffset, psOffset + psLength)
+                    val injectedPsBytes = injectIntoPostScriptBytes(rawPsBytes, metaTitle, metaDesc, cleanKeywords, metaCreator)
+                    val diff = injectedPsBytes.size - rawPsBytes.size
+
+                    // Build new header preserving original preview (TIFF / WMF) & binary gradient data intact
+                    val newHeader = originalBytes.copyOfRange(0, 30)
+                    setUInt32LE(newHeader, 4, psOffset)
+                    setUInt32LE(newHeader, 8, injectedPsBytes.size)
+
+                    if (wmfOffset >= psOffset + psLength) wmfOffset += diff
+                    setUInt32LE(newHeader, 12, wmfOffset)
+                    setUInt32LE(newHeader, 16, wmfLength)
+
+                    if (tiffOffset >= psOffset + psLength) tiffOffset += diff
+                    setUInt32LE(newHeader, 20, tiffOffset)
+                    setUInt32LE(newHeader, 24, tiffLength)
+                    setUInt16LE(newHeader, 28, 0xFFFF)
+
+                    val outputStream = ByteArrayOutputStream(originalBytes.size + diff + 1024)
+                    outputStream.write(newHeader)
+                    if (psOffset > 30) {
+                        outputStream.write(originalBytes, 30, psOffset - 30)
+                    }
+                    outputStream.write(injectedPsBytes)
+                    val trailingStart = psOffset + psLength
+                    if (trailingStart < originalBytes.size) {
+                        outputStream.write(originalBytes, trailingStart, originalBytes.size - trailingStart)
+                    }
+                    return outputStream.toByteArray()
                 }
             }
 
-            // 4. Suntikkan XML Adobe Stream tepat di bawah struktur %%EndComments
-            val endCommentsAndSpaceRegex = Regex("(%%EndComments\\s*)")
-            if (hasilEps.contains(endCommentsAndSpaceRegex)) {
-                val quotedBlok = java.util.regex.Matcher.quoteReplacement(blokInjeksiAdobe)
-                hasilEps = hasilEps.replace(endCommentsAndSpaceRegex, "\$1\n" + quotedBlok)
-            }
-
-            // 5. Kunci dengan marker penutup tepat sebelum perintah cetak showpage/EOF berkas
-            val pageTrailer = listOf(
-                "%ADOBeginClientInjection: PageTrailer Start \"AI11EPS\"",
-                "[/EMC AI11_PDFMark5",
-                "[/NamespacePop AI11_PDFMark5",
-                "%ADOEndClientInjection: PageTrailer Start \"AI11EPS\"",
-                ""
-            ).joinToString("\n")
-
-            val showpageEofRegex = Regex("(\\r?\\nshowpage\\r?\\n%%EOF)")
-            if (hasilEps.contains(showpageEofRegex)) {
-                hasilEps = hasilEps.replace(showpageEofRegex, "\n" + pageTrailer + "showpage\n%%EOF")
-            } else {
-                val showpageEofFallback = Regex("\\nshowpage\\n%%EOF")
-                if (hasilEps.contains(showpageEofFallback)) {
-                    hasilEps = hasilEps.replace(showpageEofFallback, "\n\n" + pageTrailer + "showpage\n%%EOF")
-                }
-            }
-
-            return hasilEps.toByteArray(StandardCharsets.UTF_8)
+            // Pure PostScript EPS (ASCII or binary Level 2/3)
+            return injectIntoPostScriptBytes(originalBytes, metaTitle, metaDesc, cleanKeywords, metaCreator)
         } catch (e: Exception) {
             e.printStackTrace()
             return originalBytes
         }
+    }
+
+    private fun injectIntoPostScriptBytes(
+        psBytes: ByteArray,
+        metaTitle: String,
+        metaDesc: String,
+        cleanKeywords: List<String>,
+        metaCreator: String
+    ): ByteArray {
+        // Use ISO_8859_1 to safely read without corrupting ANY binary bytes or gradient streams
+        var psStr = String(psBytes, StandardCharsets.ISO_8859_1)
+
+        // Clean up previous AI11EPS / Adobe Client Injection blocks if present to avoid duplication
+        val existingAdobeSetupRegex = Regex("""%ADOBeginClientInjection:\s*PageSetup\s*End\s*"AI11EPS"[\s\S]*?%ADOEndClientInjection:\s*PageSetup\s*End\s*"AI11EPS"\r?\n?""")
+        psStr = psStr.replace(existingAdobeSetupRegex, "")
+
+        val existingAdobeTrailerRegex = Regex("""%ADOBeginClientInjection:\s*PageTrailer\s*Start\s*"AI11EPS"[\s\S]*?%ADOEndClientInjection:\s*PageTrailer\s*Start\s*"AI11EPS"\r?\n?""")
+        psStr = psStr.replace(existingAdobeTrailerRegex, "")
+
+        // 1. PostScript standard comments
+        val headerKomentarList = mutableListOf<String>()
+        headerKomentarList.add("%ADO_ContainsXMP: MainFirst")
+        if (metaTitle.isNotEmpty()) {
+            headerKomentarList.add("%%Title: $metaTitle")
+        }
+        if (metaCreator.isNotEmpty()) {
+            headerKomentarList.add("%%Creator: $metaCreator")
+        }
+        if (cleanKeywords.isNotEmpty()) {
+            headerKomentarList.add("%%Keywords: " + cleanKeywords.joinToString(", "))
+        }
+        val headerKomentar = headerKomentarList.joinToString("\n")
+
+        // 2. Adobe XML injection stream
+        val blokInjeksiAdobe = bangunAdobeClientInjection(metaTitle, metaDesc, cleanKeywords)
+
+        // 3. Inject comments before %%EndComments
+        val endCommentsRegex = Regex("""(\r?\n%%EndComments)""")
+        if (psStr.contains(endCommentsRegex)) {
+            val quotedHeader = java.util.regex.Matcher.quoteReplacement(headerKomentar)
+            psStr = psStr.replace(endCommentsRegex, "\n" + quotedHeader + "\$1")
+        }
+
+        // 4. Inject Adobe XML stream right after %%EndComments
+        val endCommentsAndSpaceRegex = Regex("""(%%EndComments\s*)""")
+        if (psStr.contains(endCommentsAndSpaceRegex)) {
+            val quotedBlok = java.util.regex.Matcher.quoteReplacement(blokInjeksiAdobe)
+            psStr = psStr.replace(endCommentsAndSpaceRegex, "\$1\n" + quotedBlok + "\n")
+        }
+
+        // 5. PageTrailer marker before showpage / %%EOF
+        val pageTrailer = listOf(
+            "%ADOBeginClientInjection: PageTrailer Start \"AI11EPS\"",
+            "[/EMC AI11_PDFMark5",
+            "[/NamespacePop AI11_PDFMark5",
+            "%ADOEndClientInjection: PageTrailer Start \"AI11EPS\"",
+            ""
+        ).joinToString("\n")
+
+        val showpageEofRegex = Regex("""(\r?\nshowpage\r?\n%%EOF)""")
+        if (psStr.contains(showpageEofRegex)) {
+            psStr = psStr.replace(showpageEofRegex, "\n" + pageTrailer + "showpage\n%%EOF")
+        } else {
+            val showpageEofFallback = Regex("""\nshowpage\n%%EOF""")
+            if (psStr.contains(showpageEofFallback)) {
+                psStr = psStr.replace(showpageEofFallback, "\n\n" + pageTrailer + "showpage\n%%EOF")
+            }
+        }
+
+        // Convert back to bytes preserving non-ASCII ISO bytes and encoding UTF-8 metadata
+        return toBinaryPreservingBytes(psStr)
+    }
+
+    private fun toBinaryPreservingBytes(str: String): ByteArray {
+        val bos = ByteArrayOutputStream(str.length + 512)
+        var i = 0
+        while (i < str.length) {
+            val codePoint = str.codePointAt(i)
+            if (codePoint <= 0xFF) {
+                bos.write(codePoint)
+            } else {
+                val charBytes = String(Character.toChars(codePoint)).toByteArray(StandardCharsets.UTF_8)
+                bos.write(charBytes)
+            }
+            i += Character.charCount(codePoint)
+        }
+        return bos.toByteArray()
+    }
+
+    private fun getUInt32LE(bytes: ByteArray, offset: Int): Int {
+        return (bytes[offset].toInt() and 0xFF) or
+                ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+                ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+                ((bytes[offset + 3].toInt() and 0xFF) shl 24)
+    }
+
+    private fun setUInt32LE(bytes: ByteArray, offset: Int, value: Int) {
+        bytes[offset] = (value and 0xFF).toByte()
+        bytes[offset + 1] = ((value ushr 8) and 0xFF).toByte()
+        bytes[offset + 2] = ((value ushr 16) and 0xFF).toByte()
+        bytes[offset + 3] = ((value ushr 24) and 0xFF).toByte()
+    }
+
+    private fun setUInt16LE(bytes: ByteArray, offset: Int, value: Int) {
+        bytes[offset] = (value and 0xFF).toByte()
+        bytes[offset + 1] = ((value ushr 8) and 0xFF).toByte()
     }
 
     fun injectIntoSvg(

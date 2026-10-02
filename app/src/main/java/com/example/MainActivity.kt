@@ -19,7 +19,13 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.window.Dialog
 import androidx.compose.animation.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,6 +35,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.platform.LocalDensity
@@ -56,6 +63,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -149,6 +157,21 @@ fun MainScreen(
     val descCharLimit by viewModel.descCharLimit.collectAsStateWithLifecycle()
     val keywordsLimit by viewModel.keywordsLimit.collectAsStateWithLifecycle()
     val blacklistWords by viewModel.blacklistWords.collectAsStateWithLifecycle()
+    val savedBlacklistWords by viewModel.savedBlacklistWords.collectAsStateWithLifecycle()
+    val savedPromptConcept by viewModel.savedPromptConcept.collectAsStateWithLifecycle()
+    val isAutoInjectionEnabled by viewModel.isAutoInjectionEnabled.collectAsStateWithLifecycle()
+
+    val blacklistSaveColor = when {
+        blacklistWords.isBlank() -> Color(0xFF9CA3AF)
+        savedBlacklistWords.isNotBlank() && blacklistWords == savedBlacklistWords -> Color(0xFF10B981)
+        else -> Color(0xFFF25C05)
+    }
+
+    val conceptSaveColor = when {
+        promptConcept.isBlank() -> Color(0xFF9CA3AF)
+        savedPromptConcept.isNotBlank() && promptConcept == savedPromptConcept -> Color(0xFF10B981)
+        else -> Color(0xFFF25C05)
+    }
 
     // Key states for API input logic
     var tempGroqKey by remember { mutableStateOf(groqKey) }
@@ -183,6 +206,15 @@ fun MainScreen(
                 viewModel.setKeywords(selected.joinToString(","))
                 viewModel.setTitle("")
                 viewModel.setDescription("")
+                if (isAutoInjectionEnabled) {
+                    val hasSelected = viewModel.imagesList.value.any { it.isSelected }
+                    if (hasSelected) {
+                        viewModel.injectMetadata()
+                    } else if (viewModel.imagesList.value.isNotEmpty()) {
+                        viewModel.selectAllImages(true)
+                        viewModel.injectMetadata()
+                    }
+                }
             }
         }
     }
@@ -222,6 +254,28 @@ fun MainScreen(
 
     val mainScrollState = rememberScrollState()
     val isPointingDown by remember { derivedStateOf { mainScrollState.value < (mainScrollState.maxValue / 2) } }
+    var scrollContainerCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var previewCardCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+
+    val scrollToPreviewCard: () -> Unit = {
+        scope.launch {
+            val containerCoords = scrollContainerCoordinates
+            val targetCoords = previewCardCoordinates
+            if (containerCoords != null && targetCoords != null && containerCoords.isAttached && targetCoords.isAttached) {
+                val relativeY = containerCoords.localPositionOf(targetCoords, Offset.Zero).y
+                val targetScroll = (mainScrollState.value + relativeY - 20).toInt().coerceIn(0, mainScrollState.maxValue)
+                mainScrollState.animateScrollTo(
+                    value = targetScroll,
+                    animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing)
+                )
+            } else {
+                mainScrollState.animateScrollTo(
+                    value = (mainScrollState.value + 650).coerceAtMost(mainScrollState.maxValue),
+                    animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing)
+                )
+            }
+        }
+    }
 
     BoxWithConstraints(modifier = modifier.pointerInput(Unit) {
         detectTapGestures(onTap = { focusManager.clearFocus() })
@@ -239,6 +293,7 @@ fun MainScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF070E20))
+                .onGloballyPositioned { scrollContainerCoordinates = it }
                 .verticalScroll(mainScrollState)
         ) {
         // 1. --- STYLISH BANNER HEADER (Orange `#f25c05` Background) ---
@@ -525,7 +580,7 @@ fun MainScreen(
                             onValueChange = { newValue ->
                                 titleInput = newValue
                                 newValue.toFloatOrNull()?.let { num ->
-                                    if(num in 100f..200f) viewModel.setTitleCharLimit(num)
+                                    if(num in 10f..150f) viewModel.setTitleCharLimit(num)
                                 }
                             },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -537,10 +592,10 @@ fun MainScreen(
                                 unfocusedBorderColor = Color(0xFFCCCCCC)
                             )
                         )
-                        Slider(
+                        OrangeToscaCircleSlider(
                             value = titleCharLimit,
                             onValueChange = { viewModel.setTitleCharLimit(it) },
-                            valueRange = 100f..200f,
+                            valueRange = 10f..150f,
                             modifier = Modifier.weight(1f).padding(start = 8.dp)
                         )
                     }
@@ -554,7 +609,7 @@ fun MainScreen(
                             onValueChange = { newValue ->
                                 descInput = newValue
                                 newValue.toFloatOrNull()?.let { num ->
-                                    if(num in 100f..200f) viewModel.setDescCharLimit(num)
+                                    if(num in 50f..200f) viewModel.setDescCharLimit(num)
                                 }
                             },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -566,10 +621,10 @@ fun MainScreen(
                                 unfocusedBorderColor = Color(0xFFCCCCCC)
                             )
                         )
-                        Slider(
+                        OrangeToscaCircleSlider(
                             value = descCharLimit,
                             onValueChange = { viewModel.setDescCharLimit(it) },
-                            valueRange = 100f..200f,
+                            valueRange = 50f..200f,
                             modifier = Modifier.weight(1f).padding(start = 8.dp)
                         )
                     }
@@ -595,7 +650,7 @@ fun MainScreen(
                                 unfocusedBorderColor = Color(0xFFCCCCCC)
                             )
                         )
-                        Slider(
+                        OrangeToscaCircleSlider(
                             value = keywordsLimit,
                             onValueChange = { viewModel.setKeywordsLimit(it) },
                             valueRange = 10f..50f,
@@ -611,7 +666,41 @@ fun MainScreen(
                         label = { Text("Blacklist Words") },
                         placeholder = { Text("ex: vector, illustration, abstract") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
+                                if (blacklistWords.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = { viewModel.clearBlacklistWordsPermanent() },
+                                        modifier = Modifier.size(32.dp).testTag("clear_blacklist_btn")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Hapus Blacklist Words",
+                                            tint = Color(0xFF9CA3AF),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = {
+                                        if (blacklistWords.isNotBlank()) {
+                                            viewModel.saveBlacklistWordsPermanent()
+                                        }
+                                    },
+                                    modifier = Modifier.size(32.dp).testTag("save_blacklist_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Save,
+                                        contentDescription = "Simpan Blacklist Words",
+                                        tint = blacklistSaveColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("blacklist_words_field"),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1F2937),
                             unfocusedTextColor = Color(0xFF1F2937),
@@ -630,6 +719,38 @@ fun MainScreen(
                         label = { Text("Kata Kunci Inti / Deskripsi Singkat") },
                         placeholder = { Text("Contoh: laptop di meja kayu minimalis, aesthetic lighting...") },
                         maxLines = 2,
+                        trailingIcon = {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
+                                if (promptConcept.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = { viewModel.clearPromptConceptPermanent() },
+                                        modifier = Modifier.size(32.dp).testTag("clear_concept_btn")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Hapus Kata Kunci Inti",
+                                            tint = Color(0xFF9CA3AF),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = {
+                                        if (promptConcept.isNotBlank()) {
+                                            viewModel.savePromptConceptPermanent()
+                                        }
+                                    },
+                                    modifier = Modifier.size(32.dp).testTag("save_concept_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Save,
+                                        contentDescription = "Simpan Kata Kunci Inti",
+                                        tint = conceptSaveColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("concept_prompt_field"),
@@ -645,12 +766,53 @@ fun MainScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    // --- Fitur Auto Injection ---
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFF9FAFB), RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                            .testTag("auto_injection_row"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text(
+                                text = "Fitur Auto Injection :",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1F2937)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = if (isAutoInjectionEnabled) "Otomatis inject (ON) saat metadata berhasil di generate" else "Inject metadata manual (OFF)",
+                                fontSize = 11.sp,
+                                color = if (isAutoInjectionEnabled) Color(0xFF10B981) else Color(0xFF6B7280)
+                            )
+                        }
+                        Switch(
+                            checked = isAutoInjectionEnabled,
+                            onCheckedChange = { viewModel.setAutoInjectionEnabled(it) },
+                            modifier = Modifier.testTag("auto_injection_switch"),
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFFF25C05),
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = Color(0xFFD1D5DB)
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
                     Button(
                         onClick = {
                             if (isGeneratingAi) {
                                 viewModel.cancelGlobalGeneration()
                                 return@Button
                             }
+                            scrollToPreviewCard()
                             if (isOfflineMode) {
                                 if (promptConcept.isBlank()) {
                                     Toast.makeText(context, "Konsep tidak boleh kosong!", Toast.LENGTH_SHORT).show()
@@ -747,7 +909,9 @@ fun MainScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(BorderStroke(1.5.dp, Color(0xFF00A8FF)), RoundedCornerShape(10.dp)),
+                    .onGloballyPositioned { previewCardCoordinates = it }
+                    .border(BorderStroke(1.5.dp, Color(0xFF00A8FF)), RoundedCornerShape(10.dp))
+                    .testTag("preview_card_container"),
                 shape = RoundedCornerShape(10.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF101932))
             ) {
@@ -2318,3 +2482,59 @@ fun SvgExportDialog(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun OrangeToscaCircleSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val isDragged by interactionSource.collectIsDraggedAsState()
+    val isInteracting = isPressed || isDragged
+
+    // Default Orange (0xFFF25C05), turns to Tosca Green (0xFF0D9488) when pressed or dragged
+    val thumbColor by animateColorAsState(
+        targetValue = if (isInteracting) Color(0xFF0D9488) else Color(0xFFF25C05),
+        animationSpec = tween(durationMillis = 150),
+        label = "thumbColor"
+    )
+
+    val thumbElevation by animateDpAsState(
+        targetValue = if (isInteracting) 4.dp else 2.dp,
+        animationSpec = tween(durationMillis = 150),
+        label = "thumbElevation"
+    )
+
+    val thumbSize by animateDpAsState(
+        targetValue = if (isInteracting) 22.dp else 18.dp,
+        animationSpec = tween(durationMillis = 150),
+        label = "thumbSize"
+    )
+
+    Slider(
+        value = value,
+        onValueChange = onValueChange,
+        valueRange = valueRange,
+        interactionSource = interactionSource,
+        colors = SliderDefaults.colors(
+            thumbColor = thumbColor,
+            activeTrackColor = Color(0xFFF25C05),
+            inactiveTrackColor = Color(0xFFE5E7EB)
+        ),
+        thumb = {
+            Box(
+                modifier = Modifier
+                    .size(thumbSize)
+                    .shadow(elevation = thumbElevation, shape = CircleShape)
+                    .background(color = thumbColor, shape = CircleShape)
+                    .border(width = 2.dp, color = Color.White, shape = CircleShape)
+            )
+        },
+        modifier = modifier
+    )
+}
+
