@@ -9,6 +9,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
+import android.graphics.RectF
 import android.graphics.Shader
 import android.util.Base64
 import java.io.ByteArrayInputStream
@@ -25,23 +26,51 @@ object EpsRenderer {
 
     fun renderEpsToJpegBase64(context: Context, epsBytes: ByteArray, maxPreviewSize: Int = 512): String? {
         try {
-            // 1. Try to extract embedded preview (TIFF / JPEG / PNG in DOS EPS header or EPS stream)
+            val bitmap = renderEpsToBitmap(epsBytes, maxPreviewSize) ?: return null
+            return compressAndEncode(bitmap, maxPreviewSize)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
+    }
+
+    fun renderEpsToHighResJpgBytes(epsBytes: ByteArray, targetLongEdge: Int = 4000): ByteArray? {
+        try {
+            val bitmap = renderEpsToBitmap(epsBytes, targetLongEdge) ?: return null
+            val outputStream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 95, outputStream)
+            bitmap.recycle()
+            return outputStream.toByteArray()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
+    }
+
+    fun renderEpsToBitmap(epsBytes: ByteArray, targetMaxSize: Int = 512): Bitmap? {
+        try {
+            val (psText, _) = extractPostScriptTextAndBytes(epsBytes)
+
+            // 1. Try vector PostScript & Adobe Illustrator rendering FIRST
+            // This renders all vector shapes with their rich, colorful gradients exactly as authored
+            val vectorBitmap = renderVectorEps(psText, targetMaxSize)
+            if (vectorBitmap != null) {
+                return vectorBitmap
+            }
+
+            // 2. Fallback to embedded high-resolution bitmap (TIFF / JPEG / PNG)
             val embeddedBitmap = extractEmbeddedBitmap(epsBytes)
             if (embeddedBitmap != null) {
-                return compressAndEncode(embeddedBitmap, maxPreviewSize)
+                return embeddedBitmap
             }
 
-            // 2. Parse ASCII / Hex preview if present (%%BeginPreview:)
+            // 3. Last-resort fallback: ASCII preview
             val asciiPreviewBitmap = extractAsciiPreviewBitmap(epsBytes)
             if (asciiPreviewBitmap != null) {
-                return compressAndEncode(asciiPreviewBitmap, maxPreviewSize)
+                return asciiPreviewBitmap
             }
 
-            // 3. Fallback to advanced vector PostScript & Adobe Illustrator parser with full gradient support
-            val epsText = String(epsBytes, StandardCharsets.ISO_8859_1)
-            val vectorBitmap = renderVectorEps(epsText, maxPreviewSize) ?: return null
-            return compressAndEncode(vectorBitmap, maxPreviewSize)
-
+            return null
         } catch (e: Exception) {
             e.printStackTrace()
             return null
@@ -71,189 +100,272 @@ object EpsRenderer {
     }
 
     // =========================================================================
-    // 1. EMBEDDED BITMAP & TIFF EXTRACTION
+    // POSTSCRIPT EXTRACTION FROM EPS (DOS EPS & ASCII EPS)
     // =========================================================================
 
-    private fun extractEmbeddedBitmap(epsBytes: ByteArray): Bitmap? {
-        if (epsBytes.size < 32) return null
+    private fun extractPostScriptTextAndBytes(epsBytes: ByteArray): Pair<String, ByteArray> {
+        if (epsBytes.size >= 30) {
+            val b0 = epsBytes[0].toInt() and 0xFF
+            val b1 = epsBytes[1].toInt() and 0xFF
+            val b2 = epsBytes[2].toInt() and 0xFF
+            val b3 = epsBytes[3].toInt() and 0xFF
 
-        // A. DOS EPS Binary Header (Magic: 0xC5D0D3C6)
-        val b0 = epsBytes[0].toInt() and 0xFF
-        val b1 = epsBytes[1].toInt() and 0xFF
-        val b2 = epsBytes[2].toInt() and 0xFF
-        val b3 = epsBytes[3].toInt() and 0xFF
-
-        if (b0 == 0xC5 && b1 == 0xD0 && b2 == 0xD3 && b3 == 0xC6) {
-            // TIFF offset at 20..23, length at 24..27
-            val tiffOffset = getUInt32LE(epsBytes, 20)
-            val tiffLength = getUInt32LE(epsBytes, 24)
-            if (tiffOffset > 0 && tiffLength > 0 && tiffOffset + tiffLength <= epsBytes.size) {
-                // Try pure-Kotlin TIFF decoder first
-                val tiffBmp = TiffDecoder.decodeTiff(epsBytes, tiffOffset, tiffLength)
-                if (tiffBmp != null) return tiffBmp
-
-                // Fallback to standard BitmapFactory
-                try {
-                    val bmp = BitmapFactory.decodeByteArray(epsBytes, tiffOffset, tiffLength)
-                    if (bmp != null) return bmp
-                } catch (_: Exception) {}
-            }
-
-            // WMF offset at 12..15, length at 16..19
-            val wmfOffset = getUInt32LE(epsBytes, 12)
-            val wmfLength = getUInt32LE(epsBytes, 16)
-            if (wmfOffset > 0 && wmfLength > 0 && wmfOffset + wmfLength <= epsBytes.size) {
-                try {
-                    val bmp = BitmapFactory.decodeByteArray(epsBytes, wmfOffset, wmfLength)
-                    if (bmp != null) return bmp
-                } catch (_: Exception) {}
-            }
-        }
-
-        // B. Search for JPEG magic bytes FF D8 FF in raw bytes
-        val jpegStart = findSequence(epsBytes, byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()))
-        if (jpegStart >= 0) {
-            val jpegEnd = findSequence(epsBytes, byteArrayOf(0xFF.toByte(), 0xD9.toByte()), jpegStart)
-            if (jpegEnd > jpegStart) {
-                val length = (jpegEnd + 2) - jpegStart
-                try {
-                    val bmp = BitmapFactory.decodeByteArray(epsBytes, jpegStart, length)
-                    if (bmp != null) return bmp
-                } catch (_: Exception) {}
-            }
-        }
-
-        // C. Search for PNG magic bytes 89 50 4E 47 0D 0A 1A 0A
-        val pngMagic = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
-        val pngStart = findSequence(epsBytes, pngMagic)
-        if (pngStart >= 0) {
-            val pngIend = byteArrayOf('I'.code.toByte(), 'E'.code.toByte(), 'N'.code.toByte(), 'D'.code.toByte())
-            val iendPos = findSequence(epsBytes, pngIend, pngStart)
-            if (iendPos > pngStart) {
-                val length = (iendPos + 8) - pngStart
-                try {
-                    val bmp = BitmapFactory.decodeByteArray(epsBytes, pngStart, length)
-                    if (bmp != null) return bmp
-                } catch (_: Exception) {}
-            }
-        }
-
-        return null
-    }
-
-    private fun extractAsciiPreviewBitmap(epsBytes: ByteArray): Bitmap? {
-        try {
-            val text = String(epsBytes.copyOfRange(0, min(epsBytes.size, 100_000)), StandardCharsets.ISO_8859_1)
-            val previewMatch = Regex("""%%BeginPreview:\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)""").find(text) ?: return null
-            val width = previewMatch.groupValues[1].toIntOrNull() ?: return null
-            val height = previewMatch.groupValues[2].toIntOrNull() ?: return null
-            val depth = previewMatch.groupValues[3].toIntOrNull() ?: return null
-            val linesCount = previewMatch.groupValues[4].toIntOrNull() ?: return null
-
-            if (width <= 0 || height <= 0 || (depth != 1 && depth != 8)) return null
-
-            val startPos = previewMatch.range.last + 1
-            val endPos = text.indexOf("%%EndPreview", startPos)
-            if (endPos <= startPos) return null
-
-            val hexSection = text.substring(startPos, endPos)
-            val hexClean = hexSection.replace(Regex("""[%#\s\r\n]"""), "")
-            val hexBytes = hexStringToByteArray(hexClean)
-
-            if (hexBytes.isEmpty()) return null
-
-            val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val pixels = IntArray(width * height)
-
-            if (depth == 1) {
-                val bytesPerRow = (width + 7) / 8
-                for (y in 0 until height) {
-                    val rowStart = y * bytesPerRow
-                    for (x in 0 until width) {
-                        val byteIdx = rowStart + (x / 8)
-                        if (byteIdx < hexBytes.size) {
-                            val b = hexBytes[byteIdx].toInt() and 0xFF
-                            val bit = (b ushr (7 - (x % 8))) and 1
-                            pixels[y * width + x] = if (bit == 1) Color.BLACK else Color.WHITE
-                        }
-                    }
-                }
-            } else if (depth == 8) {
-                for (i in 0 until min(pixels.size, hexBytes.size)) {
-                    val gray = hexBytes[i].toInt() and 0xFF
-                    pixels[i] = Color.rgb(gray, gray, gray)
+            // DOS EPS header magic: 0xC5D0D3C6
+            if (b0 == 0xC5 && b1 == 0xD0 && b2 == 0xD3 && b3 == 0xC6) {
+                val psOffset = getUInt32LE(epsBytes, 4)
+                val psLength = getUInt32LE(epsBytes, 8)
+                if (psOffset in 30..epsBytes.size && psLength > 0 && psOffset + psLength <= epsBytes.size) {
+                    val rawPsBytes = epsBytes.copyOfRange(psOffset, psOffset + psLength)
+                    val text = String(rawPsBytes, StandardCharsets.ISO_8859_1)
+                    return Pair(text, rawPsBytes)
                 }
             }
-
-            bmp.setPixels(pixels, 0, width, 0, 0, width, height)
-            return bmp
-        } catch (_: Exception) {
-            return null
         }
-    }
-
-    private fun hexStringToByteArray(s: String): ByteArray {
-        val len = s.length
-        val data = ByteArray(len / 2)
-        var i = 0
-        var out = 0
-        while (i < len - 1) {
-            val d1 = Character.digit(s[i], 16)
-            val d2 = Character.digit(s[i + 1], 16)
-            if (d1 != -1 && d2 != -1) {
-                data[out++] = ((d1 shl 4) + d2).toByte()
-            }
-            i += 2
-        }
-        return if (out == data.size) data else data.copyOf(out)
-    }
-
-    private fun getUInt32LE(bytes: ByteArray, offset: Int): Int {
-        return (bytes[offset].toInt() and 0xFF) or
-                ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
-                ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
-                ((bytes[offset + 3].toInt() and 0xFF) shl 24)
-    }
-
-    private fun findSequence(data: ByteArray, sequence: ByteArray, startFrom: Int = 0): Int {
-        if (sequence.isEmpty() || data.size < sequence.size) return -1
-        for (i in startFrom..(data.size - sequence.size)) {
-            var match = true
-            for (j in sequence.indices) {
-                if (data[i + j] != sequence[j]) {
-                    match = false
-                    break
-                }
-            }
-            if (match) return i
-        }
-        return -1
+        val text = String(epsBytes, StandardCharsets.ISO_8859_1)
+        return Pair(text, epsBytes)
     }
 
     // =========================================================================
-    // 2. VECTOR EPS & ADOBE ILLUSTRATOR GRADIENT RENDERER
+    // GRADIENT DATA MODELS & COLOR UTILITIES
     // =========================================================================
 
-    private data class GradientColorStop(
+    data class GradientColorStop(
         val position: Float,
         val color: Int
     )
 
-    private data class ParsedGradient(
+    data class ParsedGradient(
         val name: String,
         val isRadial: Boolean,
-        val stops: List<GradientColorStop>
+        val stops: List<GradientColorStop>,
+        val coords: List<Float> = emptyList()
     )
+
+    private fun parseColorComponents(cTokens: List<Float>): Int {
+        if (cTokens.size >= 4) {
+            // CMYK format (Cyan, Magenta, Yellow, Black)
+            val maxVal = max(max(cTokens[0], cTokens[1]), max(cTokens[2], cTokens[3]))
+            val div = if (maxVal > 1.0f) 100f else 1f
+            val c = (cTokens[0] / div).coerceIn(0f, 1f)
+            val m = (cTokens[1] / div).coerceIn(0f, 1f)
+            val y = (cTokens[2] / div).coerceIn(0f, 1f)
+            val k = (cTokens[3] / div).coerceIn(0f, 1f)
+            val r = ((1f - c) * (1f - k) * 255f).toInt().coerceIn(0, 255)
+            val g = ((1f - m) * (1f - k) * 255f).toInt().coerceIn(0, 255)
+            val b = ((1f - y) * (1f - k) * 255f).toInt().coerceIn(0, 255)
+            return Color.rgb(r, g, b)
+        } else if (cTokens.size == 3) {
+            // RGB format
+            val maxVal = max(cTokens[0], max(cTokens[1], cTokens[2]))
+            val div = if (maxVal > 1.0f) 255f else 1f
+            val r = ((cTokens[0] / div).coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
+            val g = ((cTokens[1] / div).coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
+            val b = ((cTokens[2] / div).coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
+            return Color.rgb(r, g, b)
+        } else if (cTokens.isNotEmpty()) {
+            // Grayscale format
+            val div = if (cTokens[0] > 1.0f) (if (cTokens[0] > 100f) 255f else 100f) else 1f
+            val gr = ((cTokens[0] / div).coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
+            return Color.rgb(gr, gr, gr)
+        }
+        return Color.BLACK
+    }
+
+    // =========================================================================
+    // ADOBE ILLUSTRATOR & POSTSCRIPT LEVEL 3 GRADIENT DEFINITION PARSERS
+    // =========================================================================
+
+    private fun parseGradientStops(body: String): List<GradientColorStop> {
+        val stops = mutableListOf<GradientColorStop>()
+
+        // Look for stop lines with bracketed color values:
+        // Examples:
+        // 0 50 1 [ 0 1 1 0 ]
+        // 100 50 1 [ 1 0 0 0 ]
+        // 0.0 [ 1 0 0 ]
+        // [ 0 1 1 0 ] 0
+        for (line in body.lineSequence()) {
+            val trimmed = line.trim()
+            if (trimmed.startsWith("%") && !trimmed.contains("[")) continue
+            if (!trimmed.contains("[")) continue
+
+            val match = Regex("""(?:([0-9.]+)(?:\s+[0-9.]+)*\s+)?\[\s*([0-9.\s]+)\s*\](?:\s+([0-9.]+))?""").find(trimmed)
+            if (match != null) {
+                val beforeNumsStr = match.groupValues[1].trim()
+                val colorStr = match.groupValues[2].trim()
+                val afterNumStr = match.groupValues[3].trim()
+
+                var rawOffset: Float? = null
+                if (beforeNumsStr.isNotEmpty()) {
+                    val tokens = beforeNumsStr.split(Regex("""\s+""")).mapNotNull { it.toFloatOrNull() }
+                    if (tokens.isNotEmpty()) {
+                        rawOffset = tokens[0] // In 'offset midpoint type [ ... ]', offset is the FIRST token!
+                    }
+                } else if (afterNumStr.isNotEmpty()) {
+                    rawOffset = afterNumStr.toFloatOrNull()
+                }
+
+                val cTokens = colorStr.split(Regex("""\s+""")).mapNotNull { it.toFloatOrNull() }
+                if (cTokens.isNotEmpty()) {
+                    val color = parseColorComponents(cTokens)
+                    val offset = if (rawOffset != null) {
+                        var o = rawOffset
+                        if (o > 1.0f) o /= 100f
+                        o.coerceIn(0f, 1f)
+                    } else {
+                        stops.size.toFloat()
+                    }
+                    stops.add(GradientColorStop(offset, color))
+                }
+            }
+        }
+
+        // Generic bracket fallback if structured lines were not detected
+        if (stops.isEmpty()) {
+            val genericBracket = Regex("""\[\s*([0-9.\s]+)\s*\]""")
+            val found = genericBracket.findAll(body).toList()
+            for ((idx, m) in found.withIndex()) {
+                val cTokens = m.groupValues[1].split(Regex("""\s+""")).mapNotNull { it.toFloatOrNull() }
+                if (cTokens.size in 1..4) {
+                    val color = parseColorComponents(cTokens)
+                    val pos = if (found.size > 1) idx.toFloat() / (found.size - 1) else 0f
+                    stops.add(GradientColorStop(pos, color))
+                }
+            }
+        }
+
+        if (stops.isEmpty()) return emptyList()
+
+        stops.sortBy { it.position }
+
+        val maxPos = stops.last().position
+        if (maxPos > 1.0f) {
+            for (i in stops.indices) {
+                stops[i] = stops[i].copy(position = (stops[i].position / maxPos).coerceIn(0f, 1f))
+            }
+        }
+
+        if (stops.first().position > 0f) {
+            stops.add(0, GradientColorStop(0f, stops.first().color))
+        }
+        if (stops.last().position < 1f) {
+            stops.add(GradientColorStop(1f, stops.last().color))
+        }
+        if (stops.size == 1) {
+            stops.add(GradientColorStop(1f, stops[0].color))
+        }
+
+        // Ensure strictly non-decreasing positions for Android Shader
+        for (i in 1 until stops.size) {
+            if (stops[i].position <= stops[i - 1].position) {
+                val adjusted = (stops[i - 1].position + 0.001f).coerceAtMost(1f)
+                stops[i] = stops[i].copy(position = adjusted)
+            }
+        }
+
+        return stops
+    }
+
+    private fun parseShadingDict(dictBody: String, name: String = ""): ParsedGradient? {
+        val isRadial = dictBody.contains("/ShadingType 3") || dictBody.contains("/ShadingType\t3")
+
+        val coordsMatch = Regex("""/Coords\s*\[\s*([0-9.\s-]+)\s*\]""").find(dictBody)
+        val coords = coordsMatch?.groupValues?.get(1)?.split(Regex("""\s+"""))?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
+
+        val stops = mutableListOf<GradientColorStop>()
+
+        val boundsMatch = Regex("""/Bounds\s*\[\s*([0-9.\s]+)\s*\]""").find(dictBody)
+        val bounds = boundsMatch?.groupValues?.get(1)?.split(Regex("""\s+"""))?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
+
+        val c0Matches = Regex("""/C0\s*\[\s*([0-9.\s]+)\s*\]""").findAll(dictBody).toList()
+        val c1Matches = Regex("""/C1\s*\[\s*([0-9.\s]+)\s*\]""").findAll(dictBody).toList()
+
+        if (c0Matches.isNotEmpty() && c1Matches.isNotEmpty()) {
+            if (c0Matches.size == 1 && bounds.isEmpty()) {
+                val c0Tokens = c0Matches[0].groupValues[1].split(Regex("""\s+""")).mapNotNull { it.toFloatOrNull() }
+                val c1Tokens = c1Matches[0].groupValues[1].split(Regex("""\s+""")).mapNotNull { it.toFloatOrNull() }
+                stops.add(GradientColorStop(0f, parseColorComponents(c0Tokens)))
+                stops.add(GradientColorStop(1f, parseColorComponents(c1Tokens)))
+            } else {
+                val segCount = min(c0Matches.size, c1Matches.size)
+                val fullBounds = mutableListOf(0f)
+                fullBounds.addAll(bounds)
+                fullBounds.add(1f)
+
+                for (s in 0 until segCount) {
+                    val startPos = if (s < fullBounds.size) fullBounds[s] else (s.toFloat() / segCount)
+                    val endPos = if (s + 1 < fullBounds.size) fullBounds[s + 1] else ((s + 1).toFloat() / segCount)
+
+                    val c0Tokens = c0Matches[s].groupValues[1].split(Regex("""\s+""")).mapNotNull { it.toFloatOrNull() }
+                    val c1Tokens = c1Matches[s].groupValues[1].split(Regex("""\s+""")).mapNotNull { it.toFloatOrNull() }
+
+                    val col0 = parseColorComponents(c0Tokens)
+                    val col1 = parseColorComponents(c1Tokens)
+
+                    if (s == 0) {
+                        stops.add(GradientColorStop(startPos, col0))
+                    }
+                    stops.add(GradientColorStop(endPos, col1))
+                }
+            }
+        }
+
+        if (stops.isEmpty()) return null
+        return ParsedGradient(name = name, isRadial = isRadial, stops = stops, coords = coords)
+    }
+
+    private fun parseAllGradients(epsText: String): Map<String, ParsedGradient> {
+        val result = mutableMapOf<String, ParsedGradient>()
+
+        // 1. Adobe Illustrator Gradient Blocks across all versions (AI5, AI7, AI8, AI9, AI10, AI11, AI12, CC, CS)
+        val aiGradRegex = Regex(
+            """(?:%AI[0-9]*_BeginGradient:|%_BeginGradient:|%%BeginGradient:)\s*(?:\(([^)]+)\)|/([^\s]+))([\s\S]*?)(?:%AI[0-9]*_EndGradient|%_EndGradient|%%EndGradient)""",
+            RegexOption.IGNORE_CASE
+        )
+        for (match in aiGradRegex.findAll(epsText)) {
+            val name = (match.groupValues[1].ifEmpty { match.groupValues[2] }).trim()
+            val body = match.groupValues[3]
+            val isRadial = body.contains("/Radial", ignoreCase = true) ||
+                    Regex("""%AI[0-9]*_GradientType:\s*2""").containsMatchIn(body) ||
+                    Regex("""\b[1-9]\s+2\b""").containsMatchIn(body)
+            val stops = parseGradientStops(body)
+            if (stops.isNotEmpty()) {
+                val grad = ParsedGradient(name, isRadial, stops)
+                result[name] = grad
+                result["/$name"] = grad
+                result["($name)"] = grad
+            }
+        }
+
+        // 2. Named PostScript Level 3 Shading dictionaries: /Name << /ShadingType ... >> def
+        val psShadingRegex = Regex("""/([a-zA-Z0-9_.-]+)\s*<<([\s\S]*?/ShadingType[\s\S]*?)>>\s*(?:def|defineresource)""")
+        for (match in psShadingRegex.findAll(epsText)) {
+            val name = match.groupValues[1].trim()
+            val dictBody = match.groupValues[2]
+            val grad = parseShadingDict(dictBody, name)
+            if (grad != null) {
+                result[name] = grad
+                result["/$name"] = grad
+            }
+        }
+
+        return result
+    }
+
+    // =========================================================================
+    // VECTOR EPS & POSTSCRIPT RENDERING ENGINE
+    // =========================================================================
 
     private class GraphicsState(
         var fillColor: Int = Color.BLACK,
         var strokeColor: Int = Color.TRANSPARENT,
         var strokeWidth: Float = 1f,
         var activeShader: Shader? = null,
+        var activeShaderDef: ParsedGradient? = null,
         var activeClip: Path? = null
     ) {
         fun copy(): GraphicsState {
-            val c = GraphicsState(fillColor, strokeColor, strokeWidth, activeShader, null)
+            val c = GraphicsState(fillColor, strokeColor, strokeWidth, activeShader, activeShaderDef, null)
             if (activeClip != null) {
                 c.activeClip = Path(activeClip!!)
             }
@@ -270,8 +382,7 @@ object EpsRenderer {
         var hasBbox = false
 
         val bboxRegex = Regex("""(?:%%BoundingBox:|%%HiResBoundingBox:|%AIGPU_BoundingBox:)\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)""")
-        val lineSeq = epsText.lineSequence()
-        for (line in lineSeq.take(300)) {
+        for (line in epsText.lineSequence().take(400)) {
             val match = bboxRegex.find(line)
             if (match != null) {
                 val v1 = match.groupValues[1].toFloat()
@@ -289,13 +400,11 @@ object EpsRenderer {
             }
         }
 
-        // 2. Extract Adobe Illustrator Pre-defined Gradients (%AI5_BeginGradient ... %AI5_EndGradient)
-        val aiGradients = parseAiGradients(epsText)
-
-        val tokens = tokenizePostScriptWithStrings(epsText)
+        val allGradients = parseAllGradients(epsText)
+        val tokens = tokenizePostScriptWithStrings(epsText).toList()
 
         if (!hasBbox) {
-            // Pre-scan coordinates to find bounds
+            // Coordinate scan fallback
             var minX = Float.MAX_VALUE
             var minY = Float.MAX_VALUE
             var maxX = -Float.MAX_VALUE
@@ -318,7 +427,7 @@ object EpsRenderer {
                         }
                         "c", "curveto" -> {
                             if (tempStack.size >= 6) {
-                                for (i in 0 until 3) {
+                                for (k in 0 until 3) {
                                     val y = tempStack.removeAt(tempStack.size - 1)
                                     val x = tempStack.removeAt(tempStack.size - 1)
                                     minX = min(minX, x); maxX = max(maxX, x)
@@ -341,11 +450,8 @@ object EpsRenderer {
                 }
             }
 
-            if (minX < maxX && minY < maxY) {
-                llx = minX
-                lly = minY
-                urx = maxX
-                ury = maxY
+            if (minX < maxX && minY < maxY && minX.isFinite() && maxX.isFinite()) {
+                llx = minX; lly = minY; urx = maxX; ury = maxY
             } else {
                 llx = 0f; lly = 0f; urx = 512f; ury = 512f
             }
@@ -377,29 +483,41 @@ object EpsRenderer {
 
         val numStack = mutableListOf<Float>()
         val stringStack = mutableListOf<String>()
+        var drawCount = 0
 
-        // Level 3 Shading parser state
-        var parsingShadingDict = false
-        var shadingType = 2 // 2 = linear, 3 = radial
-        val shadingCoords = mutableListOf<Float>()
-        val shadingC0 = mutableListOf<Float>()
-        val shadingC1 = mutableListOf<Float>()
-        val shadingMultiColors = mutableListOf<Int>()
-        val shadingMultiStops = mutableListOf<Float>()
+        var idx = 0
+        while (idx < tokens.size) {
+            val tok = tokens[idx++]
 
-        val tokenList = tokens.toList()
-        var i = 0
-        while (i < tokenList.size) {
-            val tok = tokenList[i++]
+            // 1. Numbers
             val num = tok.toFloatOrNull()
-
             if (num != null) {
                 numStack.add(num)
-                if (numStack.size > 50) numStack.removeAt(0)
+                if (numStack.size > 100) numStack.removeAt(0)
                 continue
             }
 
-            // String or Name token (e.g. (GradientName) or /GradientName)
+            // 2. Inline PostScript Level 3 Shading Dictionary: << ... /ShadingType ... >>
+            if (tok == "<<") {
+                val dictTokens = mutableListOf<String>()
+                var depth = 1
+                while (idx < tokens.size && depth > 0) {
+                    val dt = tokens[idx++]
+                    if (dt == "<<") depth++
+                    else if (dt == ">>") depth--
+                    if (depth > 0) dictTokens.add(dt)
+                }
+                val dictBody = dictTokens.joinToString(" ")
+                if (dictBody.contains("ShadingType")) {
+                    val inlineGrad = parseShadingDict(dictBody)
+                    if (inlineGrad != null) {
+                        state.activeShaderDef = inlineGrad
+                    }
+                }
+                continue
+            }
+
+            // 3. String literals (Name) or Name literals /Name
             if (tok.startsWith("(") && tok.endsWith(")")) {
                 stringStack.add(tok.substring(1, tok.length - 1))
                 continue
@@ -409,7 +527,7 @@ object EpsRenderer {
             }
 
             when (tok) {
-                // --- Path Construction ---
+                // --- Path Construction Operators ---
                 "m", "moveto" -> {
                     if (numStack.size >= 2) {
                         val y = numStack.removeAt(numStack.size - 1)
@@ -504,14 +622,15 @@ object EpsRenderer {
                     numStack.clear()
                 }
 
-                // --- Color & Shading Attributes ---
+                // --- Color Operators (Standard PostScript & Adobe Illustrator) ---
                 "rg", "setrgbcolor" -> {
                     if (numStack.size >= 3) {
                         val b = numStack.removeAt(numStack.size - 1)
                         val g = numStack.removeAt(numStack.size - 1)
                         val r = numStack.removeAt(numStack.size - 1)
-                        state.fillColor = Color.rgb((r.coerceIn(0f, 1f) * 255).toInt(), (g.coerceIn(0f, 1f) * 255).toInt(), (b.coerceIn(0f, 1f) * 255).toInt())
+                        state.fillColor = parseColorComponents(listOf(r, g, b))
                         state.activeShader = null
+                        state.activeShaderDef = null
                     }
                     numStack.clear()
                 }
@@ -520,7 +639,7 @@ object EpsRenderer {
                         val b = numStack.removeAt(numStack.size - 1)
                         val g = numStack.removeAt(numStack.size - 1)
                         val r = numStack.removeAt(numStack.size - 1)
-                        state.strokeColor = Color.rgb((r.coerceIn(0f, 1f) * 255).toInt(), (g.coerceIn(0f, 1f) * 255).toInt(), (b.coerceIn(0f, 1f) * 255).toInt())
+                        state.strokeColor = parseColorComponents(listOf(r, g, b))
                     }
                     numStack.clear()
                 }
@@ -530,11 +649,9 @@ object EpsRenderer {
                         val y = numStack.removeAt(numStack.size - 1)
                         val m = numStack.removeAt(numStack.size - 1)
                         val c = numStack.removeAt(numStack.size - 1)
-                        val r = (1f - c.coerceIn(0f, 1f)) * (1f - k.coerceIn(0f, 1f))
-                        val g = (1f - m.coerceIn(0f, 1f)) * (1f - k.coerceIn(0f, 1f))
-                        val b = (1f - y.coerceIn(0f, 1f)) * (1f - k.coerceIn(0f, 1f))
-                        state.fillColor = Color.rgb((r * 255).toInt(), (g * 255).toInt(), (b * 255).toInt())
+                        state.fillColor = parseColorComponents(listOf(c, m, y, k))
                         state.activeShader = null
+                        state.activeShaderDef = null
                     }
                     numStack.clear()
                 }
@@ -544,27 +661,38 @@ object EpsRenderer {
                         val y = numStack.removeAt(numStack.size - 1)
                         val m = numStack.removeAt(numStack.size - 1)
                         val c = numStack.removeAt(numStack.size - 1)
-                        val r = (1f - c.coerceIn(0f, 1f)) * (1f - k.coerceIn(0f, 1f))
-                        val g = (1f - m.coerceIn(0f, 1f)) * (1f - k.coerceIn(0f, 1f))
-                        val b = (1f - y.coerceIn(0f, 1f)) * (1f - k.coerceIn(0f, 1f))
-                        state.strokeColor = Color.rgb((r * 255).toInt(), (g * 255).toInt(), (b * 255).toInt())
+                        state.strokeColor = parseColorComponents(listOf(c, m, y, k))
                     }
                     numStack.clear()
                 }
                 "g", "setgray" -> {
                     if (numStack.isNotEmpty()) {
                         val gray = numStack.removeAt(numStack.size - 1)
-                        val gr = (gray.coerceIn(0f, 1f) * 255).toInt()
-                        state.fillColor = Color.rgb(gr, gr, gr)
+                        state.fillColor = parseColorComponents(listOf(gray))
                         state.activeShader = null
+                        state.activeShaderDef = null
                     }
                     numStack.clear()
                 }
                 "G" -> {
                     if (numStack.isNotEmpty()) {
                         val gray = numStack.removeAt(numStack.size - 1)
-                        val gr = (gray.coerceIn(0f, 1f) * 255).toInt()
-                        state.strokeColor = Color.rgb(gr, gr, gr)
+                        state.strokeColor = parseColorComponents(listOf(gray))
+                    }
+                    numStack.clear()
+                }
+                // Adobe Illustrator color setting operators 'x' (fill) and 'X' (stroke)
+                "x", "xx" -> {
+                    if (numStack.isNotEmpty()) {
+                        state.fillColor = parseColorComponents(numStack)
+                        state.activeShader = null
+                        state.activeShaderDef = null
+                    }
+                    numStack.clear()
+                }
+                "X", "Xx" -> {
+                    if (numStack.isNotEmpty()) {
+                        state.strokeColor = parseColorComponents(numStack)
                     }
                     numStack.clear()
                 }
@@ -576,130 +704,146 @@ object EpsRenderer {
                     numStack.clear()
                 }
 
-                // --- Level 3 Shading Dictionary parsing ---
-                "ShadingType" -> {
-                    parsingShadingDict = true
-                    if (numStack.isNotEmpty()) {
-                        shadingType = numStack.removeAt(numStack.size - 1).toInt()
-                    }
-                }
-                "Coords" -> {
-                    // Extract coordinates from preceding numbers in numStack
-                    shadingCoords.clear()
-                    shadingCoords.addAll(numStack)
-                    numStack.clear()
-                }
-                "C0" -> {
-                    shadingC0.clear()
-                    shadingC0.addAll(numStack)
-                    numStack.clear()
-                }
-                "C1" -> {
-                    shadingC1.clear()
-                    shadingC1.addAll(numStack)
-                    numStack.clear()
-                }
-                "Bounds" -> {
-                    shadingMultiStops.clear()
-                    shadingMultiStops.add(0f)
-                    shadingMultiStops.addAll(numStack)
-                    shadingMultiStops.add(1f)
-                    numStack.clear()
-                }
+                // --- Gradient Application Operators ---
+                "_Xg", "_xg", "Xg", "xg",
+                "_Yg", "_yg", "Yg", "yg",
+                "_Bg", "_bg", "Bg", "bg",
+                "_Ag", "_ag", "Ag", "ag",
                 "shfill" -> {
-                    // Construct Gradient Shader from Shading Dictionary
-                    val shader = createShadingShader(
-                        shadingType = shadingType,
-                        coords = shadingCoords,
-                        c0 = shadingC0,
-                        c1 = shadingC1,
-                        multiColors = shadingMultiColors,
-                        multiStops = shadingMultiStops,
-                        mapX = ::mapX,
-                        mapY = ::mapY,
-                        scale = scale,
-                        previewWidth = previewWidth.toFloat(),
-                        previewHeight = previewHeight.toFloat()
-                    )
+                    val isRadialOp = tok in listOf("_Yg", "_yg", "Yg", "yg")
+                    val isStrokeAlso = tok in listOf("_Bg", "_bg", "Bg", "bg", "_Ag", "_ag", "Ag", "ag")
 
+                    // 1. Resolve Gradient definition
+                    var gradDef: ParsedGradient? = null
+                    val candidateName = stringStack.lastOrNull { allGradients.containsKey(it) }
+                    if (candidateName != null) {
+                        gradDef = allGradients[candidateName]
+                    }
+                    if (gradDef == null && state.activeShaderDef != null) {
+                        gradDef = state.activeShaderDef
+                    }
+                    if (gradDef == null && allGradients.isNotEmpty()) {
+                        // Fallback: match by radial/linear or take latest
+                        gradDef = allGradients.values.firstOrNull { it.isRadial == isRadialOp } ?: allGradients.values.last()
+                    }
+
+                    // 2. Compute Target Bounds from current shape path (or active clip)
+                    val bounds = RectF()
+                    val pathForBounds = if (!currentPath.isEmpty) currentPath else state.activeClip
+                    pathForBounds?.computeBounds(bounds, true)
+                    if (bounds.isEmpty || bounds.width() <= 0f || bounds.height() <= 0f) {
+                        bounds.set(0f, 0f, previewWidth.toFloat(), previewHeight.toFloat())
+                    }
+
+                    // 3. Construct Gradient Shader with accurate shape coordinates
+                    val shader: Shader? = if (gradDef != null && gradDef.stops.isNotEmpty()) {
+                        val colors = gradDef.stops.map { it.color }.toIntArray()
+                        val positions = gradDef.stops.map { it.position }.toFloatArray()
+                        val isRad = isRadialOp || gradDef.isRadial
+
+                        if (isRad) {
+                            val cx = bounds.centerX()
+                            val cy = bounds.centerY()
+                            val r = max(1f, max(bounds.width(), bounds.height()) / 2f)
+                            RadialGradient(cx, cy, r, colors, positions, Shader.TileMode.CLAMP)
+                        } else {
+                            val sx = bounds.left
+                            val sy = bounds.top
+                            val ex = bounds.right
+                            val ey = bounds.bottom
+                            LinearGradient(sx, sy, ex, ey, colors, positions, Shader.TileMode.CLAMP)
+                        }
+                    } else if (state.fillColor != Color.BLACK && state.fillColor != Color.TRANSPARENT) {
+                        // Blend from shape color to lighter shade
+                        val c0 = state.fillColor
+                        val c1 = Color.rgb(
+                            (Color.red(c0) * 0.7f + 70).toInt().coerceIn(0, 255),
+                            (Color.green(c0) * 0.7f + 70).toInt().coerceIn(0, 255),
+                            (Color.blue(c0) * 0.7f + 70).toInt().coerceIn(0, 255)
+                        )
+                        LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom, c0, c1, Shader.TileMode.CLAMP)
+                    } else null
+
+                    // 4. Render Gradient Fill to shape
                     if (shader != null) {
-                        state.activeShader = shader
                         fillPaint.shader = shader
-                        if (!currentPath.isEmpty) {
-                            canvas.drawPath(currentPath, fillPaint)
+                        val drawPath = if (!currentPath.isEmpty) currentPath else state.activeClip
+                        if (drawPath != null && !drawPath.isEmpty) {
+                            canvas.drawPath(drawPath, fillPaint)
                         } else {
                             canvas.drawRect(0f, 0f, previewWidth.toFloat(), previewHeight.toFloat(), fillPaint)
                         }
                         fillPaint.shader = null
-                    }
-                    parsingShadingDict = false
-                    numStack.clear()
-                    stringStack.clear()
-                }
-                "setpattern", "makepattern" -> {
-                    // Pattern Shading
-                    val shader = createShadingShader(
-                        shadingType = shadingType,
-                        coords = shadingCoords,
-                        c0 = shadingC0,
-                        c1 = shadingC1,
-                        multiColors = shadingMultiColors,
-                        multiStops = shadingMultiStops,
-                        mapX = ::mapX,
-                        mapY = ::mapY,
-                        scale = scale,
-                        previewWidth = previewWidth.toFloat(),
-                        previewHeight = previewHeight.toFloat()
-                    )
-                    if (shader != null) {
-                        state.activeShader = shader
-                    }
-                }
-
-                // --- Adobe Illustrator Gradient Fill Operators ---
-                "_Xg", "_xg", "_Yg", "_yg", "_Bg", "_bg", "_Ag", "_ag" -> {
-                    // Look up gradient by name in stringStack or fallback
-                    var gradName = stringStack.lastOrNull { aiGradients.containsKey(it) }
-                    if (gradName == null && stringStack.isNotEmpty()) {
-                        gradName = stringStack.last()
-                    }
-                    val gradDef = if (gradName != null) aiGradients[gradName] else null
-
-                    val isRadialOp = tok == "_Yg" || tok == "_yg" || (gradDef?.isRadial == true)
-                    val shader = if (gradDef != null) {
-                        createAiGradientShader(
-                            gradDef = gradDef,
-                            numStack = numStack,
-                            mapX = ::mapX,
-                            mapY = ::mapY,
-                            scale = scale,
-                            previewWidth = previewWidth.toFloat(),
-                            previewHeight = previewHeight.toFloat()
-                        )
-                    } else if (numStack.size >= 4) {
-                        // Fallback linear gradient from coords in numStack
-                        val y1 = numStack[numStack.size - 1]
-                        val x1 = numStack[numStack.size - 2]
-                        val y0 = numStack[numStack.size - 3]
-                        val x0 = numStack[numStack.size - 4]
-                        LinearGradient(mapX(x0), mapY(y0), mapX(x1), mapY(y1), state.fillColor, Color.WHITE, Shader.TileMode.CLAMP)
-                    } else null
-
-                    if (shader != null) {
-                        state.activeShader = shader
-                        fillPaint.shader = shader
-                        canvas.drawPath(currentPath, fillPaint)
-                        fillPaint.shader = null
                     } else {
-                        // Flat fallback
+                        // Flat color fallback
                         fillPaint.color = state.fillColor
-                        canvas.drawPath(currentPath, fillPaint)
+                        val drawPath = if (!currentPath.isEmpty) currentPath else state.activeClip
+                        if (drawPath != null && !drawPath.isEmpty) {
+                            canvas.drawPath(drawPath, fillPaint)
+                        }
                     }
+
+                    // 5. Render Stroke if requested
+                    if (isStrokeAlso && state.strokeColor != Color.TRANSPARENT && state.strokeWidth > 0f) {
+                        strokePaint.color = state.strokeColor
+                        strokePaint.strokeWidth = state.strokeWidth
+                        val drawPath = if (!currentPath.isEmpty) currentPath else state.activeClip
+                        if (drawPath != null && !drawPath.isEmpty) {
+                            canvas.drawPath(drawPath, strokePaint)
+                        }
+                    }
+
+                    currentPath = Path()
+                    drawCount++
                     numStack.clear()
                     stringStack.clear()
+                    state.activeShader = null
+                    state.activeShaderDef = null
                 }
 
-                // --- Clipping & Graphics State ---
+                // --- Standard Drawing Operators ---
+                "f", "F", "f*", "fill", "eofill" -> {
+                    if (state.activeShader != null) {
+                        fillPaint.shader = state.activeShader
+                    } else {
+                        fillPaint.shader = null
+                        fillPaint.color = state.fillColor
+                    }
+                    canvas.drawPath(currentPath, fillPaint)
+                    fillPaint.shader = null
+                    currentPath = Path()
+                    drawCount++
+                    numStack.clear()
+                }
+                "s", "S", "stroke" -> {
+                    strokePaint.color = state.strokeColor
+                    strokePaint.strokeWidth = state.strokeWidth
+                    canvas.drawPath(currentPath, strokePaint)
+                    currentPath = Path()
+                    drawCount++
+                    numStack.clear()
+                }
+                "b", "B", "b*", "B*" -> {
+                    if (state.activeShader != null) {
+                        fillPaint.shader = state.activeShader
+                    } else {
+                        fillPaint.shader = null
+                        fillPaint.color = state.fillColor
+                    }
+                    canvas.drawPath(currentPath, fillPaint)
+                    fillPaint.shader = null
+
+                    if (state.strokeColor != Color.TRANSPARENT && state.strokeWidth > 0f) {
+                        strokePaint.color = state.strokeColor
+                        strokePaint.strokeWidth = state.strokeWidth
+                        canvas.drawPath(currentPath, strokePaint)
+                    }
+                    currentPath = Path()
+                    drawCount++
+                    numStack.clear()
+                }
+
+                // --- Clipping & State Stack ---
                 "clip", "eoclip", "W", "W*" -> {
                     if (!currentPath.isEmpty) {
                         val clipCopy = Path(currentPath)
@@ -724,183 +868,13 @@ object EpsRenderer {
                     }
                     numStack.clear()
                 }
-
-                // --- Standard Drawing Operators ---
-                "f", "F", "f*", "fill" -> {
-                    if (state.activeShader != null) {
-                        fillPaint.shader = state.activeShader
-                    } else {
-                        fillPaint.shader = null
-                        fillPaint.color = state.fillColor
-                    }
-                    canvas.drawPath(currentPath, fillPaint)
-                    fillPaint.shader = null
-                    numStack.clear()
-                }
-                "s", "S", "stroke" -> {
-                    strokePaint.color = state.strokeColor
-                    strokePaint.strokeWidth = state.strokeWidth
-                    canvas.drawPath(currentPath, strokePaint)
-                    numStack.clear()
-                }
-                "b", "B", "b*", "B*" -> {
-                    if (state.activeShader != null) {
-                        fillPaint.shader = state.activeShader
-                    } else {
-                        fillPaint.shader = null
-                        fillPaint.color = state.fillColor
-                    }
-                    canvas.drawPath(currentPath, fillPaint)
-                    fillPaint.shader = null
-
-                    if (state.strokeColor != Color.TRANSPARENT) {
-                        strokePaint.color = state.strokeColor
-                        strokePaint.strokeWidth = state.strokeWidth
-                        canvas.drawPath(currentPath, strokePaint)
-                    }
-                    numStack.clear()
-                }
                 else -> {
-                    // Keep numbers if we might be in the middle of a coordinate/color list
                     if (numStack.size > 20) numStack.clear()
                 }
             }
         }
 
-        return bitmap
-    }
-
-    private fun createShadingShader(
-        shadingType: Int,
-        coords: List<Float>,
-        c0: List<Float>,
-        c1: List<Float>,
-        multiColors: List<Int>,
-        multiStops: List<Float>,
-        mapX: (Float) -> Float,
-        mapY: (Float) -> Float,
-        scale: Float,
-        previewWidth: Float,
-        previewHeight: Float
-    ): Shader? {
-        val color0 = if (c0.size >= 3) {
-            Color.rgb((c0[0].coerceIn(0f, 1f) * 255).toInt(), (c0[1].coerceIn(0f, 1f) * 255).toInt(), (c0[2].coerceIn(0f, 1f) * 255).toInt())
-        } else if (c0.size >= 4) {
-            // CMYK
-            val r = (1f - c0[0].coerceIn(0f, 1f)) * (1f - c0[3].coerceIn(0f, 1f))
-            val g = (1f - c0[1].coerceIn(0f, 1f)) * (1f - c0[3].coerceIn(0f, 1f))
-            val b = (1f - c0[2].coerceIn(0f, 1f)) * (1f - c0[3].coerceIn(0f, 1f))
-            Color.rgb((r * 255).toInt(), (g * 255).toInt(), (b * 255).toInt())
-        } else Color.BLACK
-
-        val color1 = if (c1.size >= 3) {
-            Color.rgb((c1[0].coerceIn(0f, 1f) * 255).toInt(), (c1[1].coerceIn(0f, 1f) * 255).toInt(), (c1[2].coerceIn(0f, 1f) * 255).toInt())
-        } else if (c1.size >= 4) {
-            // CMYK
-            val r = (1f - c1[0].coerceIn(0f, 1f)) * (1f - c1[3].coerceIn(0f, 1f))
-            val g = (1f - c1[1].coerceIn(0f, 1f)) * (1f - c1[3].coerceIn(0f, 1f))
-            val b = (1f - c1[2].coerceIn(0f, 1f)) * (1f - c1[3].coerceIn(0f, 1f))
-            Color.rgb((r * 255).toInt(), (g * 255).toInt(), (b * 255).toInt())
-        } else Color.WHITE
-
-        if (shadingType == 3 && coords.size >= 6) {
-            // Radial Shading: [ x0 y0 r0 x1 y1 r1 ]
-            val cx = mapX(coords[3])
-            val cy = mapY(coords[4])
-            val r = max(1f, coords[5] * scale)
-            return RadialGradient(cx, cy, r, color0, color1, Shader.TileMode.CLAMP)
-        } else if (coords.size >= 4) {
-            // Linear Shading: [ x0 y0 x1 y1 ]
-            val sx = mapX(coords[0])
-            val sy = mapY(coords[1])
-            val ex = mapX(coords[2])
-            val ey = mapY(coords[3])
-            return LinearGradient(sx, sy, ex, ey, color0, color1, Shader.TileMode.CLAMP)
-        } else {
-            // Default vertical gradient across preview
-            return LinearGradient(0f, 0f, 0f, previewHeight, color0, color1, Shader.TileMode.CLAMP)
-        }
-    }
-
-    private fun createAiGradientShader(
-        gradDef: ParsedGradient,
-        numStack: List<Float>,
-        mapX: (Float) -> Float,
-        mapY: (Float) -> Float,
-        scale: Float,
-        previewWidth: Float,
-        previewHeight: Float
-    ): Shader? {
-        val stops = gradDef.stops
-        if (stops.isEmpty()) return null
-
-        val colors = stops.map { it.color }.toIntArray()
-        val positions = stops.map { it.position }.toFloatArray()
-
-        if (gradDef.isRadial) {
-            val cx = if (numStack.size >= 2) mapX(numStack[0]) else previewWidth / 2f
-            val cy = if (numStack.size >= 2) mapY(numStack[1]) else previewHeight / 2f
-            val r = if (numStack.size >= 3) max(1f, numStack[2] * scale) else previewWidth / 2f
-            return RadialGradient(cx, cy, r, colors, positions, Shader.TileMode.CLAMP)
-        } else {
-            val sx: Float
-            val sy: Float
-            val ex: Float
-            val ey: Float
-            if (numStack.size >= 4) {
-                sx = mapX(numStack[0])
-                sy = mapY(numStack[1])
-                ex = mapX(numStack[2])
-                ey = mapY(numStack[3])
-            } else {
-                sx = 0f
-                sy = 0f
-                ex = previewWidth
-                ey = previewHeight
-            }
-            return LinearGradient(sx, sy, ex, ey, colors, positions, Shader.TileMode.CLAMP)
-        }
-    }
-
-    private fun parseAiGradients(epsText: String): Map<String, ParsedGradient> {
-        val result = mutableMapOf<String, ParsedGradient>()
-        val regex = Regex("""%AI5_BeginGradient:\s*\(([^)]+)\)([\s\S]*?)%AI5_EndGradient""")
-        for (match in regex.findAll(epsText)) {
-            val name = match.groupValues[1].trim()
-            val body = match.groupValues[2]
-
-            // Check if radial or linear
-            val isRadial = body.contains("/Radial") || body.contains(" 1 ")
-            val stops = mutableListOf<GradientColorStop>()
-
-            // Extract color stop sequences: e.g. offset [ r g b ] or offset [ c m y k ]
-            val stopRegex = Regex("""([0-9.]+)\s*\[\s*([0-9.\s]+)\s*\]""")
-            for (sm in stopRegex.findAll(body)) {
-                val offset = sm.groupValues[1].toFloatOrNull() ?: continue
-                val cTokens = sm.groupValues[2].split(Regex("""\s+""")).mapNotNull { it.toFloatOrNull() }
-                val color = if (cTokens.size >= 4) {
-                    val c = cTokens[0]; val m = cTokens[1]; val y = cTokens[2]; val k = cTokens[3]
-                    val r = (1f - c.coerceIn(0f, 1f)) * (1f - k.coerceIn(0f, 1f))
-                    val g = (1f - m.coerceIn(0f, 1f)) * (1f - k.coerceIn(0f, 1f))
-                    val b = (1f - y.coerceIn(0f, 1f)) * (1f - k.coerceIn(0f, 1f))
-                    Color.rgb((r * 255).toInt(), (g * 255).toInt(), (b * 255).toInt())
-                } else if (cTokens.size >= 3) {
-                    Color.rgb((cTokens[0].coerceIn(0f, 1f) * 255).toInt(), (cTokens[1].coerceIn(0f, 1f) * 255).toInt(), (cTokens[2].coerceIn(0f, 1f) * 255).toInt())
-                } else if (cTokens.isNotEmpty()) {
-                    val gr = (cTokens[0].coerceIn(0f, 1f) * 255).toInt()
-                    Color.rgb(gr, gr, gr)
-                } else {
-                    Color.BLACK
-                }
-                stops.add(GradientColorStop(offset.coerceIn(0f, 1f), color))
-            }
-
-            if (stops.isNotEmpty()) {
-                stops.sortBy { it.position }
-                result[name] = ParsedGradient(name, isRadial, stops)
-            }
-        }
-        return result
+        return if (drawCount > 0) bitmap else null
     }
 
     private fun tokenizePostScriptWithStrings(text: String): Sequence<String> {
@@ -909,14 +883,16 @@ object EpsRenderer {
             var inComment = false
             var inString = false
             var parensDepth = 0
+            var i = 0
 
-            for (i in text.indices) {
+            while (i < text.length) {
                 val c = text[i]
 
                 if (inComment) {
                     if (c == '\n' || c == '\r') {
                         inComment = false
                     }
+                    i++
                     continue
                 }
 
@@ -931,6 +907,7 @@ object EpsRenderer {
                             sb.clear()
                         }
                     }
+                    i++
                     continue
                 }
 
@@ -940,6 +917,7 @@ object EpsRenderer {
                         sb.clear()
                     }
                     inComment = true
+                    i++
                     continue
                 }
 
@@ -951,17 +929,51 @@ object EpsRenderer {
                     sb.append('(')
                     inString = true
                     parensDepth = 1
+                    i++
                     continue
                 }
 
-                if (c.isWhitespace() || c == '<' || c == '>' || c == '[' || c == ']' || c == '{' || c == '}') {
+                if (c == '<' && i + 1 < text.length && text[i + 1] == '<') {
                     if (sb.isNotEmpty()) {
                         yield(sb.toString())
                         sb.clear()
                     }
-                } else {
-                    sb.append(c)
+                    yield("<<")
+                    i += 2
+                    continue
                 }
+
+                if (c == '>' && i + 1 < text.length && text[i + 1] == '>') {
+                    if (sb.isNotEmpty()) {
+                        yield(sb.toString())
+                        sb.clear()
+                    }
+                    yield(">>")
+                    i += 2
+                    continue
+                }
+
+                if (c == '[' || c == ']' || c == '{' || c == '}') {
+                    if (sb.isNotEmpty()) {
+                        yield(sb.toString())
+                        sb.clear()
+                    }
+                    yield(c.toString())
+                    i++
+                    continue
+                }
+
+                if (c.isWhitespace()) {
+                    if (sb.isNotEmpty()) {
+                        yield(sb.toString())
+                        sb.clear()
+                    }
+                    i++
+                    continue
+                }
+
+                sb.append(c)
+                i++
             }
             if (sb.isNotEmpty()) {
                 yield(sb.toString())
@@ -970,7 +982,161 @@ object EpsRenderer {
     }
 
     // =========================================================================
-    // 3. PURE KOTLIN TIFF DECODER (PACKBITS, UNCOMPRESSED, LZW, RGB & PALETTE)
+    // EMBEDDED BITMAP & TIFF FALLBACK EXTRACTION
+    // =========================================================================
+
+    private fun extractEmbeddedBitmap(epsBytes: ByteArray): Bitmap? {
+        if (epsBytes.size < 32) return null
+
+        val b0 = epsBytes[0].toInt() and 0xFF
+        val b1 = epsBytes[1].toInt() and 0xFF
+        val b2 = epsBytes[2].toInt() and 0xFF
+        val b3 = epsBytes[3].toInt() and 0xFF
+
+        if (b0 == 0xC5 && b1 == 0xD0 && b2 == 0xD3 && b3 == 0xC6) {
+            val tiffOffset = getUInt32LE(epsBytes, 20)
+            val tiffLength = getUInt32LE(epsBytes, 24)
+            if (tiffOffset > 0 && tiffLength > 0 && tiffOffset + tiffLength <= epsBytes.size) {
+                val tiffBmp = TiffDecoder.decodeTiff(epsBytes, tiffOffset, tiffLength)
+                if (tiffBmp != null) return tiffBmp
+
+                try {
+                    val bmp = BitmapFactory.decodeByteArray(epsBytes, tiffOffset, tiffLength)
+                    if (bmp != null) return bmp
+                } catch (_: Exception) {}
+            }
+
+            val wmfOffset = getUInt32LE(epsBytes, 12)
+            val wmfLength = getUInt32LE(epsBytes, 16)
+            if (wmfOffset > 0 && wmfLength > 0 && wmfOffset + wmfLength <= epsBytes.size) {
+                try {
+                    val bmp = BitmapFactory.decodeByteArray(epsBytes, wmfOffset, wmfLength)
+                    if (bmp != null) return bmp
+                } catch (_: Exception) {}
+            }
+        }
+
+        // Search for embedded JPEG (FF D8 FF ... FF D9)
+        val jpegStart = findSequence(epsBytes, byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()))
+        if (jpegStart >= 0) {
+            val jpegEnd = findSequence(epsBytes, byteArrayOf(0xFF.toByte(), 0xD9.toByte()), jpegStart)
+            if (jpegEnd > jpegStart) {
+                val length = (jpegEnd + 2) - jpegStart
+                try {
+                    val bmp = BitmapFactory.decodeByteArray(epsBytes, jpegStart, length)
+                    if (bmp != null) return bmp
+                } catch (_: Exception) {}
+            }
+        }
+
+        // Search for embedded PNG
+        val pngMagic = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
+        val pngStart = findSequence(epsBytes, pngMagic)
+        if (pngStart >= 0) {
+            val pngIend = byteArrayOf('I'.code.toByte(), 'E'.code.toByte(), 'N'.code.toByte(), 'D'.code.toByte())
+            val iendPos = findSequence(epsBytes, pngIend, pngStart)
+            if (iendPos > pngStart) {
+                val length = (iendPos + 8) - pngStart
+                try {
+                    val bmp = BitmapFactory.decodeByteArray(epsBytes, pngStart, length)
+                    if (bmp != null) return bmp
+                } catch (_: Exception) {}
+            }
+        }
+
+        return null
+    }
+
+    private fun extractAsciiPreviewBitmap(epsBytes: ByteArray): Bitmap? {
+        try {
+            val text = String(epsBytes.copyOfRange(0, min(epsBytes.size, 100_000)), StandardCharsets.ISO_8859_1)
+            val previewMatch = Regex("""%%BeginPreview:\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)""").find(text) ?: return null
+            val width = previewMatch.groupValues[1].toIntOrNull() ?: return null
+            val height = previewMatch.groupValues[2].toIntOrNull() ?: return null
+            val depth = previewMatch.groupValues[3].toIntOrNull() ?: return null
+
+            if (width <= 0 || height <= 0 || (depth != 1 && depth != 8)) return null
+
+            val startPos = previewMatch.range.last + 1
+            val endPos = text.indexOf("%%EndPreview", startPos)
+            if (endPos <= startPos) return null
+
+            val hexSection = text.substring(startPos, endPos)
+            val hexClean = hexSection.replace(Regex("""[%#\s\r\n]"""), "")
+            val hexBytes = hexStringToByteArray(hexClean)
+
+            if (hexBytes.isEmpty()) return null
+
+            val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val pixels = IntArray(width * height)
+
+            if (depth == 1) {
+                val bytesPerRow = (width + 7) / 8
+                for (y in 0 until height) {
+                    val rowStart = y * bytesPerRow
+                    for (x in 0 until width) {
+                        val byteIdx = rowStart + (x / 8)
+                        if (byteIdx < hexBytes.size) {
+                            val b = hexBytes[byteIdx].toInt() and 0xFF
+                            val bit = (b ushr (7 - (x % 8))) and 1
+                            pixels[y * width + x] = if (bit == 1) Color.BLACK else Color.WHITE
+                        }
+                    }
+                }
+            } else if (depth == 8) {
+                for (i in 0 until min(pixels.size, hexBytes.size)) {
+                    val gray = hexBytes[i].toInt() and 0xFF
+                    pixels[i] = Color.rgb(gray, gray, gray)
+                }
+            }
+
+            bmp.setPixels(pixels, 0, width, 0, 0, width, height)
+            return bmp
+        } catch (_: Exception) {
+            return null
+        }
+    }
+
+    private fun hexStringToByteArray(s: String): ByteArray {
+        val len = s.length
+        val data = ByteArray(len / 2)
+        var i = 0
+        var out = 0
+        while (i < len - 1) {
+            val d1 = Character.digit(s[i], 16)
+            val d2 = Character.digit(s[i + 1], 16)
+            if (d1 != -1 && d2 != -1) {
+                data[out++] = ((d1 shl 4) + d2).toByte()
+            }
+            i += 2
+        }
+        return if (out == data.size) data else data.copyOf(out)
+    }
+
+    private fun getUInt32LE(bytes: ByteArray, offset: Int): Int {
+        return (bytes[offset].toInt() and 0xFF) or
+                ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+                ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+                ((bytes[offset + 3].toInt() and 0xFF) shl 24)
+    }
+
+    private fun findSequence(data: ByteArray, sequence: ByteArray, startFrom: Int = 0): Int {
+        if (sequence.isEmpty() || data.size < sequence.size) return -1
+        for (i in startFrom..(data.size - sequence.size)) {
+            var match = true
+            for (j in sequence.indices) {
+                if (data[i + j] != sequence[j]) {
+                    match = false
+                    break
+                }
+            }
+            if (match) return i
+        }
+        return -1
+    }
+
+    // =========================================================================
+    // TIFF DECODER (PACKBITS, DEFLATE, RGB, CMYK, PALETTE)
     // =========================================================================
 
     private object TiffDecoder {
@@ -979,7 +1145,6 @@ object EpsRenderer {
             try {
                 if (length < 8 || offset + length > data.size) return null
 
-                // 1. Byte Order Header: 'II' (Little Endian) or 'MM' (Big Endian)
                 val isLE = data[offset] == 'I'.code.toByte() && data[offset + 1] == 'I'.code.toByte()
                 val isBE = data[offset] == 'M'.code.toByte() && data[offset + 1] == 'M'.code.toByte()
                 if (!isLE && !isBE) return null
@@ -987,16 +1152,15 @@ object EpsRenderer {
                 val magic = getUInt16(data, offset + 2, isLE)
                 if (magic != 42) return null
 
-                var ifdOffset = getUInt32(data, offset + 4, isLE)
+                val ifdOffset = getUInt32(data, offset + 4, isLE)
                 if (ifdOffset <= 0 || ifdOffset >= length) return null
 
                 var width = 0
                 var height = 0
                 var bitsPerSample = 8
-                var compression = 1 // 1 = uncompressed, 32773 = PackBits, 5 = LZW
-                var photometric = 2 // 0/1 = Gray, 2 = RGB, 3 = Palette, 5 = CMYK
+                var compression = 1
+                var photometric = 2
                 var samplesPerPixel = 1
-                var rowsPerStrip = 0
                 val stripOffsets = mutableListOf<Int>()
                 val stripByteCounts = mutableListOf<Int>()
                 var colorMap: IntArray? = null
@@ -1018,7 +1182,6 @@ object EpsRenderer {
                         259 -> compression = if (type == 3) getUInt16(data, entryPos + 8, isLE) else valOffset
                         262 -> photometric = if (type == 3) getUInt16(data, entryPos + 8, isLE) else valOffset
                         273 -> {
-                            // StripOffsets
                             if (count == 1) {
                                 stripOffsets.add(if (type == 3) getUInt16(data, entryPos + 8, isLE) else valOffset)
                             } else {
@@ -1026,9 +1189,7 @@ object EpsRenderer {
                             }
                         }
                         277 -> samplesPerPixel = if (type == 3) getUInt16(data, entryPos + 8, isLE) else valOffset
-                        278 -> rowsPerStrip = if (type == 3) getUInt16(data, entryPos + 8, isLE) else valOffset
                         279 -> {
-                            // StripByteCounts
                             if (count == 1) {
                                 stripByteCounts.add(if (type == 3) getUInt16(data, entryPos + 8, isLE) else valOffset)
                             } else {
@@ -1036,7 +1197,6 @@ object EpsRenderer {
                             }
                         }
                         320 -> {
-                            // ColorMap for Palette images
                             if (count > 0 && offset + valOffset + (count * 2) <= offset + length) {
                                 val mapSize = count / 3
                                 val cmap = IntArray(mapSize)
@@ -1056,7 +1216,6 @@ object EpsRenderer {
 
                 if (width <= 0 || height <= 0 || stripOffsets.isEmpty()) return null
 
-                // Decompress all strips into a single pixel byte buffer
                 val rawBuffer = ByteArrayOutputStream(width * height * max(1, samplesPerPixel))
                 for (s in stripOffsets.indices) {
                     val sOffset = offset + stripOffsets[s]
@@ -1064,22 +1223,10 @@ object EpsRenderer {
                     if (sOffset < offset || sOffset + sLength > offset + length || sLength <= 0) continue
 
                     when (compression) {
-                        1 -> {
-                            // Uncompressed
-                            rawBuffer.write(data, sOffset, sLength)
-                        }
-                        32773 -> {
-                            // PackBits RLE
-                            decompressPackBits(data, sOffset, sLength, rawBuffer)
-                        }
-                        8 -> {
-                            // Deflate
-                            decompressDeflate(data, sOffset, sLength, rawBuffer)
-                        }
-                        else -> {
-                            // Unsupported compression in fallback, try uncompressed slice
-                            rawBuffer.write(data, sOffset, sLength)
-                        }
+                        1 -> rawBuffer.write(data, sOffset, sLength)
+                        32773 -> decompressPackBits(data, sOffset, sLength, rawBuffer)
+                        8 -> decompressDeflate(data, sOffset, sLength, rawBuffer)
+                        else -> rawBuffer.write(data, sOffset, sLength)
                     }
                 }
 
@@ -1089,9 +1236,7 @@ object EpsRenderer {
                 val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                 val pixels = IntArray(width * height)
 
-                // Render pixels according to photometric interpretation and samplesPerPixel
                 if (photometric == 2 && samplesPerPixel >= 3) {
-                    // RGB or RGBA
                     val step = samplesPerPixel
                     var ptr = 0
                     for (p in 0 until min(pixels.size, decompressedBytes.size / step)) {
@@ -1103,13 +1248,11 @@ object EpsRenderer {
                         ptr += step
                     }
                 } else if (photometric == 3 && colorMap != null) {
-                    // Palette / Indexed
                     for (p in 0 until min(pixels.size, decompressedBytes.size)) {
-                        val idx = decompressedBytes[p].toInt() and 0xFF
-                        pixels[p] = if (idx < colorMap.size) colorMap[idx] else Color.BLACK
+                        val cIdx = decompressedBytes[p].toInt() and 0xFF
+                        pixels[p] = if (cIdx < colorMap.size) colorMap[cIdx] else Color.BLACK
                     }
                 } else if (photometric == 5 && samplesPerPixel >= 4) {
-                    // CMYK
                     var ptr = 0
                     for (p in 0 until min(pixels.size, decompressedBytes.size / 4)) {
                         val c = decompressedBytes[ptr].toInt() and 0xFF
@@ -1123,7 +1266,6 @@ object EpsRenderer {
                         ptr += 4
                     }
                 } else {
-                    // Grayscale
                     for (p in 0 until min(pixels.size, decompressedBytes.size)) {
                         val gr = decompressedBytes[p].toInt() and 0xFF
                         val finalGr = if (photometric == 0) 255 - gr else gr
@@ -1133,7 +1275,6 @@ object EpsRenderer {
 
                 bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
                 return bitmap
-
             } catch (e: Exception) {
                 e.printStackTrace()
                 return null
@@ -1162,7 +1303,6 @@ object EpsRenderer {
                         }
                     }
                 }
-                // -128 is a no-op
             }
         }
 

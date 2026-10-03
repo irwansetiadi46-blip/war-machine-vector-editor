@@ -1,11 +1,19 @@
 package com.example
 
+import android.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.nio.charset.StandardCharsets
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class EpsGradientTest {
 
     @Test
@@ -189,5 +197,115 @@ showpage
         for (i in dummyTiff.indices) {
             assertEquals("TIFF byte $i must match", dummyTiff[i], injected[newTiffOffset + i])
         }
+    }
+
+    @Test
+    fun testEpsRendererRendersLevel3ShadingGradientWithTrueColor() {
+        val psContent = """%!PS-Adobe-3.0 EPSF-3.0
+%%BoundingBox: 0 0 200 200
+%%EndComments
+gsave
+newpath
+10 10 moveto
+190 10 lineto
+190 190 lineto
+10 190 lineto
+closepath
+<<
+  /ShadingType 2
+  /ColorSpace /DeviceRGB
+  /Coords [10 10 190 190]
+  /Function <<
+    /FunctionType 2
+    /Domain [0.0 1.0]
+    /C0 [1.0 0.0 0.0]
+    /C1 [0.0 0.0 1.0]
+    /N 1.0
+  >>
+  /Extend [true true]
+>> shfill
+grestore
+showpage
+%%EOF
+""".toByteArray(StandardCharsets.ISO_8859_1)
+
+        val bmp = EpsRenderer.renderEpsToBitmap(psContent, 200)
+        assertNotNull("Bitmap should be rendered", bmp)
+        assertTrue("Bitmap width > 0", bmp!!.width > 0)
+        assertTrue("Bitmap height > 0", bmp.height > 0)
+
+        // Verify that rendered pixels contain non-grayscale colors (red and blue components)
+        var foundRed = false
+        var foundBlue = false
+        for (y in 0 until bmp.height step 10) {
+            for (x in 0 until bmp.width step 10) {
+                val pixel = bmp.getPixel(x, y)
+                val r = Color.red(pixel)
+                val g = Color.green(pixel)
+                val b = Color.blue(pixel)
+                // Color should not be pure gray / black / white
+                if (r > 150 && b < 100 && g < 100) foundRed = true
+                if (b > 150 && r < 100 && g < 100) foundBlue = true
+            }
+        }
+        assertTrue("Rendered Level 3 shading should contain red colors", foundRed)
+        assertTrue("Rendered Level 3 shading should contain blue colors", foundBlue)
+    }
+
+    @Test
+    fun testEpsRendererRendersAi5BeginGradientMultipleShapesWithVariedGradients() {
+        val aiEpsContent = """%!PS-Adobe-3.0 EPSF-3.0
+%%Creator: Adobe Illustrator
+%%BoundingBox: 0 0 300 300
+%AI5_BeginGradient: (OrangeToYellow)
+1 2
+[
+0 50 1 [ 0 0.8 1 0 ]
+100 50 1 [ 0 0.1 1 0 ]
+]
+%AI5_EndGradient
+%AI5_BeginGradient: (CyanToMagenta)
+1 2
+[
+0 50 1 [ 1 0 0 0 ]
+100 50 1 [ 0 1 0 0 ]
+]
+%AI5_EndGradient
+%%EndComments
+gsave
+% Shape 1 with OrangeToYellow
+newpath
+10 10 m 140 10 l 140 140 l 10 140 l h
+[ (OrangeToYellow) ] _Xg
+% Shape 2 with CyanToMagenta
+newpath
+160 160 m 290 160 l 290 290 l 160 290 l h
+[ (CyanToMagenta) ] _Xg
+grestore
+showpage
+%%EOF
+""".toByteArray(StandardCharsets.ISO_8859_1)
+
+        val bmp = EpsRenderer.renderEpsToBitmap(aiEpsContent, 300)
+        assertNotNull("Bitmap should be rendered from AI gradients", bmp)
+
+        // Verify shape 1 has orange/yellow pixels and shape 2 has cyan/magenta pixels
+        var foundWarmColor = false
+        var foundCoolColor = false
+        for (y in 0 until bmp!!.height step 5) {
+            for (x in 0 until bmp.width step 5) {
+                val pixel = bmp.getPixel(x, y)
+                val r = Color.red(pixel)
+                val g = Color.green(pixel)
+                val b = Color.blue(pixel)
+
+                // Warm color: high red and green, low blue
+                if (r > 180 && g > 50 && b < 80) foundWarmColor = true
+                // Cool color: cyan/magenta
+                if ((b > 150 && g > 100) || (r > 150 && b > 150)) foundCoolColor = true
+            }
+        }
+        assertTrue("Rendered AI EPS should contain warm gradient colors (not flat black/white)", foundWarmColor)
+        assertTrue("Rendered AI EPS should contain cool gradient colors (not flat black/white)", foundCoolColor)
     }
 }

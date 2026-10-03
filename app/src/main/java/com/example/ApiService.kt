@@ -10,30 +10,6 @@ import retrofit2.http.POST
 import retrofit2.http.Url
 import java.util.concurrent.TimeUnit
 
-// --- Groq Models ---
-data class GroqRequest(
-    val model: String,
-    val messages: List<GroqMessage>,
-    @SerializedName("response_format") val responseFormat: GroqResponseFormat? = null
-)
-
-data class GroqMessage(
-    val role: String,
-    val content: String
-)
-
-data class GroqResponseFormat(
-    val type: String
-)
-
-data class GroqResponse(
-    val choices: List<GroqChoice>
-)
-
-data class GroqChoice(
-    val message: GroqMessage
-)
-
 // --- Gemini Models ---
 data class GeminiRequest(
     val contents: List<GeminiContent>,
@@ -68,13 +44,6 @@ data class GeminiCandidate(
 
 // --- Retrofit Interface ---
 interface ApiService {
-    @POST
-    suspend fun getGroqCompletions(
-        @Url url: String,
-        @Header("Authorization") authHeader: String,
-        @Body body: GroqRequest
-    ): GroqResponse
-
     @POST
     suspend fun getGeminiContent(
         @Url url: String,

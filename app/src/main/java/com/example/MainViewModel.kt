@@ -83,16 +83,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val creator = _creator.asStateFlow()
 
     // --- API Configuration State ---
-    private val _groqKey = MutableStateFlow("")
-    val groqKey = _groqKey.asStateFlow()
-
     private val _geminiKey = MutableStateFlow("")
     val geminiKey = _geminiKey.asStateFlow()
 
     private val _selectedProvider = MutableStateFlow("Gemini")
     val selectedProvider = _selectedProvider.asStateFlow()
 
-    private val _selectedModel = MutableStateFlow("gemini-3.1-flash-lite")
+    private val _selectedModel = MutableStateFlow("gemini-3.5-flash-lite")
     val selectedModel = _selectedModel.asStateFlow()
 
     private val _promptConcept = MutableStateFlow("")
@@ -300,9 +297,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- SharedPreferences Management ---
     private fun loadApiKeys() {
         val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
-        _groqKey.value = prefs.getString("groq_key", "") ?: ""
         _geminiKey.value = prefs.getString("gemini_key", "") ?: ""
-        _selectedProvider.value = prefs.getString("selected_provider", "Gemini") ?: "Gemini"
+        _selectedProvider.value = "Gemini"
+        _selectedModel.value = prefs.getString("selected_model", "gemini-3.5-flash-lite") ?: "gemini-3.5-flash-lite"
         _creator.value = prefs.getString("saved_creator", "") ?: ""
         _isOfflineMode.value = prefs.getBoolean("is_offline_mode", false)
 
@@ -321,32 +318,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // Auto-load Auto Injection preference
         _isAutoInjectionEnabled.value = prefs.getBoolean("is_auto_injection", false)
-        
-        updateDefaultModel(_selectedProvider.value)
     }
 
-    fun saveApiKeys(groq: String, gemini: String, provider: String) {
+    fun saveApiKey(gemini: String) {
         val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
         prefs.edit().apply {
-            putString("groq_key", groq)
             putString("gemini_key", gemini)
-            putString("selected_provider", provider)
+            putString("selected_provider", "Gemini")
             apply()
         }
-        _groqKey.value = groq
         _geminiKey.value = gemini
-        _selectedProvider.value = provider
-        updateDefaultModel(provider)
-        _toastFlow.value = "Kunci API Provider $provider Berhasil Disimpan"
+        _selectedProvider.value = "Gemini"
+        _toastFlow.value = "Kunci API Google Gemini Berhasil Disimpan"
     }
 
-    fun updateDefaultModel(provider: String) {
-        _selectedProvider.value = provider
-        _selectedModel.value = if (provider == "Gemini") "gemini-3.1-flash-lite" else "llama-3.3-70b-versatile"
+    fun saveApiKeys(groq: String = "", gemini: String, provider: String = "Gemini") {
+        saveApiKey(gemini)
+    }
+
+    fun updateDefaultModel(provider: String = "Gemini") {
+        _selectedProvider.value = "Gemini"
     }
 
     fun setSelectedModel(model: String) {
         _selectedModel.value = model
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("selected_model", model).apply()
     }
 
     fun setPromptConcept(concept: String) {
@@ -726,11 +723,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        val provider = _selectedProvider.value
-        val apiKey = if (provider == "Gemini") _geminiKey.value else _groqKey.value
+        val apiKey = _geminiKey.value
 
         if (apiKey.isBlank()) {
-            _toastFlow.value = "Masukkan API Key $provider terlebih dahulu di bagian API Key!"
+            _toastFlow.value = "Masukkan API Key Google Gemini terlebih dahulu di bagian API Key!"
             return
         }
 
@@ -768,39 +764,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     Analyze this microstock concept: "$concept". Generate professional metadata for Shutterstock, Adobe Stock, Vecteezy, and Freepik in JSON format based on this description according to the system rules.
                 """.trimIndent()
 
-                val resultText: String
-                if (provider == "Gemini") {
-                    val modelName = _selectedModel.value
-                    val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
-                    
-                    val req = GeminiRequest(
-                        contents = listOf(
-                            GeminiContent(
-                                parts = listOf(
-                                    GeminiPart(text = "$systemPrompt\n\n$userPrompt")
-                                )
+                val modelName = _selectedModel.value
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
+                
+                val req = GeminiRequest(
+                    contents = listOf(
+                        GeminiContent(
+                            parts = listOf(
+                                GeminiPart(text = "$systemPrompt\n\n$userPrompt")
                             )
-                        ),
-                        generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
-                    )
-                    val resp = NetworkClient.apiService.getGeminiContent(url, req)
-                    resultText = resp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
-                } else {
-                    // Groq
-                    val modelName = _selectedModel.value
-                    val url = "https://api.groq.com/openai/v1/chat/completions"
-                    val authHeader = "Bearer $apiKey"
-                    val req = GroqRequest(
-                        model = modelName,
-                        messages = listOf(
-                            GroqMessage(role = "system", content = systemPrompt),
-                            GroqMessage(role = "user", content = userPrompt)
-                        ),
-                        responseFormat = GroqResponseFormat(type = "json_object")
-                    )
-                    val resp = NetworkClient.apiService.getGroqCompletions(url, authHeader, req)
-                    resultText = resp.choices.firstOrNull()?.message?.content ?: ""
-                }
+                        )
+                    ),
+                    generationConfig = GeminiGenerationConfig(responseMimeType = "application/json")
+                )
+                val resp = NetworkClient.apiService.getGeminiContent(url, req)
+                val resultText = resp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
 
                 val cleanJson = extractJson(resultText)
                 val parsed = gson.fromJson(cleanJson, GeneratedMetadata::class.java)
@@ -836,14 +814,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _toastFlow.value = "Fitur analisis gambar hanya tersedia di Mode Online!"
             return
         }
-        val provider = _selectedProvider.value
-        if (provider != "Gemini") {
-            _toastFlow.value = "Fitur analisis gambar saat ini hanya didukung oleh Google Gemini!"
-            return
-        }
         val apiKey = _geminiKey.value
         if (apiKey.isBlank()) {
-            _toastFlow.value = "Masukkan API Key Gemini terlebih dahulu di bagian API Key!"
+            _toastFlow.value = "Masukkan API Key Google Gemini terlebih dahulu di bagian API Key!"
             return
         }
         val imageItem = _imagesList.value.find { it.id == id } ?: return
@@ -898,15 +871,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        val provider = _selectedProvider.value
-        if (provider != "Gemini") {
-            _toastFlow.value = "Fitur analisis gambar saat ini hanya didukung oleh Google Gemini!"
-            return
-        }
-
         val apiKey = _geminiKey.value
         if (apiKey.isBlank()) {
-            _toastFlow.value = "Masukkan API Key Gemini terlebih dahulu di bagian API Key!"
+            _toastFlow.value = "Masukkan API Key Google Gemini terlebih dahulu di bagian API Key!"
             return
         }
 
@@ -1636,14 +1603,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
                     } else {
-                        val ext = if (dotIndex != -1) item.name.substring(dotIndex) else ".jpg"
+                        val isEps = item.name.endsWith(".eps", ignoreCase = true)
+                        val ext = if (dotIndex != -1) item.name.substring(dotIndex) else if (isEps) ".eps" else ".jpg"
                         val fileName = "$baseName$ext"
                         val mimeType = when {
                             ext.endsWith(".png", true) -> "image/png"
                             ext.endsWith(".eps", true) -> "application/postscript"
                             else -> "image/jpeg"
                         }
-                        FileHelper.saveToDownloads(context, fileName, mimeType, baseBytes)
+                        val finalBytes = if (isEps) {
+                            item.injectedBytes ?: XmpInjector.injectIntoEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
+                        } else {
+                            baseBytes
+                        }
+                        FileHelper.saveToDownloads(context, fileName, mimeType, finalBytes)
                     }
                 }
 
@@ -1793,7 +1766,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                             FileHelper.saveToDownloads(context, uniqueName, "image/svg+xml", svgBytes)
                                         }
                                     } else {
-                                        val ext = if (dotIndex != -1) item.name.substring(dotIndex) else ".jpg"
+                                        val isEps = item.name.endsWith(".eps", ignoreCase = true)
+                                        val ext = if (dotIndex != -1) item.name.substring(dotIndex) else if (isEps) ".eps" else ".jpg"
                                         var uniqueName = "$baseName$ext"
                                         var counter = 1
                                         while (usedNames.contains(uniqueName)) {
@@ -1807,7 +1781,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                             ext.endsWith(".eps", true) -> "application/postscript"
                                             else -> "image/jpeg"
                                         }
-                                        FileHelper.saveToDownloads(context, uniqueName, mimeType, baseBytes)
+                                        val finalBytes = if (isEps) {
+                                            item.injectedBytes ?: XmpInjector.injectIntoEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
+                                        } else {
+                                            baseBytes
+                                        }
+                                        FileHelper.saveToDownloads(context, uniqueName, mimeType, finalBytes)
                                     }
                                 }
                             }

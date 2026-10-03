@@ -68,6 +68,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -134,7 +135,6 @@ fun MainScreen(
     val keywords by viewModel.keywords.collectAsStateWithLifecycle()
     val creator by viewModel.creator.collectAsStateWithLifecycle()
     
-    val groqKey by viewModel.groqKey.collectAsStateWithLifecycle()
     val geminiKey by viewModel.geminiKey.collectAsStateWithLifecycle()
     val selectedProvider by viewModel.selectedProvider.collectAsStateWithLifecycle()
     val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
@@ -174,14 +174,12 @@ fun MainScreen(
     }
 
     // Key states for API input logic
-    var tempGroqKey by remember { mutableStateOf(groqKey) }
     var tempGeminiKey by remember { mutableStateOf(geminiKey) }
     var apiInputsInitialized by remember { mutableStateOf(false) }
 
     // Initialize temp keys once saved ones load from SharedPreferences
-    LaunchedEffect(groqKey, geminiKey) {
-        if (!apiInputsInitialized && (groqKey.isNotEmpty() || geminiKey.isNotEmpty())) {
-            tempGroqKey = groqKey
+    LaunchedEffect(geminiKey) {
+        if (!apiInputsInitialized && geminiKey.isNotEmpty()) {
             tempGeminiKey = geminiKey
             apiInputsInitialized = true
         }
@@ -289,6 +287,7 @@ fun MainScreen(
         }
 
         val screenHeight = constraints.maxHeight.toFloat()
+        var headerHeightPx by remember { mutableFloatStateOf(0f) }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -296,60 +295,168 @@ fun MainScreen(
                 .onGloballyPositioned { scrollContainerCoordinates = it }
                 .verticalScroll(mainScrollState)
         ) {
-        // 1. --- STYLISH BANNER HEADER (Orange `#f25c05` Background) ---
-        Column(
+        // 1. --- MODERN MINIMALIST WEBSITE-STYLE HEADER ---
+        var showHeaderMenu by remember { mutableStateOf(false) }
+
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color(0xFFF25C05))
-                .padding(vertical = 18.dp, horizontal = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .onGloballyPositioned { coordinates ->
+                    headerHeightPx = coordinates.size.height.toFloat()
+                }
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Box(
-                modifier = Modifier
-                    .background(
-                        brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                            colors = listOf(
-                                Color(0xFFFFF099),
-                                Color(0xFFE5A93B),
-                                Color(0xFFFFD700),
-                                Color(0xFFF3E5AB),
-                                Color(0xFFD4AF37)
-                            )
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    .border(1.dp, Color(0x80FFFFFF), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                    .testTag("premium_label")
+            // Left Group: Hamburger Menu + WAR MACHINE HYBRID + PREMIUM
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f, fill = false)
             ) {
+                Box {
+                    IconButton(
+                        onClick = { showHeaderMenu = true },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("header_menu_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = "Menu Navigation",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showHeaderMenu,
+                        onDismissRequest = { showHeaderMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Privacy Policy", fontSize = 13.sp, fontWeight = FontWeight.Medium) },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.Info, contentDescription = null, modifier = Modifier.size(18.dp))
+                            },
+                            onClick = {
+                                showHeaderMenu = false
+                                showPrivacyPolicy = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Mode Offline: ${if (isOfflineMode) "ON" else "OFF"}", fontSize = 13.sp) },
+                            leadingIcon = {
+                                Icon(
+                                    if (isOfflineMode) Icons.Default.Lock else Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = if (isOfflineMode) Color(0xFFF25C05) else Color(0xFF22C55E)
+                                )
+                            },
+                            onClick = {
+                                showHeaderMenu = false
+                                viewModel.setOfflineMode(!isOfflineMode)
+                            }
+                        )
+                        if (imagesList.isNotEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("Hapus Semua Gambar", fontSize = 13.sp, color = Color(0xFFEF4444)) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFFEF4444))
+                                },
+                                onClick = {
+                                    showHeaderMenu = false
+                                    viewModel.clearAllImages()
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(4.dp))
+
                 Text(
-                    text = "★ PREMIUM ★",
-                    color = Color(0xFF0F172A),
+                    text = "WAR MACHINE HYBRID",
+                    color = Color.White,
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 11.sp,
-                    letterSpacing = 1.5.sp,
-                    fontFamily = FontFamily.SansSerif
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.SansSerif,
+                    letterSpacing = 0.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Surface(
+                    color = Color(0x33000000),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, Color(0x40FFFFFF)),
+                    modifier = Modifier.testTag("premium_label")
+                ) {
+                    Box(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_crown),
+                            contentDescription = "Simbol Mahkota Pro / Premium",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
             }
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = "WAR MACHINE HYBRID",
-                color = Color.White,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 24.sp,
-                fontFamily = FontFamily.SansSerif,
-                letterSpacing = 1.5.sp,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "Inject Metadata + Auto Metadata",
-                color = Color.White.copy(alpha = 0.9f),
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.SansSerif,
-                textAlign = TextAlign.Center
-            )
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Right Group: Gemini API status pill + Info Icon
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = Color(0x33000000),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Color(0x40FFFFFF))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Gemini API",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .background(
+                                    if (geminiKey.isNotEmpty()) Color(0xFF22C55E) else Color(0xFF94A3B8),
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(2.dp))
+
+                IconButton(
+                    onClick = { showPrivacyPolicy = true },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("header_info_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = "Informasi Aplikasi & Privacy Policy",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
         }
 
         // --- Inner Container with balanced spacing ---
@@ -380,16 +487,19 @@ fun MainScreen(
 
                     // Model Selection Select Row
                     val aiModels = listOf(
+                        Triple("Gemini", "gemini-3.8-flash", "Gemini 3.8 Flash"),
+                        Triple("Gemini", "gemini-3.7-flash", "Gemini 3.7 Flash"),
+                        Triple("Gemini", "gemini-3.6-flash", "Gemini 3.6 Flash"),
                         Triple("Gemini", "gemini-3.5-flash", "Gemini 3.5 Flash"),
+                        Triple("Gemini", "gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite"),
                         Triple("Gemini", "gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite"),
                         Triple("Gemini", "gemini-3.1-pro", "Gemini 3.1 Pro"),
                         Triple("Gemini", "gemini-2.5-flash", "Gemini 2.5 Flash"),
-                        Triple("Gemini", "gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite"),
-                        Triple("Groq", "llama-3.3-70b-versatile", "Groq Llama-3.3")
+                        Triple("Gemini", "gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite")
                     )
                     
                     var expanded by remember { mutableStateOf(false) }
-                    val currentModelLabel = aiModels.find { it.first == selectedProvider && it.second == selectedModel }?.third ?: selectedModel
+                    val currentModelLabel = aiModels.find { it.second == selectedModel }?.third ?: selectedModel
 
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
@@ -428,7 +538,7 @@ fun MainScreen(
                                 onDismissRequest = { expanded = false }
                             ) {
                                 aiModels.forEach { (provider, model, label) ->
-                                    val isSelected = selectedProvider == provider && selectedModel == model
+                                    val isSelected = selectedModel == model
                                     DropdownMenuItem(
                                         text = {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -459,21 +569,16 @@ fun MainScreen(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // API Key Input Status Field
-                    val activeInFocusKey = if (selectedProvider == "Gemini") tempGeminiKey else tempGroqKey
                     var keyVisibility by remember { mutableStateOf(false) }
 
                     OutlinedTextField(
-                        value = activeInFocusKey,
+                        value = tempGeminiKey,
                         onValueChange = {
-                            if (selectedProvider == "Gemini") {
-                                tempGeminiKey = it
-                            } else {
-                                tempGroqKey = it
-                            }
+                            tempGeminiKey = it
                         },
                         enabled = !isOfflineMode,
-                        label = { Text("API Key $selectedProvider") },
-                        placeholder = { Text("Masukkan API Key Anda...") },
+                        label = { Text("API Key Google Gemini") },
+                        placeholder = { Text("Masukkan API Key Gemini Anda...") },
                         singleLine = true,
                         visualTransformation = if (keyVisibility) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
@@ -486,13 +591,9 @@ fun MainScreen(
                                 )
                             } else {
                                 Row {
-                                    if (activeInFocusKey.isNotEmpty()) {
+                                    if (tempGeminiKey.isNotEmpty()) {
                                         IconButton(onClick = {
-                                            if (selectedProvider == "Gemini") {
-                                                tempGeminiKey = ""
-                                            } else {
-                                                tempGroqKey = ""
-                                            }
+                                            tempGeminiKey = ""
                                         }) {
                                             Icon(Icons.Default.Close, contentDescription = "Clear Key", tint = Color.Gray)
                                         }
@@ -525,15 +626,14 @@ fun MainScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    val savedKeyForProvider = if (selectedProvider == "Gemini") geminiKey else groqKey
                     val (apiBtnBg, apiBtnText) = when {
                         isOfflineMode -> {
                             Color(0xFF6C757D) to "DISABLE"
                         }
-                        activeInFocusKey.isEmpty() -> {
+                        tempGeminiKey.isEmpty() -> {
                             Color(0xFF6C757D) to "INPUT API"
                         }
-                        activeInFocusKey != savedKeyForProvider -> {
+                        tempGeminiKey != geminiKey -> {
                             Color(0xFF22C55E) to "SAVE API"
                         }
                         else -> {
@@ -543,13 +643,9 @@ fun MainScreen(
 
                     Button(
                         onClick = {
-                            viewModel.saveApiKeys(
-                                groq = tempGroqKey,
-                                gemini = tempGeminiKey,
-                                provider = selectedProvider
-                            )
+                            viewModel.saveApiKey(tempGeminiKey)
                         },
-                        enabled = !isOfflineMode && activeInFocusKey.isNotEmpty() && activeInFocusKey != savedKeyForProvider,
+                        enabled = !isOfflineMode && tempGeminiKey.isNotEmpty() && tempGeminiKey != geminiKey,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = apiBtnBg,
                             disabledContainerColor = apiBtnBg
@@ -777,20 +873,13 @@ fun MainScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                            Text(
-                                text = "Fitur Auto Injection :",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1F2937)
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = if (isAutoInjectionEnabled) "Otomatis inject (ON) saat metadata berhasil di generate" else "Inject metadata manual (OFF)",
-                                fontSize = 11.sp,
-                                color = if (isAutoInjectionEnabled) Color(0xFF10B981) else Color(0xFF6B7280)
-                            )
-                        }
+                        Text(
+                            text = "Fitur Auto Injection :",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1F2937),
+                            modifier = Modifier.weight(1f).padding(end = 8.dp)
+                        )
                         Switch(
                             checked = isAutoInjectionEnabled,
                             onCheckedChange = { viewModel.setAutoInjectionEnabled(it) },
@@ -1849,7 +1938,7 @@ fun MainScreen(
                     }
                 )
                 Text(
-                    text = " • war machine hybrid app version 2.0.0",
+                    text = " • war machine hybrid app version 2.1.0",
                     fontSize = 9.sp,
                     color = Color.White.copy(alpha = 0.9f),
                     fontStyle = FontStyle.Italic
@@ -1890,13 +1979,16 @@ fun MainScreen(
         }
     }
 
-    // --- Custom Draggable Scroll Handle ---
+    // --- Custom Draggable Scroll Handle (Sleek slightly reduced height) ---
     val maxScroll = mainScrollState.maxValue.toFloat()
     if (maxScroll > 0f) {
-        val handleHeight = 50.dp
+        val density = LocalDensity.current
+        val defaultHeaderHeightPx = with(density) { 52.dp.toPx() }
+        val baseHeaderHeightPx = if (headerHeightPx > 0f) headerHeightPx else defaultHeaderHeightPx
+        val handleHeightPx = baseHeaderHeightPx * 0.72f
+        val handleHeight = with(density) { handleHeightPx.toDp().coerceAtLeast(28.dp) }
         val handleWidth = 8.dp
-        val handleHeightPx = with(LocalDensity.current) { handleHeight.toPx() }
-        val availableTrack = screenHeight - handleHeightPx
+        val availableTrack = (screenHeight - handleHeightPx).coerceAtLeast(1f)
         val thumbYPercentage = if (maxScroll > 0) mainScrollState.value.toFloat() / maxScroll else 0f
         val thumbY = thumbYPercentage * availableTrack
         

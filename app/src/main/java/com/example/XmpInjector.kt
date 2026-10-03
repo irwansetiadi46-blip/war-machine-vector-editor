@@ -590,7 +590,8 @@ object XmpInjector {
         val existingAdobeTrailerRegex = Regex("""%ADOBeginClientInjection:\s*PageTrailer\s*Start\s*"AI11EPS"[\s\S]*?%ADOEndClientInjection:\s*PageTrailer\s*Start\s*"AI11EPS"\r?\n?""")
         psStr = psStr.replace(existingAdobeTrailerRegex, "")
 
-        // 1. PostScript standard comments
+        // 1. PostScript standard comments & universal XMP packet
+        val xmpPacket = bangunXmpXml(metaTitle, metaDesc, cleanKeywords, "application/postscript")
         val headerKomentarList = mutableListOf<String>()
         headerKomentarList.add("%ADO_ContainsXMP: MainFirst")
         if (metaTitle.isNotEmpty()) {
@@ -602,41 +603,45 @@ object XmpInjector {
         if (cleanKeywords.isNotEmpty()) {
             headerKomentarList.add("%%Keywords: " + cleanKeywords.joinToString(", "))
         }
+        headerKomentarList.add("%BeginXMP: BeforeBegin\n$xmpPacket\n%EndXMP:")
         val headerKomentar = headerKomentarList.joinToString("\n")
 
-        // 2. Adobe XML injection stream
-        val blokInjeksiAdobe = bangunAdobeClientInjection(metaTitle, metaDesc, cleanKeywords)
+        // 2. Adobe XML injection stream for AI11-compatible viewers
+        val isAi11Compatible = psStr.contains("AI11") || psStr.contains("Adobe Illustrator")
+        val blokInjeksiAdobe = if (isAi11Compatible) bangunAdobeClientInjection(metaTitle, metaDesc, cleanKeywords) else ""
 
         // 3. Inject comments before %%EndComments
         val endCommentsRegex = Regex("""(\r?\n%%EndComments)""")
         if (psStr.contains(endCommentsRegex)) {
             val quotedHeader = java.util.regex.Matcher.quoteReplacement(headerKomentar)
             psStr = psStr.replace(endCommentsRegex, "\n" + quotedHeader + "\$1")
-        }
-
-        // 4. Inject Adobe XML stream right after %%EndComments
-        val endCommentsAndSpaceRegex = Regex("""(%%EndComments\s*)""")
-        if (psStr.contains(endCommentsAndSpaceRegex)) {
-            val quotedBlok = java.util.regex.Matcher.quoteReplacement(blokInjeksiAdobe)
-            psStr = psStr.replace(endCommentsAndSpaceRegex, "\$1\n" + quotedBlok + "\n")
-        }
-
-        // 5. PageTrailer marker before showpage / %%EOF
-        val pageTrailer = listOf(
-            "%ADOBeginClientInjection: PageTrailer Start \"AI11EPS\"",
-            "[/EMC AI11_PDFMark5",
-            "[/NamespacePop AI11_PDFMark5",
-            "%ADOEndClientInjection: PageTrailer Start \"AI11EPS\"",
-            ""
-        ).joinToString("\n")
-
-        val showpageEofRegex = Regex("""(\r?\nshowpage\r?\n%%EOF)""")
-        if (psStr.contains(showpageEofRegex)) {
-            psStr = psStr.replace(showpageEofRegex, "\n" + pageTrailer + "showpage\n%%EOF")
         } else {
-            val showpageEofFallback = Regex("""\nshowpage\n%%EOF""")
-            if (psStr.contains(showpageEofFallback)) {
-                psStr = psStr.replace(showpageEofFallback, "\n\n" + pageTrailer + "showpage\n%%EOF")
+            val psHeaderRegex = Regex("""(%!PS[^\r\n]*)""")
+            if (psStr.contains(psHeaderRegex)) {
+                psStr = psStr.replace(psHeaderRegex, "\$1\n" + java.util.regex.Matcher.quoteReplacement(headerKomentar) + "\n%%EndComments")
+            }
+        }
+
+        // 4. Inject Adobe XML stream right after %%EndComments if compatible
+        if (blokInjeksiAdobe.isNotEmpty()) {
+            val endCommentsAndSpaceRegex = Regex("""(%%EndComments\s*)""")
+            if (psStr.contains(endCommentsAndSpaceRegex)) {
+                val quotedBlok = java.util.regex.Matcher.quoteReplacement(blokInjeksiAdobe)
+                psStr = psStr.replace(endCommentsAndSpaceRegex, "\$1\n" + quotedBlok + "\n")
+            }
+
+            // 5. PageTrailer marker before showpage / %%EOF
+            val pageTrailer = listOf(
+                "%ADOBeginClientInjection: PageTrailer Start \"AI11EPS\"",
+                "[/EMC AI11_PDFMark5",
+                "[/NamespacePop AI11_PDFMark5",
+                "%ADOEndClientInjection: PageTrailer Start \"AI11EPS\"",
+                ""
+            ).joinToString("\n")
+
+            val showpageEofRegex = Regex("""(\r?\nshowpage\r?\n%%EOF)""")
+            if (psStr.contains(showpageEofRegex)) {
+                psStr = psStr.replace(showpageEofRegex, "\n" + pageTrailer + "showpage\n%%EOF")
             }
         }
 

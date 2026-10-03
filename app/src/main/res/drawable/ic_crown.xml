@@ -1,0 +1,24 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Royal Pro Crown Body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M2.5,17 L4.5,7.5 L9.5,12 L12,4.5 L14.5,12 L19.5,7.5 L21.5,17 Z" />
+    <!-- Crown Base Band -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M3,18.5 C3,18 3.5,17.5 4,17.5 L20,17.5 C20.5,17.5 21,18 21,18.5 L21,20 C21,20.5 20.5,21 20,21 L4,21 C3.5,21 3,20.5 3,20 Z" />
+    <!-- Crown Jewels / Pearl Spheres on Tips -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,4.5 A1.7,1.7 0 1,1 11.99,4.5 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M4.5,7.5 A1.5,1.5 0 1,1 4.49,7.5 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M19.5,7.5 A1.5,1.5 0 1,1 19.49,7.5 Z" />
+</vector>
