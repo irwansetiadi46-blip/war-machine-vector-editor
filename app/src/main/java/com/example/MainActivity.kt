@@ -18,6 +18,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.animation.*
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -301,7 +302,15 @@ fun MainScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFF25C05))
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color(0xFF0A2558), // Deep tech navy blue
+                            Color(0xFF1D4ED8), // Royal blue
+                            Color(0xFF00A8FF)  // Vibrant cyan blue
+                        )
+                    )
+                )
                 .onGloballyPositioned { coordinates ->
                     headerHeightPx = coordinates.size.height.toFloat()
                 }
@@ -466,18 +475,19 @@ fun MainScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // 4. --- CARD AUTO METADATA (Background White, Border Orange `#f25c05`) ---
+            // 4. --- CARD AUTO METADATA (Flat SaaS-Style, SurfaceVariant Background) ---
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(BorderStroke(1.5.dp, Color(0xFFF25C05)), RoundedCornerShape(10.dp)),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
                         text = "AUTO METADATA AI",
-                        color = Color(0xFFF25C05),
+                        color = Color(0xFF00A8FF),
                         fontWeight = FontWeight.Black,
                         fontSize = 15.sp,
                         fontFamily = FontFamily.Monospace
@@ -508,13 +518,13 @@ fun MainScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Model Aktif:",
-                                color = Color(0xFF4B5563),
+                                color = Color(0xFF94A3B8),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
                                 text = currentModelLabel,
-                                color = Color(0xFF1F2937),
+                                color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp
                             )
@@ -523,14 +533,14 @@ fun MainScreen(
                         Box {
                             Button(
                                 onClick = { expanded = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF25C05)),
-                                shape = RoundedCornerShape(6.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A8FF)),
+                                shape = RoundedCornerShape(8.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                                 modifier = Modifier.height(36.dp)
                             ) {
-                                Text("Ganti Model", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("Ganti Model", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
                             }
                             
                             DropdownMenu(
@@ -545,7 +555,7 @@ fun MainScreen(
                                                 RadioButton(
                                                     selected = isSelected,
                                                     onClick = null,
-                                                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFF25C05))
+                                                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF00A8FF))
                                                 )
                                                 Spacer(modifier = Modifier.width(8.dp))
                                                 Text(
@@ -578,15 +588,16 @@ fun MainScreen(
                         },
                         enabled = !isOfflineMode,
                         label = { Text("API Key Google Gemini") },
-                        placeholder = { Text("Masukkan API Key Gemini Anda...") },
+                        placeholder = { Text("Masukkan API Key Gemini Anda...", color = Color(0xFF64748B)) },
                         singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
                         visualTransformation = if (keyVisibility) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
                             if (isOfflineMode) {
                                 Icon(
                                     imageVector = Icons.Default.Lock,
                                     contentDescription = "Locked in Offline Mode",
-                                    tint = Color(0xFFF25C05),
+                                    tint = Color(0xFF00A8FF),
                                     modifier = Modifier.size(20.dp)
                                 )
                             } else {
@@ -595,14 +606,14 @@ fun MainScreen(
                                         IconButton(onClick = {
                                             tempGeminiKey = ""
                                         }) {
-                                            Icon(Icons.Default.Close, contentDescription = "Clear Key", tint = Color.Gray)
+                                            Icon(Icons.Default.Close, contentDescription = "Clear Key", tint = Color(0xFF94A3B8))
                                         }
                                     }
                                     IconButton(onClick = { keyVisibility = !keyVisibility }) {
                                         Icon(
                                             imageVector = if (keyVisibility) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                             contentDescription = "Toggle Visibility",
-                                            tint = Color.Gray
+                                            tint = Color(0xFF94A3B8)
                                         )
                                     }
                                 }
@@ -612,15 +623,15 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("api_key_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
-                            focusedLabelColor = Color(0xFFF25C05),
-                            unfocusedLabelColor = Color(0xFF4B5563),
-                            focusedBorderColor = Color(0xFFF25C05),
-                            unfocusedBorderColor = Color(0xFFCCCCCC),
-                            disabledTextColor = Color(0xFF9CA3AF),
-                            disabledBorderColor = Color(0xFFE5E7EB),
-                            disabledLabelColor = Color(0xFF9CA3AF)
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color(0xFFE2E8F0),
+                            focusedLabelColor = Color(0xFF00A8FF),
+                            unfocusedLabelColor = Color(0xFF94A3B8),
+                            focusedBorderColor = Color(0xFF00A8FF),
+                            unfocusedBorderColor = Color(0x40FFFFFF),
+                            disabledTextColor = Color(0xFF64748B),
+                            disabledBorderColor = Color(0x20FFFFFF),
+                            disabledLabelColor = Color(0xFF64748B)
                         )
                     )
 
@@ -628,10 +639,10 @@ fun MainScreen(
 
                     val (apiBtnBg, apiBtnText) = when {
                         isOfflineMode -> {
-                            Color(0xFF6C757D) to "DISABLE"
+                            Color(0xFF64748B) to "DISABLE"
                         }
                         tempGeminiKey.isEmpty() -> {
-                            Color(0xFF6C757D) to "INPUT API"
+                            Color(0xFF64748B) to "INPUT API"
                         }
                         tempGeminiKey != geminiKey -> {
                             Color(0xFF22C55E) to "SAVE API"
@@ -650,7 +661,7 @@ fun MainScreen(
                             containerColor = apiBtnBg,
                             disabledContainerColor = apiBtnBg
                         ),
-                        shape = RoundedCornerShape(6.dp),
+                        shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(38.dp)
@@ -661,7 +672,7 @@ fun MainScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
                     
-                    Text("Metadata Configuration", color = Color(0xFF4B5563), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Metadata Configuration", color = Color(0xFFE2E8F0), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     
                     var titleInput by remember(titleCharLimit) { mutableStateOf(titleCharLimit.toInt().toString()) }
                     var descInput by remember(descCharLimit) { mutableStateOf(descCharLimit.toInt().toString()) }
@@ -670,7 +681,7 @@ fun MainScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Title Limit:", fontSize = 11.sp, color = Color(0xFF4B5563), modifier = Modifier.width(65.dp))
+                        Text("Title Limit:", fontSize = 11.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(65.dp))
                         OutlinedTextField(
                             value = titleInput,
                             onValueChange = { newValue ->
@@ -681,11 +692,14 @@ fun MainScreen(
                             },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.width(65.dp),
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color(0xFF1F2937)),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color.White),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFFF25C05),
-                                unfocusedBorderColor = Color(0xFFCCCCCC)
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF00A8FF),
+                                unfocusedBorderColor = Color(0x40FFFFFF)
                             )
                         )
                         OrangeToscaCircleSlider(
@@ -699,7 +713,7 @@ fun MainScreen(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Desc Limit:", fontSize = 11.sp, color = Color(0xFF4B5563), modifier = Modifier.width(65.dp))
+                        Text("Desc Limit:", fontSize = 11.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(65.dp))
                         OutlinedTextField(
                             value = descInput,
                             onValueChange = { newValue ->
@@ -710,11 +724,14 @@ fun MainScreen(
                             },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.width(65.dp),
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color(0xFF1F2937)),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color.White),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFFF25C05),
-                                unfocusedBorderColor = Color(0xFFCCCCCC)
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF00A8FF),
+                                unfocusedBorderColor = Color(0x40FFFFFF)
                             )
                         )
                         OrangeToscaCircleSlider(
@@ -728,7 +745,7 @@ fun MainScreen(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Keywords:", fontSize = 11.sp, color = Color(0xFF4B5563), modifier = Modifier.width(65.dp))
+                        Text("Keywords:", fontSize = 11.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(65.dp))
                         OutlinedTextField(
                             value = keywordsInput,
                             onValueChange = { newValue ->
@@ -739,11 +756,14 @@ fun MainScreen(
                             },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.width(65.dp),
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color(0xFF1F2937)),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color.White),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFFF25C05),
-                                unfocusedBorderColor = Color(0xFFCCCCCC)
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF00A8FF),
+                                unfocusedBorderColor = Color(0x40FFFFFF)
                             )
                         )
                         OrangeToscaCircleSlider(
@@ -760,8 +780,9 @@ fun MainScreen(
                         value = blacklistWords,
                         onValueChange = { viewModel.setBlacklistWords(it) },
                         label = { Text("Blacklist Words") },
-                        placeholder = { Text("ex: vector, illustration, abstract") },
+                        placeholder = { Text("ex: vector, illustration, abstract", color = Color(0xFF64748B)) },
                         singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
                         trailingIcon = {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
                                 if (blacklistWords.isNotEmpty()) {
@@ -772,7 +793,7 @@ fun MainScreen(
                                         Icon(
                                             imageVector = Icons.Default.Close,
                                             contentDescription = "Hapus Blacklist Words",
-                                            tint = Color(0xFF9CA3AF),
+                                            tint = Color(0xFF94A3B8),
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -798,12 +819,12 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("blacklist_words_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
-                            focusedLabelColor = Color(0xFFF25C05),
-                            unfocusedLabelColor = Color(0xFF4B5563),
-                            focusedBorderColor = Color(0xFFF25C05),
-                            unfocusedBorderColor = Color(0xFFCCCCCC)
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color(0xFFE2E8F0),
+                            focusedLabelColor = Color(0xFF00A8FF),
+                            unfocusedLabelColor = Color(0xFF94A3B8),
+                            focusedBorderColor = Color(0xFF00A8FF),
+                            unfocusedBorderColor = Color(0x40FFFFFF)
                         )
                     )
 
@@ -813,8 +834,9 @@ fun MainScreen(
                         value = promptConcept,
                         onValueChange = { viewModel.setPromptConcept(it) },
                         label = { Text("Kata Kunci Inti / Deskripsi Singkat") },
-                        placeholder = { Text("Contoh: laptop di meja kayu minimalis, aesthetic lighting...") },
+                        placeholder = { Text("Contoh: laptop di meja kayu minimalis, aesthetic lighting...", color = Color(0xFF64748B)) },
                         maxLines = 2,
+                        shape = RoundedCornerShape(8.dp),
                         trailingIcon = {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
                                 if (promptConcept.isNotEmpty()) {
@@ -825,7 +847,7 @@ fun MainScreen(
                                         Icon(
                                             imageVector = Icons.Default.Close,
                                             contentDescription = "Hapus Kata Kunci Inti",
-                                            tint = Color(0xFF9CA3AF),
+                                            tint = Color(0xFF94A3B8),
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -851,12 +873,12 @@ fun MainScreen(
                             .fillMaxWidth()
                             .testTag("concept_prompt_field"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
-                            focusedLabelColor = Color(0xFFF25C05),
-                            unfocusedLabelColor = Color(0xFF4B5563),
-                            focusedBorderColor = Color(0xFFF25C05),
-                            unfocusedBorderColor = Color(0xFFCCCCCC)
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color(0xFFE2E8F0),
+                            focusedLabelColor = Color(0xFF00A8FF),
+                            unfocusedLabelColor = Color(0xFF94A3B8),
+                            focusedBorderColor = Color(0xFF00A8FF),
+                            unfocusedBorderColor = Color(0x40FFFFFF)
                         )
                     )
 
@@ -866,8 +888,8 @@ fun MainScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFFF9FAFB), RoundedCornerShape(10.dp))
-                            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(10.dp))
+                            .background(Color(0xFF0F172A).copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0x20FFFFFF), RoundedCornerShape(10.dp))
                             .padding(horizontal = 14.dp, vertical = 8.dp)
                             .testTag("auto_injection_row"),
                         verticalAlignment = Alignment.CenterVertically,
@@ -877,7 +899,7 @@ fun MainScreen(
                             text = "Fitur Auto Injection :",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1F2937),
+                            color = Color.White,
                             modifier = Modifier.weight(1f).padding(end = 8.dp)
                         )
                         Switch(
@@ -886,9 +908,9 @@ fun MainScreen(
                             modifier = Modifier.testTag("auto_injection_switch"),
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
-                                checkedTrackColor = Color(0xFFF25C05),
+                                checkedTrackColor = Color(0xFF00A8FF),
                                 uncheckedThumbColor = Color.White,
-                                uncheckedTrackColor = Color(0xFFD1D5DB)
+                                uncheckedTrackColor = Color(0xFF475569)
                             )
                         )
                     }
@@ -935,10 +957,10 @@ fun MainScreen(
                             }
                         },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isGeneratingAi) Color.Red else Color(0xFFF25C05),
+                            containerColor = if (isGeneratingAi) Color(0xFFEF4444) else Color(0xFFF25C05),
                             contentColor = Color.White
                         ),
-                        shape = RoundedCornerShape(6.dp),
+                        shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(44.dp)
@@ -960,13 +982,14 @@ fun MainScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFFF3F4F6), RoundedCornerShape(6.dp))
+                            .background(Color(0xFF0F172A).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                            .border(1.dp, Color(0x20FFFFFF), RoundedCornerShape(8.dp))
                             .padding(10.dp)
                     ) {
                         Column {
                             Text(
                                 text = "Petunjuk Penggunaan AI:",
-                                color = Color(0xFF1F2937),
+                                color = Color(0xFF00A8FF),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.sp
                             )
@@ -975,14 +998,14 @@ fun MainScreen(
                                 text = "1. Pilih AI Provider & masukkan Kunci API, klik SAVE API untuk mengaktifkan.\n" +
                                        "2. Tulis konsep detail/deskripsi gambar lalu klik GENERATE METADATA.\n" +
                                        "3. ATAU centang satu gambar di galeri, lalu klik GENERATE METADATA untuk analisis visual langsung oleh Gemini.",
-                                color = Color(0xFF4B5563),
+                                color = Color(0xFFCBD5E1),
                                 fontSize = 10.sp,
                                 lineHeight = 14.sp
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = "Dapatkan Gemini API Key di sini",
-                                color = Color(0xFF2563EB),
+                                color = Color(0xFF38BDF8),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.clickable {
@@ -994,419 +1017,451 @@ fun MainScreen(
                 }
             }
 
-            // 2. --- CARD METADATA INJECTOR (Border Blue `#00a8ff`, Background `#111827`) ---
-            Card(
+            // 2. --- WORKSPACE / IMAGE PREVIEW AREA (Clean Flat SaaS-Style) ---
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .onGloballyPositioned { previewCardCoordinates = it }
-                    .border(BorderStroke(1.5.dp, Color(0xFF00A8FF)), RoundedCornerShape(10.dp))
-                    .testTag("preview_card_container"),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF101932))
+                    .testTag("preview_card_container")
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    // Single, Multi, ALL buttons replacing upload position
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(
-                            SelectionMode.SINGLE to "Single",
-                            SelectionMode.MULTI to "Multi",
-                            SelectionMode.ALL to "ALL"
-                        ).forEach { (mode, label) ->
-                            val isActive = selectionMode == mode
-                            val btnBg = if (isActive) Color(0xFFF25C05) else Color(0xFF00A8FF).copy(alpha = 0.15f)
-                            val borderAccent = if (isActive) Color(0xFFF25C05) else Color(0xFF00A8FF)
+                // Single, Multi, ALL buttons (Flat SaaS Segmented Control)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        SelectionMode.SINGLE to "Single",
+                        SelectionMode.MULTI to "Multi",
+                        SelectionMode.ALL to "ALL"
+                    ).forEach { (mode, label) ->
+                        val isActive = selectionMode == mode
+                        val btnBg = if (isActive) Color(0xFFF25C05) else MaterialTheme.colorScheme.surfaceVariant
+                        val textColor = if (isActive) Color.White else Color(0xFF94A3B8)
 
-                            OutlinedButton(
-                                onClick = { viewModel.setSelectionMode(mode) },
-                                shape = RoundedCornerShape(6.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = btnBg,
-                                    contentColor = Color.White
-                                ),
-                                border = BorderStroke(1.2.dp, borderAccent),
-                                contentPadding = PaddingValues(0.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(38.dp)
-                                    .testTag("mode_${label.lowercase()}_btn")
-                            ) {
-                                Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Separate Container for Upload and Indicator text
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
-                            .border(1.dp, Color(0xFF4B5563), RoundedCornerShape(8.dp))
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
                         Button(
-                            onClick = { requestAndPickImages() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF25C05)),
+                            onClick = { viewModel.setSelectionMode(mode) },
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                            modifier = Modifier.testTag("upload_image_btn")
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = btnBg,
+                                contentColor = textColor
+                            ),
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                                .testTag("mode_${label.lowercase()}_btn")
                         ) {
-                            Icon(Icons.Default.CloudUpload, contentDescription = "Upload Icon", modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Upload Image", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(label, fontSize = 12.sp, fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold)
                         }
+                    }
+                }
 
-                        // Counter: "X Images : Y Selected"
-                        val totalCount = imagesList.size
-                        val selectedCount = imagesList.count { it.isSelected }
-                        Text(
-                            text = "$totalCount Images : $selectedCount Selected",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Upload Button and Counter Row (Flat, borderless SaaS-style)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { requestAndPickImages() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF25C05)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier.testTag("upload_image_btn")
+                    ) {
+                        Icon(Icons.Default.CloudUpload, contentDescription = "Upload Icon", modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Upload Image", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    // Counter: "X Images : Y Selected"
+                    val totalCount = imagesList.size
+                    val selectedCount = imagesList.count { it.isSelected }
+                    Text(
+                        text = "$totalCount Images : $selectedCount Selected",
+                        color = Color(0xFFE2E8F0),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.5.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
 
-                    // Preview Area Container (Dynamically resizing)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Image List Area (Breathes directly on app background)
+                if (imagesList.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFF050B18), RoundedCornerShape(8.dp))
-                            .border(BorderStroke(1.dp, Color(0xFF4B5563).copy(alpha = 0.5f)), RoundedCornerShape(8.dp))
-                            .padding(8.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                            .padding(vertical = 40.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        if (imagesList.isEmpty()) {
-                            Text(
-                                text = "Belum ada file gambar.",
-                                color = Color.Gray,
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 13.sp,
+                        Text(
+                            text = "Belum ada file gambar.",
+                            color = Color(0xFF94A3B8),
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 13.sp,
+                            modifier = Modifier.testTag("empty_placeholder_text"),
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                } else {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        imagesList.forEach { item ->
+                            val isPng = item.name.endsWith(".png", ignoreCase = true)
+                            val isEps = item.name.endsWith(".eps", ignoreCase = true)
+                            val isSvg = item.name.endsWith(".svg", ignoreCase = true)
+
+                            Card(
                                 modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .padding(vertical = 40.dp)
-                                    .testTag("empty_placeholder_text"),
-                                fontFamily = FontFamily.Monospace
-                            )
-                        } else {
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.fillMaxWidth()
+                                    .fillMaxWidth()
+                                    .testTag("image_item_${item.id}"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                             ) {
-                                imagesList.forEach { item ->
-                                    val isPng = item.name.endsWith(".png", ignoreCase = true)
-                                    val isEps = item.name.endsWith(".eps", ignoreCase = true)
-                                    val isSvg = item.name.endsWith(".svg", ignoreCase = true)
-                                    val borderColor = if (item.hasMetadata) Color(0xFF22C55E) else Color(0xFF4B5563)
-                                    
-                                    Row(
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    // Symmetrical, Compact Thumbnail Column
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(Color(0xFF101932), RoundedCornerShape(8.dp))
-                                            .border(1.dp, Color(0xFF4B5563), RoundedCornerShape(8.dp))
-                                            .padding(8.dp),
-                                        verticalAlignment = Alignment.Top
+                                            .width(76.dp)
+                                            .clickable { viewModel.toggleImageSelected(item.id) }
                                     ) {
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                        Box(
                                             modifier = Modifier
-                                                .width(100.dp)
-                                                .clickable { viewModel.toggleImageSelected(item.id) }
+                                                .size(76.dp)
+                                                .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
+                                                .border(
+                                                    1.dp,
+                                                    if (item.hasMetadata) Color(0xFF22C55E) else Color(0x33FFFFFF),
+                                                    RoundedCornerShape(8.dp)
+                                                )
+                                                .clip(RoundedCornerShape(8.dp))
                                         ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(100.dp)
-                                                    .background(Color(0xFF1F2937), RoundedCornerShape(6.dp))
-                                                    .border(BorderStroke(2.dp, borderColor), RoundedCornerShape(6.dp))
-                                                    .clip(RoundedCornerShape(6.dp))
-                                            ) {
-                                                if (item.previewUri != null) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .fillMaxSize()
-                                                            .background(Color(0xFF0F172A)),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        AsyncImage(
-                                                            model = item.previewUri,
-                                                            contentDescription = item.name,
-                                                            modifier = Modifier.fillMaxSize(),
-                                                            contentScale = ContentScale.Fit
-                                                        )
-                                                        if (isSvg || isEps) {
-                                                            val badgeText = if (isEps) "EPS" else "SVG"
-                                                            val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
-                                                            Surface(
-                                                                color = badgeColor.copy(alpha = 0.85f),
-                                                                shape = RoundedCornerShape(bottomStart = 4.dp),
-                                                                modifier = Modifier.align(Alignment.TopEnd)
-                                                            ) {
-                                                                Text(
-                                                                    text = badgeText,
-                                                                    color = Color.White,
-                                                                    fontSize = 8.sp,
-                                                                    fontWeight = FontWeight.Bold,
-                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                                                )
-                                                            }
-                                                        }
-                                                    }
-                                                } else if (isEps || isSvg) {
-                                                    val badgeText = if (isEps) "EPS VECTOR" else "SVG VECTOR"
-                                                    val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
-                                                    val iconTint = if (isEps) Color(0xFF818CF8) else Color(0xFF14B8A6)
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .fillMaxSize()
-                                                            .background(badgeColor.copy(alpha = 0.15f)),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Column(
-                                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                                            verticalArrangement = Arrangement.Center,
-                                                            modifier = Modifier.padding(4.dp)
+                                            if (item.previewUri != null) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(Color(0xFF0F172A)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    AsyncImage(
+                                                        model = item.previewUri,
+                                                        contentDescription = item.name,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Fit
+                                                    )
+                                                    if (isSvg || isEps) {
+                                                        val badgeText = if (isEps) "EPS" else "SVG"
+                                                        val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
+                                                        Surface(
+                                                            color = badgeColor.copy(alpha = 0.85f),
+                                                            shape = RoundedCornerShape(bottomStart = 4.dp),
+                                                            modifier = Modifier.align(Alignment.TopEnd)
                                                         ) {
-                                                            Icon(
-                                                                imageVector = Icons.Default.Description,
-                                                                contentDescription = badgeText,
-                                                                tint = iconTint,
-                                                                modifier = Modifier.size(32.dp)
+                                                            Text(
+                                                                text = badgeText,
+                                                                color = Color.White,
+                                                                fontSize = 8.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                                             )
-                                                            Spacer(modifier = Modifier.height(4.dp))
-                                                            Surface(
-                                                                color = badgeColor,
-                                                                shape = RoundedCornerShape(3.dp),
-                                                                modifier = Modifier.padding(horizontal = 2.dp)
-                                                            ) {
-                                                                Text(
-                                                                    text = badgeText,
-                                                                    color = Color.White,
-                                                                    fontSize = 8.sp,
-                                                                    fontWeight = FontWeight.Bold,
-                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                                                )
-                                                            }
                                                         }
-                                                    }
-                                                } else {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .fillMaxSize()
-                                                            .background(Color(0xFF0F172A)),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        AsyncImage(
-                                                            model = item.uri,
-                                                            contentDescription = item.name,
-                                                            modifier = Modifier.fillMaxSize(),
-                                                            contentScale = ContentScale.Fit
-                                                        )
                                                     }
                                                 }
+                                            } else if (isEps || isSvg) {
+                                                val badgeText = if (isEps) "EPS VECTOR" else "SVG VECTOR"
+                                                val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
+                                                val iconTint = if (isEps) Color(0xFF818CF8) else Color(0xFF14B8A6)
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(badgeColor.copy(alpha = 0.15f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.Center,
+                                                        modifier = Modifier.padding(4.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Description,
+                                                            contentDescription = badgeText,
+                                                            tint = iconTint,
+                                                            modifier = Modifier.size(26.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.height(2.dp))
+                                                        Surface(
+                                                            color = badgeColor,
+                                                            shape = RoundedCornerShape(3.dp),
+                                                            modifier = Modifier.padding(horizontal = 2.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = badgeText,
+                                                                color = Color.White,
+                                                                fontSize = 7.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(Color(0xFF0F172A)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    AsyncImage(
+                                                        model = item.uri,
+                                                        contentDescription = item.name,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Fit
+                                                    )
+                                                }
                                             }
-
-                                            Spacer(modifier = Modifier.height(4.dp))
-
-                                            Checkbox(
-                                                checked = item.isSelected,
-                                                onCheckedChange = { viewModel.toggleImageSelected(item.id) },
-                                                colors = CheckboxDefaults.colors(
-                                                    checkedColor = Color(0xFF00A8FF),
-                                                    uncheckedColor = Color(0xFF4B5563)
-                                                ),
-                                                modifier = Modifier.size(24.dp)
-                                            )
-
-                                            Spacer(modifier = Modifier.height(2.dp))
-
-                                            Text(
-                                                text = item.name,
-                                                color = Color.White.copy(alpha = 0.8f),
-                                                fontSize = 8.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.padding(horizontal = 2.dp)
-                                            )
                                         }
 
-                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Spacer(modifier = Modifier.height(6.dp))
 
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
+                                        Checkbox(
+                                            checked = item.isSelected,
+                                            onCheckedChange = { viewModel.toggleImageSelected(item.id) },
+                                            colors = CheckboxDefaults.colors(
+                                                checkedColor = Color(0xFF00A8FF),
+                                                uncheckedColor = Color(0xFF64748B)
+                                            ),
+                                            modifier = Modifier.size(22.dp)
+                                        )
+
+                                        Spacer(modifier = Modifier.height(2.dp))
+
+                                        Text(
+                                            text = item.name,
+                                            color = Color.White.copy(alpha = 0.8f),
+                                            fontSize = 8.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.padding(horizontal = 2.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    // Right Form Fields Column (Optimized layout, no clutter header)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        OutlinedTextField(
+                                            value = item.individualTitle,
+                                            onValueChange = { viewModel.updateIndividualTitle(item.id, it) },
+                                            label = { 
+                                                val len = item.individualTitle.length
+                                                if (len > 0) Text("Title ($len character)", fontSize = 10.sp) else Text("Title", fontSize = 10.sp)
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedTextColor = Color(0xFF22C55E),
+                                                unfocusedTextColor = Color(0xFF22C55E),
+                                                focusedLabelColor = Color(0xFF22C55E),
+                                                unfocusedLabelColor = Color(0xFF94A3B8),
+                                                focusedBorderColor = Color(0xFF00A8FF),
+                                                unfocusedBorderColor = Color(0x40FFFFFF)
+                                            ),
+                                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                                            trailingIcon = {
+                                                if (item.individualTitle.isNotEmpty()) {
+                                                    IconButton(onClick = { 
+                                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualTitle))
+                                                        Toast.makeText(context, "Title disalin", Toast.LENGTH_SHORT).show()
+                                                    }) {
+                                                        Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Title", tint = Color(0xFF00A8FF), modifier = Modifier.size(15.dp))
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        OutlinedTextField(
+                                            value = item.individualDescription,
+                                            onValueChange = { viewModel.updateIndividualDescription(item.id, it) },
+                                            label = { 
+                                                val len = item.individualDescription.length
+                                                if (len > 0) Text("Description ($len character)", fontSize = 10.sp) else Text("Description", fontSize = 10.sp)
+                                            },
+                                            modifier = Modifier.fillMaxWidth().height(72.dp),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedTextColor = Color(0xFF22C55E),
+                                                unfocusedTextColor = Color(0xFF22C55E),
+                                                focusedLabelColor = Color(0xFF22C55E),
+                                                unfocusedLabelColor = Color(0xFF94A3B8),
+                                                focusedBorderColor = Color(0xFF00A8FF),
+                                                unfocusedBorderColor = Color(0x40FFFFFF)
+                                            ),
+                                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                                            trailingIcon = {
+                                                if (item.individualDescription.isNotEmpty()) {
+                                                    IconButton(onClick = { 
+                                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualDescription))
+                                                        Toast.makeText(context, "Description disalin", Toast.LENGTH_SHORT).show()
+                                                    }) {
+                                                        Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Description", tint = Color(0xFF00A8FF), modifier = Modifier.size(15.dp))
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        OutlinedTextField(
+                                            value = item.individualKeywords,
+                                            onValueChange = { viewModel.updateIndividualKeywords(item.id, it) },
+                                            label = { 
+                                                val len = if (item.individualKeywords.isBlank()) 0 else item.individualKeywords.split(",").map{ k -> k.trim() }.filter{ k -> k.isNotEmpty() }.size
+                                                if (len > 0) Text("Keywords ($len)", fontSize = 10.sp) else Text("Keywords", fontSize = 10.sp)
+                                            },
+                                            modifier = Modifier.fillMaxWidth().height(72.dp),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedTextColor = Color(0xFF22C55E),
+                                                unfocusedTextColor = Color(0xFF22C55E),
+                                                focusedLabelColor = Color(0xFF22C55E),
+                                                unfocusedLabelColor = Color(0xFF94A3B8),
+                                                focusedBorderColor = Color(0xFF00A8FF),
+                                                unfocusedBorderColor = Color(0x40FFFFFF)
+                                            ),
+                                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                                            trailingIcon = {
+                                                if (item.individualKeywords.isNotEmpty()) {
+                                                    IconButton(onClick = { 
+                                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualKeywords))
+                                                        Toast.makeText(context, "Keywords disalin", Toast.LENGTH_SHORT).show()
+                                                    }) {
+                                                        Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Keywords", tint = Color(0xFF00A8FF), modifier = Modifier.size(15.dp))
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        
+                                        // Symmetrical, Compact Bottom Actions Row
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // Hapus Metadata Individu (Replaces corner trash button)
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .background(Color(0xFFEF4444).copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                                    .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable {
+                                                        viewModel.clearIndividualMetadata(item.id)
+                                                        Toast.makeText(context, "Metadata berhasil dihapus", Toast.LENGTH_SHORT).show()
+                                                    },
+                                                contentAlignment = Alignment.Center
                                             ) {
-                                                Text(
-                                                    text = "Individual Metadata",
-                                                    color = Color(0xFF00A8FF),
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 12.sp
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Delete,
+                                                    contentDescription = "Hapus Metadata Individu",
+                                                    tint = Color(0xFFEF4444),
+                                                    modifier = Modifier.size(16.dp)
                                                 )
-                                                IconButton(
-                                                    onClick = { viewModel.clearIndividualMetadata(item.id) },
-                                                    modifier = Modifier.size(24.dp)
-                                                ) {
-                                                    Icon(Icons.Outlined.Delete, contentDescription = "Clear Metadata", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
+                                            }
+
+                                            // GENERATE Button
+                                            Button(
+                                                onClick = {
+                                                    if (item.isGeneratingMetadata) {
+                                                        viewModel.cancelIndividualGeneration(item.id)
+                                                    } else {
+                                                        viewModel.generateMetadataForSingleImage(item.id)
+                                                    }
+                                                },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if (item.isGeneratingMetadata) Color(0xFFEF4444) else Color(0xFF00A8FF)
+                                                ),
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(34.dp),
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                            ) {
+                                                if (item.isGeneratingMetadata) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("CANCEL", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                                    }
+                                                } else {
+                                                    Text("GENERATE", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             }
 
-                                            Spacer(modifier = Modifier.height(4.dp))
-
-                                            OutlinedTextField(
-                                                value = item.individualTitle,
-                                                onValueChange = { viewModel.updateIndividualTitle(item.id, it) },
-                                                label = { 
-                                                    val len = item.individualTitle.length
-                                                    if (len > 0) Text("Title ($len character)", fontSize = 10.sp) else Text("Title", fontSize = 10.sp)
-                                                },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                colors = OutlinedTextFieldDefaults.colors(
-                                                    focusedTextColor = Color(0xFF22C55E),
-                                                    unfocusedTextColor = Color(0xFF22C55E),
-                                                    focusedLabelColor = Color(0xFF22C55E),
-                                                    unfocusedLabelColor = Color(0xFF4B5563)
+                                            // INJECT Button
+                                            val canInject = item.individualTitle.isNotBlank() || item.individualDescription.isNotBlank() || item.individualKeywords.isNotBlank()
+                                            Button(
+                                                onClick = { viewModel.injectIndividualMetadata(item.id) },
+                                                enabled = canInject && !item.isInjectingIndividual,
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if (canInject) Color(0xFF22C55E) else Color(0xFF475569),
+                                                    disabledContainerColor = Color(0xFF334155),
+                                                    disabledContentColor = Color(0xFF94A3B8)
                                                 ),
-                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
-                                                trailingIcon = {
-                                                    if (item.individualTitle.isNotEmpty()) {
-                                                        IconButton(onClick = { 
-                                                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualTitle))
-                                                            Toast.makeText(context, "Title disalin", Toast.LENGTH_SHORT).show()
-                                                        }) {
-                                                            Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Title", tint = Color(0xFF00A8FF), modifier = Modifier.size(16.dp))
-                                                        }
-                                                    }
-                                                }
-                                            )
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            OutlinedTextField(
-                                                value = item.individualDescription,
-                                                onValueChange = { viewModel.updateIndividualDescription(item.id, it) },
-                                                label = { 
-                                                    val len = item.individualDescription.length
-                                                    if (len > 0) Text("Description ($len character)", fontSize = 10.sp) else Text("Description", fontSize = 10.sp)
-                                                },
-                                                modifier = Modifier.fillMaxWidth().height(80.dp),
-                                                colors = OutlinedTextFieldDefaults.colors(
-                                                    focusedTextColor = Color(0xFF22C55E),
-                                                    unfocusedTextColor = Color(0xFF22C55E),
-                                                    focusedLabelColor = Color(0xFF22C55E),
-                                                    unfocusedLabelColor = Color(0xFF4B5563)
-                                                ),
-                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
-                                                trailingIcon = {
-                                                    if (item.individualDescription.isNotEmpty()) {
-                                                        IconButton(onClick = { 
-                                                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualDescription))
-                                                            Toast.makeText(context, "Description disalin", Toast.LENGTH_SHORT).show()
-                                                        }) {
-                                                            Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Description", tint = Color(0xFF00A8FF), modifier = Modifier.size(16.dp))
-                                                        }
-                                                    }
-                                                }
-                                            )
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            OutlinedTextField(
-                                                value = item.individualKeywords,
-                                                onValueChange = { viewModel.updateIndividualKeywords(item.id, it) },
-                                                label = { 
-                                                    val len = if (item.individualKeywords.isBlank()) 0 else item.individualKeywords.split(",").map{ k -> k.trim() }.filter{ k -> k.isNotEmpty() }.size
-                                                    if (len > 0) Text("Keywords ($len)", fontSize = 10.sp) else Text("Keywords", fontSize = 10.sp)
-                                                },
-                                                modifier = Modifier.fillMaxWidth().height(100.dp),
-                                                colors = OutlinedTextFieldDefaults.colors(
-                                                    focusedTextColor = Color(0xFF22C55E),
-                                                    unfocusedTextColor = Color(0xFF22C55E),
-                                                    focusedLabelColor = Color(0xFF22C55E),
-                                                    unfocusedLabelColor = Color(0xFF4B5563)
-                                                ),
-                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
-                                                trailingIcon = {
-                                                    if (item.individualKeywords.isNotEmpty()) {
-                                                        IconButton(onClick = { 
-                                                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualKeywords))
-                                                            Toast.makeText(context, "Keywords disalin", Toast.LENGTH_SHORT).show()
-                                                        }) {
-                                                            Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Keywords", tint = Color(0xFF00A8FF), modifier = Modifier.size(16.dp))
-                                                        }
-                                                    }
-                                                }
-                                            )
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(34.dp),
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                                             ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(38.dp)
-                                                        .background(Color.Red.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
-                                                        .border(1.dp, Color.Red, RoundedCornerShape(6.dp))
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .clickable { viewModel.removeIndividualImage(item.id) },
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.size(18.dp))
+                                                if (item.isInjectingIndividual) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
+                                                } else {
+                                                    Text("INJECT", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                                                 }
-                                                Button(
-                                                    onClick = {
-                                                        if (item.isGeneratingMetadata) {
-                                                            viewModel.cancelIndividualGeneration(item.id)
-                                                        } else {
-                                                            viewModel.generateMetadataForSingleImage(item.id)
-                                                        }
-                                                    },
-                                                    colors = ButtonDefaults.buttonColors(containerColor = if (item.isGeneratingMetadata) Color.Red else Color(0xFF00A8FF)),
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    modifier = Modifier.weight(1f).height(38.dp),
-                                                    contentPadding = PaddingValues(0.dp)
-                                                ) {
-                                                    if (item.isGeneratingMetadata) {
-                                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                                                            Spacer(modifier = Modifier.width(4.dp))
-                                                            Text("CANCEL", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                                        }
-                                                    } else {
-                                                        Text("GENERATE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                    }
-                                                }
+                                            }
 
-                                                val canInject = item.individualTitle.isNotBlank() || item.individualDescription.isNotBlank() || item.individualKeywords.isNotBlank()
-                                                Button(
-                                                    onClick = { viewModel.injectIndividualMetadata(item.id) },
-                                                    enabled = canInject && !item.isInjectingIndividual,
-                                                    colors = ButtonDefaults.buttonColors(containerColor = if (canInject) Color(0xFF22C55E) else Color(0xFF6C757D)),
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    modifier = Modifier.weight(1f).height(38.dp),
-                                                    contentPadding = PaddingValues(0.dp)
-                                                ) {
-                                                    if (item.isInjectingIndividual) {
-                                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                                                    } else {
-                                                        Text("INJECT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                    }
-                                                }
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(38.dp)
-                                                        .background(if (item.hasMetadata) Color(0xFF00A8FF).copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(6.dp))
-                                                        .border(1.dp, if (item.hasMetadata) Color(0xFF00A8FF) else Color(0xFF4B5563), RoundedCornerShape(6.dp))
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .clickable(enabled = item.hasMetadata) { viewModel.downloadIndividualFile(item.id) },
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(Icons.Default.Download, contentDescription = "Download", tint = if (item.hasMetadata) Color(0xFF00A8FF) else Color(0xFF4B5563), modifier = Modifier.size(18.dp))
-                                                }
+                                            // Download Button
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .background(
+                                                        if (item.hasMetadata) Color(0xFF00A8FF).copy(alpha = 0.15f) else Color.Transparent,
+                                                        RoundedCornerShape(8.dp)
+                                                    )
+                                                    .border(
+                                                        1.dp,
+                                                        if (item.hasMetadata) Color(0xFF00A8FF) else Color(0x33FFFFFF),
+                                                        RoundedCornerShape(8.dp)
+                                                    )
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable(enabled = item.hasMetadata) { viewModel.downloadIndividualFile(item.id) },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Download,
+                                                    contentDescription = "Download File",
+                                                    tint = if (item.hasMetadata) Color(0xFF00A8FF) else Color(0xFF64748B),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
                                             }
                                         }
                                     }
@@ -1414,86 +1469,84 @@ fun MainScreen(
                             }
                         }
                     }
+                }
 
+                // Action controls for deleting (Hapus Terpilih / Clear All Images) if list is not empty
+                if (imagesList.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    
+                    val activeSelectedSize = imagesList.count { it.isSelected }
+                    Button(
+                        onClick = { viewModel.injectAllIndividualMetadata() },
+                        enabled = activeSelectedSize > 0,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("inject_all_btn")
+                    ) {
+                        Icon(Icons.Default.DownloadForOffline, contentDescription = "Inject All Icon", modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("INJECT ALL", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
 
-
-                    // Action controls for deleting (Hapus Terpilih / Clear All Images) if list is not empty
-                    if (imagesList.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        
-                        val activeSelectedSize = imagesList.count { it.isSelected }
-                        Button(
-                            onClick = { viewModel.injectAllIndividualMetadata() },
-                            enabled = activeSelectedSize > 0,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp)
-                                .testTag("inject_all_btn")
-                        ) {
-                            Icon(Icons.Default.DownloadForOffline, contentDescription = "Inject All Icon", modifier = Modifier.size(18.dp))
+                    Button(
+                        onClick = { viewModel.downloadInjectedFiles() },
+                        enabled = activeSelectedSize > 0 && !isDownloading,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A8FF)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("download_all_individual_btn")
+                    ) {
+                        if (isDownloading) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("SAVING", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                        } else {
+                            Icon(Icons.Default.Save, contentDescription = "Download All", modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("INJECT ALL", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("DOWNLOAD ALL", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                         }
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.removeSelectedImages() },
+                            enabled = activeSelectedSize > 0,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                                .testTag("delete_selected_btn")
+                        ) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Delete Icon", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Hapus Terpilih", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
 
                         Button(
-                            onClick = { viewModel.downloadInjectedFiles() },
-                            enabled = activeSelectedSize > 0 && !isDownloading,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A8FF)),
-                            shape = RoundedCornerShape(6.dp),
+                            onClick = { viewModel.clearAllImages() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B7280)),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp)
-                                .testTag("download_all_individual_btn")
+                                .weight(1f)
+                                .height(38.dp)
+                                .testTag("clear_all_btn")
                         ) {
-                            if (isDownloading) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("SAVING", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            } else {
-                                Icon(Icons.Default.Save, contentDescription = "Download All", modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("DOWNLOAD ALL", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { viewModel.removeSelectedImages() },
-                                enabled = activeSelectedSize > 0,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(38.dp)
-                                    .testTag("delete_selected_btn")
-                            ) {
-                                Icon(Icons.Outlined.Delete, contentDescription = "Delete Icon", modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Hapus Terpilih", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-
-                            Button(
-                                onClick = { viewModel.clearAllImages() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B7280)),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(38.dp)
-                                    .testTag("clear_all_btn")
-                            ) {
-                                Icon(Icons.Outlined.DeleteSweep, contentDescription = "Clear All Icon", modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Clear All Images", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
+                            Icon(Icons.Outlined.DeleteSweep, contentDescription = "Clear All Icon", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Clear All Images", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1999,7 +2052,15 @@ fun MainScreen(
                 .padding(end = 4.dp, top = 4.dp, bottom = 4.dp)
                 .width(handleWidth)
                 .height(handleHeight)
-                .background(Color(0xFFF25C05), CircleShape)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF1D4ED8),
+                            Color(0xFF00A8FF)
+                        )
+                    ),
+                    CircleShape
+                )
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
@@ -2614,8 +2675,8 @@ fun OrangeToscaCircleSlider(
         interactionSource = interactionSource,
         colors = SliderDefaults.colors(
             thumbColor = thumbColor,
-            activeTrackColor = Color(0xFFF25C05),
-            inactiveTrackColor = Color(0xFFE5E7EB)
+            activeTrackColor = Color(0xFF00A8FF),
+            inactiveTrackColor = Color(0xFF334155)
         ),
         thumb = {
             Box(
