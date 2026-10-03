@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MainScreen(
     modifier: Modifier = Modifier,
@@ -1132,117 +1132,18 @@ fun MainScreen(
                                 ),
                                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                             ) {
-                                Row(
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.Top
+                                        .padding(14.dp)
                                 ) {
-                                    // Symmetrical, Compact Thumbnail Column
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                    // 1. Top Header: Checkbox, Filename, Format Badge, Injected Status
+                                    Row(
                                         modifier = Modifier
-                                            .width(76.dp)
-                                            .clickable { viewModel.toggleImageSelected(item.id) }
+                                            .fillMaxWidth()
+                                            .padding(bottom = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(76.dp)
-                                                .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
-                                                .border(
-                                                    1.dp,
-                                                    if (item.hasMetadata) Color(0xFF22C55E) else Color(0x33FFFFFF),
-                                                    RoundedCornerShape(8.dp)
-                                                )
-                                                .clip(RoundedCornerShape(8.dp))
-                                        ) {
-                                            if (item.previewUri != null) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(Color(0xFF0F172A)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    AsyncImage(
-                                                        model = item.previewUri,
-                                                        contentDescription = item.name,
-                                                        modifier = Modifier.fillMaxSize(),
-                                                        contentScale = ContentScale.Fit
-                                                    )
-                                                    if (isSvg || isEps) {
-                                                        val badgeText = if (isEps) "EPS" else "SVG"
-                                                        val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
-                                                        Surface(
-                                                            color = badgeColor.copy(alpha = 0.85f),
-                                                            shape = RoundedCornerShape(bottomStart = 4.dp),
-                                                            modifier = Modifier.align(Alignment.TopEnd)
-                                                        ) {
-                                                            Text(
-                                                                text = badgeText,
-                                                                color = Color.White,
-                                                                fontSize = 8.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            } else if (isEps || isSvg) {
-                                                val badgeText = if (isEps) "EPS VECTOR" else "SVG VECTOR"
-                                                val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
-                                                val iconTint = if (isEps) Color(0xFF818CF8) else Color(0xFF14B8A6)
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(badgeColor.copy(alpha = 0.15f)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Column(
-                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                        verticalArrangement = Arrangement.Center,
-                                                        modifier = Modifier.padding(4.dp)
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Description,
-                                                            contentDescription = badgeText,
-                                                            tint = iconTint,
-                                                            modifier = Modifier.size(26.dp)
-                                                        )
-                                                        Spacer(modifier = Modifier.height(2.dp))
-                                                        Surface(
-                                                            color = badgeColor,
-                                                            shape = RoundedCornerShape(3.dp),
-                                                            modifier = Modifier.padding(horizontal = 2.dp)
-                                                        ) {
-                                                            Text(
-                                                                text = badgeText,
-                                                                color = Color.White,
-                                                                fontSize = 7.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            } else {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(Color(0xFF0F172A)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    AsyncImage(
-                                                        model = item.uri,
-                                                        contentDescription = item.name,
-                                                        modifier = Modifier.fillMaxSize(),
-                                                        contentScale = ContentScale.Fit
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(6.dp))
-
                                         Checkbox(
                                             checked = item.isSelected,
                                             onCheckedChange = { viewModel.toggleImageSelected(item.id) },
@@ -1250,219 +1151,514 @@ fun MainScreen(
                                                 checkedColor = Color(0xFF00A8FF),
                                                 uncheckedColor = Color(0xFF64748B)
                                             ),
-                                            modifier = Modifier.size(22.dp)
+                                            modifier = Modifier.size(24.dp)
                                         )
-
-                                        Spacer(modifier = Modifier.height(2.dp))
-
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         Text(
                                             text = item.name,
-                                            color = Color.White.copy(alpha = 0.8f),
-                                            fontSize = 8.sp,
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.padding(horizontal = 2.dp)
+                                            modifier = Modifier.weight(1f)
                                         )
+                                        if (isSvg || isEps) {
+                                            val badgeText = if (isEps) "EPS" else "SVG"
+                                            val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
+                                            Surface(
+                                                color = badgeColor,
+                                                shape = RoundedCornerShape(4.dp),
+                                                modifier = Modifier.padding(start = 6.dp)
+                                            ) {
+                                                Text(
+                                                    text = badgeText,
+                                                    color = Color.White,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                        if (item.hasMetadata) {
+                                            Surface(
+                                                color = Color(0xFF22C55E).copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(4.dp),
+                                                border = BorderStroke(1.dp, Color(0xFF22C55E).copy(alpha = 0.5f)),
+                                                modifier = Modifier.padding(start = 6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "INJECTED",
+                                                    color = Color(0xFF22C55E),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
                                     }
 
-                                    Spacer(modifier = Modifier.width(10.dp))
+                                    // 2. Centered & Large Image Preview (Dynamic aspect ratio, 180-220dp)
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .wrapContentSize()
+                                                .heightIn(min = 160.dp, max = 220.dp)
+                                                .widthIn(min = 160.dp, max = 340.dp)
+                                                .background(Color(0xFF0F172A), RoundedCornerShape(10.dp))
+                                                .border(
+                                                    1.dp,
+                                                    if (item.hasMetadata) Color(0xFF22C55E).copy(alpha = 0.6f) else Color(0x33FFFFFF),
+                                                    RoundedCornerShape(10.dp)
+                                                )
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable { viewModel.toggleImageSelected(item.id) },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (item.previewUri != null) {
+                                                AsyncImage(
+                                                    model = item.previewUri,
+                                                    contentDescription = item.name,
+                                                    modifier = Modifier
+                                                        .wrapContentSize()
+                                                        .heightIn(min = 160.dp, max = 220.dp),
+                                                    contentScale = ContentScale.Fit
+                                                )
+                                            } else if (isEps || isSvg) {
+                                                val badgeText = if (isEps) "EPS VECTOR" else "SVG VECTOR"
+                                                val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
+                                                val iconTint = if (isEps) Color(0xFF818CF8) else Color(0xFF14B8A6)
+                                                Column(
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.Center,
+                                                    modifier = Modifier
+                                                        .padding(24.dp)
+                                                        .heightIn(min = 140.dp, max = 180.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Description,
+                                                        contentDescription = badgeText,
+                                                        tint = iconTint,
+                                                        modifier = Modifier.size(48.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.height(8.dp))
+                                                    Surface(
+                                                        color = badgeColor,
+                                                        shape = RoundedCornerShape(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = badgeText,
+                                                            color = Color.White,
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                        )
+                                                    }
+                                                }
+                                            } else {
+                                                AsyncImage(
+                                                    model = item.uri,
+                                                    contentDescription = item.name,
+                                                    modifier = Modifier
+                                                        .wrapContentSize()
+                                                        .heightIn(min = 160.dp, max = 220.dp),
+                                                    contentScale = ContentScale.Fit
+                                                )
+                                            }
+                                        }
+                                    }
 
-                                    // Right Form Fields Column (Optimized layout, no clutter header)
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        OutlinedTextField(
-                                            value = item.individualTitle,
-                                            onValueChange = { viewModel.updateIndividualTitle(item.id, it) },
-                                            label = { 
-                                                val len = item.individualTitle.length
-                                                if (len > 0) Text("Title ($len character)", fontSize = 10.sp) else Text("Title", fontSize = 10.sp)
-                                            },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = OutlinedTextFieldDefaults.colors(
-                                                focusedTextColor = Color(0xFF22C55E),
-                                                unfocusedTextColor = Color(0xFF22C55E),
-                                                focusedLabelColor = Color(0xFF22C55E),
-                                                unfocusedLabelColor = Color(0xFF94A3B8),
-                                                focusedBorderColor = Color(0xFF00A8FF),
-                                                unfocusedBorderColor = Color(0x40FFFFFF)
-                                            ),
-                                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
-                                            trailingIcon = {
-                                                if (item.individualTitle.isNotEmpty()) {
-                                                    IconButton(onClick = { 
-                                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualTitle))
-                                                        Toast.makeText(context, "Title disalin", Toast.LENGTH_SHORT).show()
-                                                    }) {
-                                                        Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Title", tint = Color(0xFF00A8FF), modifier = Modifier.size(15.dp))
-                                                    }
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    // 3. Full-Width Textarea (Title & Description) - Auto-expand Vertikal & pleasant lineHeight
+                                    OutlinedTextField(
+                                        value = item.individualTitle,
+                                        onValueChange = { viewModel.updateIndividualTitle(item.id, it) },
+                                        label = { 
+                                            val len = item.individualTitle.length
+                                            Text(if (len > 0) "Title ($len characters)" else "Title", fontSize = 11.sp)
+                                        },
+                                        singleLine = false,
+                                        maxLines = Int.MAX_VALUE,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color(0xFF22C55E),
+                                            unfocusedTextColor = Color(0xFF22C55E),
+                                            focusedLabelColor = Color(0xFF22C55E),
+                                            unfocusedLabelColor = Color(0xFF94A3B8),
+                                            focusedBorderColor = Color(0xFF00A8FF),
+                                            unfocusedBorderColor = Color(0x40FFFFFF)
+                                        ),
+                                        textStyle = androidx.compose.ui.text.TextStyle(
+                                            fontSize = 13.sp,
+                                            lineHeight = 18.sp
+                                        ),
+                                        trailingIcon = {
+                                            if (item.individualTitle.isNotEmpty()) {
+                                                IconButton(onClick = { 
+                                                    clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualTitle))
+                                                    Toast.makeText(context, "Title disalin", Toast.LENGTH_SHORT).show()
+                                                }) {
+                                                    Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Title", tint = Color(0xFF00A8FF), modifier = Modifier.size(16.dp))
                                                 }
                                             }
-                                        )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        OutlinedTextField(
-                                            value = item.individualDescription,
-                                            onValueChange = { viewModel.updateIndividualDescription(item.id, it) },
-                                            label = { 
-                                                val len = item.individualDescription.length
-                                                if (len > 0) Text("Description ($len character)", fontSize = 10.sp) else Text("Description", fontSize = 10.sp)
-                                            },
-                                            modifier = Modifier.fillMaxWidth().height(72.dp),
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = OutlinedTextFieldDefaults.colors(
-                                                focusedTextColor = Color(0xFF22C55E),
-                                                unfocusedTextColor = Color(0xFF22C55E),
-                                                focusedLabelColor = Color(0xFF22C55E),
-                                                unfocusedLabelColor = Color(0xFF94A3B8),
-                                                focusedBorderColor = Color(0xFF00A8FF),
-                                                unfocusedBorderColor = Color(0x40FFFFFF)
-                                            ),
-                                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
-                                            trailingIcon = {
-                                                if (item.individualDescription.isNotEmpty()) {
-                                                    IconButton(onClick = { 
-                                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualDescription))
-                                                        Toast.makeText(context, "Description disalin", Toast.LENGTH_SHORT).show()
-                                                    }) {
-                                                        Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Description", tint = Color(0xFF00A8FF), modifier = Modifier.size(15.dp))
-                                                    }
+                                        }
+                                    )
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    OutlinedTextField(
+                                        value = item.individualDescription,
+                                        onValueChange = { viewModel.updateIndividualDescription(item.id, it) },
+                                        label = { 
+                                            val len = item.individualDescription.length
+                                            Text(if (len > 0) "Description ($len characters)" else "Description", fontSize = 11.sp)
+                                        },
+                                        singleLine = false,
+                                        maxLines = Int.MAX_VALUE,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color(0xFF22C55E),
+                                            unfocusedTextColor = Color(0xFF22C55E),
+                                            focusedLabelColor = Color(0xFF22C55E),
+                                            unfocusedLabelColor = Color(0xFF94A3B8),
+                                            focusedBorderColor = Color(0xFF00A8FF),
+                                            unfocusedBorderColor = Color(0x40FFFFFF)
+                                        ),
+                                        textStyle = androidx.compose.ui.text.TextStyle(
+                                            fontSize = 12.5.sp,
+                                            lineHeight = 18.sp
+                                        ),
+                                        trailingIcon = {
+                                            if (item.individualDescription.isNotEmpty()) {
+                                                IconButton(onClick = { 
+                                                    clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualDescription))
+                                                    Toast.makeText(context, "Description disalin", Toast.LENGTH_SHORT).show()
+                                                }) {
+                                                    Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Description", tint = Color(0xFF00A8FF), modifier = Modifier.size(16.dp))
                                                 }
                                             }
-                                        )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        OutlinedTextField(
-                                            value = item.individualKeywords,
-                                            onValueChange = { viewModel.updateIndividualKeywords(item.id, it) },
-                                            label = { 
-                                                val len = if (item.individualKeywords.isBlank()) 0 else item.individualKeywords.split(",").map{ k -> k.trim() }.filter{ k -> k.isNotEmpty() }.size
-                                                if (len > 0) Text("Keywords ($len)", fontSize = 10.sp) else Text("Keywords", fontSize = 10.sp)
-                                            },
-                                            modifier = Modifier.fillMaxWidth().height(72.dp),
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = OutlinedTextFieldDefaults.colors(
-                                                focusedTextColor = Color(0xFF22C55E),
-                                                unfocusedTextColor = Color(0xFF22C55E),
-                                                focusedLabelColor = Color(0xFF22C55E),
-                                                unfocusedLabelColor = Color(0xFF94A3B8),
-                                                focusedBorderColor = Color(0xFF00A8FF),
-                                                unfocusedBorderColor = Color(0x40FFFFFF)
-                                            ),
-                                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
-                                            trailingIcon = {
-                                                if (item.individualKeywords.isNotEmpty()) {
-                                                    IconButton(onClick = { 
-                                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualKeywords))
-                                                        Toast.makeText(context, "Keywords disalin", Toast.LENGTH_SHORT).show()
-                                                    }) {
-                                                        Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Keywords", tint = Color(0xFF00A8FF), modifier = Modifier.size(15.dp))
-                                                    }
-                                                }
-                                            }
-                                        )
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        
-                                        // Symmetrical, Compact Bottom Actions Row
+                                        }
+                                    )
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    // 4. Keywords FlowRow & Indikator Warna (ImStocker Style)
+                                    val effectiveKeywords = item.getEffectiveKeywordItems()
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color(0xFF0F172A).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                            .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(8.dp))
+                                            .padding(10.dp)
+                                    ) {
+                                        // Header Row: Keywords count, Trademark alert, Copy action
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = "Keywords (${effectiveKeywords.size})",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF22C55E)
+                                                )
+                                                if (effectiveKeywords.any { it.isTrademark }) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Surface(
+                                                        color = Color(0xFFEF4444).copy(alpha = 0.2f),
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.6f)),
+                                                        modifier = Modifier.clickable { 
+                                                            viewModel.autoFixAllTrademarks(item.id)
+                                                            Toast.makeText(context, "Merek dagang diganti dengan padanan aman", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    ) {
+                                                        Text(
+                                                            text = "⚠️ Ganti Trademark",
+                                                            color = Color(0xFFFCA5A5),
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            if (effectiveKeywords.isNotEmpty() || item.individualKeywords.isNotEmpty()) {
+                                                IconButton(
+                                                    onClick = {
+                                                        val textToCopy = if (effectiveKeywords.isNotEmpty()) {
+                                                            effectiveKeywords.joinToString(",") { it.word }
+                                                        } else item.individualKeywords
+                                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(textToCopy))
+                                                        Toast.makeText(context, "Keywords disalin", Toast.LENGTH_SHORT).show()
+                                                    },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Outlined.ContentCopy,
+                                                        contentDescription = "Copy Keywords",
+                                                        tint = Color(0xFF00A8FF),
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        // Demand Score Color Legend (ImStocker style)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            LegendDot(Color(0xFFA855F7), "≥90 Very High")
+                                            LegendDot(Color(0xFF3B82F6), "75-89 High")
+                                            LegendDot(Color(0xFF22C55E), "50-74 Med")
+                                            LegendDot(Color(0xFFEAB308), "25-49 Low")
+                                            LegendDot(Color(0xFFE2E8F0), "<25")
+                                        }
+
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        // Keywords FlowRow
+                                        if (effectiveKeywords.isEmpty()) {
+                                            Text(
+                                                text = "Belum ada keywords. Klik GENERATE atau ketik di bawah.",
+                                                color = Color(0xFF64748B),
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.padding(vertical = 6.dp)
+                                            )
+                                        } else {
+                                            FlowRow(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                effectiveKeywords.forEachIndexed { index, kw ->
+                                                    val isTm = kw.isTrademark
+                                                    val dotColor = if (isTm) Color(0xFFEF4444) else getDemandScoreColor(kw.demandScore)
+
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = if (isTm) Color(0xFFEF4444).copy(alpha = 0.15f) else Color(0xFF1E293B),
+                                                        border = BorderStroke(
+                                                            1.dp,
+                                                            if (isTm) Color(0xFFEF4444) else Color(0x33FFFFFF)
+                                                        ),
+                                                        modifier = Modifier.clickable {
+                                                            if (isTm && !kw.replacement.isNullOrBlank()) {
+                                                                viewModel.replaceTrademarkKeyword(item.id, index)
+                                                                Toast.makeText(context, "Diganti dengan '${kw.replacement}'", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    ) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                                                        ) {
+                                                            // Dot Indikator Popularitas
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(7.dp)
+                                                                    .background(dotColor, CircleShape)
+                                                            )
+                                                            Spacer(modifier = Modifier.width(5.dp))
+                                                            Text(
+                                                                text = kw.word,
+                                                                fontSize = 11.5.sp,
+                                                                fontWeight = FontWeight.Medium,
+                                                                color = if (isTm) Color(0xFFFCA5A5) else Color.White
+                                                            )
+                                                            if (isTm && !kw.replacement.isNullOrBlank()) {
+                                                                Spacer(modifier = Modifier.width(4.dp))
+                                                                Icon(
+                                                                    imageVector = Icons.Default.SwapHoriz,
+                                                                    contentDescription = "Ganti dengan padanan generik",
+                                                                    tint = Color(0xFFEF4444),
+                                                                    modifier = Modifier.size(13.dp)
+                                                                )
+                                                            }
+                                                            Spacer(modifier = Modifier.width(5.dp))
+                                                            Icon(
+                                                                imageVector = Icons.Default.Close,
+                                                                contentDescription = "Hapus kata kunci",
+                                                                tint = Color(0xFF94A3B8),
+                                                                modifier = Modifier
+                                                                    .size(12.dp)
+                                                                    .clickable {
+                                                                        viewModel.removeKeywordFromImage(item.id, index)
+                                                                    }
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Input Tambah Keyword Baru
+                                        var newKwText by remember(item.id) { mutableStateOf("") }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            // Hapus Metadata Individu (Replaces corner trash button)
-                                            Box(
+                                            OutlinedTextField(
+                                                value = newKwText,
+                                                onValueChange = { newKwText = it },
+                                                placeholder = { Text("Tambah keyword (pisahkan dengan koma)...", fontSize = 10.5.sp, color = Color(0xFF64748B)) },
+                                                singleLine = true,
                                                 modifier = Modifier
-                                                    .size(34.dp)
-                                                    .background(Color(0xFFEF4444).copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-                                                    .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .clickable {
-                                                        viewModel.clearIndividualMetadata(item.id)
-                                                        Toast.makeText(context, "Metadata berhasil dihapus", Toast.LENGTH_SHORT).show()
-                                                    },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Delete,
-                                                    contentDescription = "Hapus Metadata Individu",
-                                                    tint = Color(0xFFEF4444),
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-
-                                            // GENERATE Button
+                                                    .weight(1f)
+                                                    .height(40.dp),
+                                                shape = RoundedCornerShape(6.dp),
+                                                colors = OutlinedTextFieldDefaults.colors(
+                                                    focusedTextColor = Color.White,
+                                                    unfocusedTextColor = Color.White,
+                                                    focusedBorderColor = Color(0xFF00A8FF),
+                                                    unfocusedBorderColor = Color(0x33FFFFFF)
+                                                ),
+                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.5.sp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
                                             Button(
                                                 onClick = {
-                                                    if (item.isGeneratingMetadata) {
-                                                        viewModel.cancelIndividualGeneration(item.id)
-                                                    } else {
-                                                        viewModel.generateMetadataForSingleImage(item.id)
+                                                    if (newKwText.isNotBlank()) {
+                                                        val words = newKwText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                                                        words.forEach { w -> viewModel.addKeywordToImage(item.id, w) }
+                                                        newKwText = ""
                                                     }
                                                 },
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = if (item.isGeneratingMetadata) Color(0xFFEF4444) else Color(0xFF00A8FF)
-                                                ),
-                                                shape = RoundedCornerShape(8.dp),
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .height(34.dp),
-                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                                shape = RoundedCornerShape(6.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A8FF)),
+                                                modifier = Modifier.height(40.dp),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                                             ) {
+                                                Icon(Icons.Default.Add, contentDescription = "Tambah", modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(2.dp))
+                                                Text("Add", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    // 5. Compact, Symmetrical Bottom Actions Row
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Hapus Metadata Individu
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .background(Color(0xFFEF4444).copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                                .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .clickable {
+                                                    viewModel.clearIndividualMetadata(item.id)
+                                                    Toast.makeText(context, "Metadata berhasil dihapus", Toast.LENGTH_SHORT).show()
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Delete,
+                                                contentDescription = "Hapus Metadata Individu",
+                                                tint = Color(0xFFEF4444),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+
+                                        // GENERATE Button
+                                        Button(
+                                            onClick = {
                                                 if (item.isGeneratingMetadata) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
-                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                        Text("CANCEL", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                                    }
+                                                    viewModel.cancelIndividualGeneration(item.id)
                                                 } else {
-                                                    Text("GENERATE", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                    viewModel.generateMetadataForSingleImage(item.id)
                                                 }
-                                            }
-
-                                            // INJECT Button
-                                            val canInject = item.individualTitle.isNotBlank() || item.individualDescription.isNotBlank() || item.individualKeywords.isNotBlank()
-                                            Button(
-                                                onClick = { viewModel.injectIndividualMetadata(item.id) },
-                                                enabled = canInject && !item.isInjectingIndividual,
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = if (canInject) Color(0xFF22C55E) else Color(0xFF475569),
-                                                    disabledContainerColor = Color(0xFF334155),
-                                                    disabledContentColor = Color(0xFF94A3B8)
-                                                ),
-                                                shape = RoundedCornerShape(8.dp),
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .height(34.dp),
-                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                                            ) {
-                                                if (item.isInjectingIndividual) {
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (item.isGeneratingMetadata) Color(0xFFEF4444) else Color(0xFF00A8FF)
+                                            ),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(36.dp),
+                                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                        ) {
+                                            if (item.isGeneratingMetadata) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
                                                     CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
-                                                } else {
-                                                    Text("INJECT", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("CANCEL", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                                 }
+                                            } else {
+                                                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("GENERATE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                             }
+                                        }
 
-                                            // Download Button
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(34.dp)
-                                                    .background(
-                                                        if (item.hasMetadata) Color(0xFF00A8FF).copy(alpha = 0.15f) else Color.Transparent,
-                                                        RoundedCornerShape(8.dp)
-                                                    )
-                                                    .border(
-                                                        1.dp,
-                                                        if (item.hasMetadata) Color(0xFF00A8FF) else Color(0x33FFFFFF),
-                                                        RoundedCornerShape(8.dp)
-                                                    )
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .clickable(enabled = item.hasMetadata) { viewModel.downloadIndividualFile(item.id) },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Download,
-                                                    contentDescription = "Download File",
-                                                    tint = if (item.hasMetadata) Color(0xFF00A8FF) else Color(0xFF64748B),
-                                                    modifier = Modifier.size(16.dp)
-                                                )
+                                        // INJECT Button
+                                        val canInject = item.individualTitle.isNotBlank() || item.individualDescription.isNotBlank() || item.individualKeywords.isNotBlank()
+                                        Button(
+                                            onClick = { viewModel.injectIndividualMetadata(item.id) },
+                                            enabled = canInject && !item.isInjectingIndividual,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (canInject) Color(0xFF22C55E) else Color(0xFF475569),
+                                                disabledContainerColor = Color(0xFF334155),
+                                                disabledContentColor = Color(0xFF94A3B8)
+                                            ),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(36.dp),
+                                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                        ) {
+                                            if (item.isInjectingIndividual) {
+                                                CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
+                                            } else {
+                                                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(15.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("INJECT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                             }
+                                        }
+
+                                        // Download Button
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .background(
+                                                    if (item.hasMetadata) Color(0xFF00A8FF).copy(alpha = 0.15f) else Color.Transparent,
+                                                    RoundedCornerShape(8.dp)
+                                                )
+                                                .border(
+                                                    1.dp,
+                                                    if (item.hasMetadata) Color(0xFF00A8FF) else Color(0x33FFFFFF),
+                                                    RoundedCornerShape(8.dp)
+                                                )
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .clickable(enabled = item.hasMetadata) { viewModel.downloadIndividualFile(item.id) },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Download,
+                                                contentDescription = "Download File",
+                                                tint = if (item.hasMetadata) Color(0xFF00A8FF) else Color(0xFF64748B),
+                                                modifier = Modifier.size(18.dp)
+                                            )
                                         }
                                     }
                                 }
@@ -2690,4 +2886,28 @@ fun OrangeToscaCircleSlider(
         modifier = modifier
     )
 }
+
+fun getDemandScoreColor(score: Int): Color {
+    return when {
+        score >= 90 -> Color(0xFFA855F7) // Ungu – Very High
+        score >= 75 -> Color(0xFF3B82F6) // Biru – High
+        score >= 50 -> Color(0xFF22C55E) // Hijau – Medium-High
+        score >= 25 -> Color(0xFFEAB308) // Kuning/Oranye – Medium-Low
+        else -> Color(0xFFE2E8F0)        // Putih/Abu-abu – Low
+    }
+}
+
+@Composable
+fun LegendDot(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .background(color, CircleShape)
+        )
+        Spacer(modifier = Modifier.width(3.dp))
+        Text(text = label, fontSize = 8.5.sp, color = Color(0xFF94A3B8))
+    }
+}
+
 

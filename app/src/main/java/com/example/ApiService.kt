@@ -31,7 +31,8 @@ data class GeminiInlineData(
 )
 
 data class GeminiGenerationConfig(
-    val responseMimeType: String? = null
+    val responseMimeType: String? = null,
+    val responseSchema: Map<String, Any>? = null
 )
 
 data class GeminiResponse(
