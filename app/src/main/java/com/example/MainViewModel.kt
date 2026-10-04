@@ -156,7 +156,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _savedBlacklistWords = MutableStateFlow("")
     val savedBlacklistWords = _savedBlacklistWords.asStateFlow()
 
-    private val _isAutoInjectionEnabled = MutableStateFlow(false)
+    private val _isAutoInjectionEnabled = MutableStateFlow(true)
     val isAutoInjectionEnabled = _isAutoInjectionEnabled.asStateFlow()
 
     // --- Loading & Injection Progress State ---
@@ -359,8 +359,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _blacklistWords.value = savedBlacklist
         _savedBlacklistWords.value = savedBlacklist
 
-        // Auto-load Auto Injection preference
-        _isAutoInjectionEnabled.value = prefs.getBoolean("is_auto_injection", false)
+        // Auto-load Auto Injection preference (Default ON)
+        _isAutoInjectionEnabled.value = prefs.getBoolean("is_auto_injection", true)
     }
 
     fun saveApiKey(gemini: String) {
