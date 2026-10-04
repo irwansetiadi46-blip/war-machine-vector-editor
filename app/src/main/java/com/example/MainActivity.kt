@@ -352,21 +352,6 @@ fun MainScreen(
                                 showPrivacyPolicy = true
                             }
                         )
-                        DropdownMenuItem(
-                            text = { Text("Mode Offline: ${if (isOfflineMode) "ON" else "OFF"}", fontSize = 13.sp) },
-                            leadingIcon = {
-                                Icon(
-                                    if (isOfflineMode) Icons.Default.Lock else Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                    tint = if (isOfflineMode) Color(0xFFF25C05) else Color(0xFF22C55E)
-                                )
-                            },
-                            onClick = {
-                                showHeaderMenu = false
-                                viewModel.setOfflineMode(!isOfflineMode)
-                            }
-                        )
                         if (imagesList.isNotEmpty()) {
                             DropdownMenuItem(
                                 text = { Text("Hapus Semua Gambar", fontSize = 13.sp, color = Color(0xFFEF4444)) },
@@ -896,7 +881,7 @@ fun MainScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Fitur Auto Injection :",
+                            text = "Auto Inject Metadata :",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
@@ -914,106 +899,6 @@ fun MainScreen(
                             )
                         )
                     }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Button(
-                        onClick = {
-                            if (isGeneratingAi) {
-                                viewModel.cancelGlobalGeneration()
-                                return@Button
-                            }
-                            scrollToPreviewCard()
-                            if (isOfflineMode) {
-                                if (promptConcept.isBlank()) {
-                                    Toast.makeText(context, "Konsep tidak boleh kosong!", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    viewModel.setGeneratingAi(true)
-                                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                                        try {
-                                            kotlinx.coroutines.delay(600)
-                                            val resultKeywords = viewModel.offlineKeywordMatcher.matchKeywords(promptConcept, context)
-                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                viewModel.setGeneratingAi(false)
-                                                if (resultKeywords.isEmpty()) {
-                                                    Toast.makeText(context, "Masukkan kata kunci inti atau deskripsi yang lebih spesifik!", Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    val intent = android.content.Intent(context, OfflineResultActivity::class.java).apply {
-                                                        putStringArrayListExtra("all_keywords", ArrayList(resultKeywords))
-                                                    }
-                                                    offlineResultLauncher.launch(intent)
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                viewModel.setGeneratingAi(false)
-                                                Toast.makeText(context, "Error Offline Generation: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                viewModel.generateMetadata()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isGeneratingAi) Color(0xFFEF4444) else Color(0xFFF25C05),
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .testTag("generate_metadata_btn")
-                    ) {
-                        if (isGeneratingAi) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Cancel", fontWeight = FontWeight.Bold, color = Color.White)
-                        } else {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("GENERATE METADATA", fontWeight = FontWeight.Black, fontSize = 13.sp)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF0F172A).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                            .border(1.dp, Color(0x20FFFFFF), RoundedCornerShape(8.dp))
-                            .padding(10.dp)
-                    ) {
-                        Column {
-                            Text(
-                                text = "Petunjuk Penggunaan AI:",
-                                color = Color(0xFF00A8FF),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "1. Pilih AI Provider & masukkan Kunci API, klik SAVE API untuk mengaktifkan.\n" +
-                                       "2. Tulis konsep detail/deskripsi gambar lalu klik GENERATE METADATA.\n" +
-                                       "3. ATAU centang satu gambar di galeri, lalu klik GENERATE METADATA untuk analisis visual langsung oleh Gemini.",
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 10.sp,
-                                lineHeight = 14.sp
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Dapatkan Gemini API Key di sini",
-                                color = Color(0xFF38BDF8),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.clickable {
-                                    uriHandler.openUri("https://aistudio.google.com/app/apikey")
-                                }
-                            )
-                        }
-                    }
                 }
             }
 
@@ -1024,42 +909,7 @@ fun MainScreen(
                     .onGloballyPositioned { previewCardCoordinates = it }
                     .testTag("preview_card_container")
             ) {
-                // Single, Multi, ALL buttons (Flat SaaS Segmented Control)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(
-                        SelectionMode.SINGLE to "Single",
-                        SelectionMode.MULTI to "Multi",
-                        SelectionMode.ALL to "ALL"
-                    ).forEach { (mode, label) ->
-                        val isActive = selectionMode == mode
-                        val btnBg = if (isActive) Color(0xFFF25C05) else MaterialTheme.colorScheme.surfaceVariant
-                        val textColor = if (isActive) Color.White else Color(0xFF94A3B8)
-
-                        Button(
-                            onClick = { viewModel.setSelectionMode(mode) },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = btnBg,
-                                contentColor = textColor
-                            ),
-                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
-                            contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(38.dp)
-                                .testTag("mode_${label.lowercase()}_btn")
-                        ) {
-                            Text(label, fontSize = 12.sp, fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Upload Button and Counter Row (Flat, borderless SaaS-style)
+                // Import Button and Counter Row (Compact, side-by-side with total images imported)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1073,18 +923,20 @@ fun MainScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF25C05)),
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                        modifier = Modifier.testTag("upload_image_btn")
+                        modifier = Modifier.testTag("import_image_btn")
                     ) {
-                        Icon(Icons.Default.CloudUpload, contentDescription = "Upload Icon", modifier = Modifier.size(18.dp))
+                        Icon(
+                            imageVector = Icons.Default.AddPhotoAlternate,
+                            contentDescription = "Import Images",
+                            modifier = Modifier.size(18.dp)
+                        )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Upload Image", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Import", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
 
-                    // Counter: "X Images : Y Selected"
-                    val totalCount = imagesList.size
-                    val selectedCount = imagesList.count { it.isSelected }
+                    // Counter: "X Images Imported"
                     Text(
-                        text = "$totalCount Images : $selectedCount Selected",
+                        text = "${imagesList.size} Images Imported",
                         color = Color(0xFFE2E8F0),
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.5.sp,
@@ -1100,7 +952,7 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                            .padding(vertical = 40.dp),
+                            .padding(vertical = 80.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -1137,21 +989,18 @@ fun MainScreen(
                                         .fillMaxWidth()
                                         .padding(14.dp)
                                 ) {
-                                    // 1. Top Header: Checkbox, Filename, Format Badge, Injected Status
+                                    // 1. Top Header: Filename, Format Badge, Injected Status
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(bottom = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Checkbox(
-                                            checked = item.isSelected,
-                                            onCheckedChange = { viewModel.toggleImageSelected(item.id) },
-                                            colors = CheckboxDefaults.colors(
-                                                checkedColor = Color(0xFF00A8FF),
-                                                uncheckedColor = Color(0xFF64748B)
-                                            ),
-                                            modifier = Modifier.size(24.dp)
+                                        Icon(
+                                            imageVector = Icons.Default.Image,
+                                            contentDescription = null,
+                                            tint = Color(0xFF00A8FF),
+                                            modifier = Modifier.size(18.dp)
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
@@ -1208,7 +1057,7 @@ fun MainScreen(
                                         Box(
                                             modifier = Modifier
                                                 .wrapContentSize()
-                                                .heightIn(min = 160.dp, max = 220.dp)
+                                                .heightIn(min = 180.dp, max = 220.dp)
                                                 .widthIn(min = 160.dp, max = 340.dp)
                                                 .background(Color(0xFF0F172A), RoundedCornerShape(10.dp))
                                                 .border(
@@ -1216,8 +1065,7 @@ fun MainScreen(
                                                     if (item.hasMetadata) Color(0xFF22C55E).copy(alpha = 0.6f) else Color(0x33FFFFFF),
                                                     RoundedCornerShape(10.dp)
                                                 )
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .clickable { viewModel.toggleImageSelected(item.id) },
+                                                .clip(RoundedCornerShape(10.dp)),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             if (item.previewUri != null) {
@@ -1226,7 +1074,7 @@ fun MainScreen(
                                                     contentDescription = item.name,
                                                     modifier = Modifier
                                                         .wrapContentSize()
-                                                        .heightIn(min = 160.dp, max = 220.dp),
+                                                        .heightIn(min = 180.dp, max = 220.dp),
                                                     contentScale = ContentScale.Fit
                                                 )
                                             } else if (isEps || isSvg) {
@@ -1422,11 +1270,11 @@ fun MainScreen(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            LegendDot(Color(0xFFA855F7), "≥90 Very High")
-                                            LegendDot(Color(0xFF3B82F6), "75-89 High")
-                                            LegendDot(Color(0xFF22C55E), "50-74 Med")
-                                            LegendDot(Color(0xFFEAB308), "25-49 Low")
-                                            LegendDot(Color(0xFFE2E8F0), "<25")
+                                            LegendDot(Color(0xFFA855F7), "Very High")
+                                            LegendDot(Color(0xFF3B82F6), "High")
+                                            LegendDot(Color(0xFF22C55E), "Medium")
+                                            LegendDot(Color(0xFFEAB308), "Low")
+                                            LegendDot(Color(0xFFE2E8F0), "Very Low")
                                         }
 
                                         Spacer(modifier = Modifier.height(8.dp))
@@ -1666,467 +1514,52 @@ fun MainScreen(
                         }
                     }
                 }
+            }
 
-                // Action controls for deleting (Hapus Terpilih / Clear All Images) if list is not empty
-                if (imagesList.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(14.dp))
-                    
-                    val activeSelectedSize = imagesList.count { it.isSelected }
-                    Button(
-                        onClick = { viewModel.injectAllIndividualMetadata() },
-                        enabled = activeSelectedSize > 0,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .testTag("inject_all_btn")
-                    ) {
-                        Icon(Icons.Default.DownloadForOffline, contentDescription = "Inject All Icon", modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("INJECT ALL", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
-                    }
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-                    Button(
-                        onClick = { viewModel.downloadInjectedFiles() },
-                        enabled = activeSelectedSize > 0 && !isDownloading,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A8FF)),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .testTag("download_all_individual_btn")
-                    ) {
-                        if (isDownloading) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("SAVING", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
-                        } else {
-                            Icon(Icons.Default.Save, contentDescription = "Download All", modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("DOWNLOAD ALL", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+            // Petunjuk Penggunaan AI (Paling bawah di bawah Card Preview tepat di atas footer)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0F172A).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                    .border(1.dp, Color(0x20FFFFFF), RoundedCornerShape(8.dp))
+                    .padding(10.dp)
+            ) {
+                Column {
+                    Text(
+                        text = "Petunjuk Penggunaan AI:",
+                        color = Color(0xFF00A8FF),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "1. Masukkan API Key Gemini, lalu klik SAVE API untuk mengaktifkan.\n" +
+                               "2. Import gambar yang ingin diproses melalui tombol Import.\n" +
+                               "3. Klik tombol GENERATE melayang di pojok bawah untuk analisis dan pembuatan metadata otomatis.",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Dapatkan Gemini API Key di sini",
+                        color = Color(0xFF38BDF8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            uriHandler.openUri("https://aistudio.google.com/app/apikey")
                         }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = { viewModel.removeSelectedImages() },
-                            enabled = activeSelectedSize > 0,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(38.dp)
-                                .testTag("delete_selected_btn")
-                        ) {
-                            Icon(Icons.Outlined.Delete, contentDescription = "Delete Icon", modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Hapus Terpilih", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Button(
-                            onClick = { viewModel.clearAllImages() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B7280)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(38.dp)
-                                .testTag("clear_all_btn")
-                        ) {
-                            Icon(Icons.Outlined.DeleteSweep, contentDescription = "Clear All Icon", modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Clear All Images", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
+                    )
                 }
             }
 
-            // 3. --- CARD INPUT METADATA (Background White, Border Blue `#00a8ff`) ---
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(BorderStroke(1.5.dp, Color(0xFF00A8FF)), RoundedCornerShape(10.dp)),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text(
-                        text = "METADATA INPUT",
-                        color = Color(0xFF00A8FF),
-                        fontWeight = FontWeight.Black,
-                        fontSize = 15.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Title
-                    OutlinedTextField(
-                        value = title,
-                        onValueChange = { viewModel.setTitle(it) },
-                        label = { Text("Title (Judul)") },
-                        placeholder = { Text("Masukkan Judul Gambar...") },
-                        maxLines = 2,
-                        trailingIcon = if (title.isNotEmpty()) {
-                            {
-                                IconButton(
-                                    onClick = { viewModel.setTitle("") },
-                                    modifier = Modifier.testTag("clear_title_btn")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Delete,
-                                        contentDescription = "Hapus Judul",
-                                        tint = Color(0xFFF25C05)
-                                    )
-                                }
-                            }
-                        } else null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("meta_title_field"),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
-                            focusedLabelColor = Color(0xFF00A8FF),
-                            unfocusedLabelColor = Color(0xFF4B5563),
-                            focusedBorderColor = Color(0xFF00A8FF),
-                            unfocusedBorderColor = Color(0xFFCCCCCC)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Description
-                    OutlinedTextField(
-                        value = description,
-                        onValueChange = { viewModel.setDescription(it) },
-                        label = { Text("Description (Deskripsi)") },
-                        placeholder = { Text("Tulis deskripsi gambar di sini...") },
-                        maxLines = 4,
-                        trailingIcon = if (description.isNotEmpty()) {
-                            {
-                                IconButton(
-                                    onClick = { viewModel.setDescription("") },
-                                    modifier = Modifier.testTag("clear_desc_btn")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Delete,
-                                        contentDescription = "Hapus Deskripsi",
-                                        tint = Color(0xFFF25C05)
-                                    )
-                                }
-                            }
-                        } else null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("meta_desc_field"),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
-                            focusedLabelColor = Color(0xFF00A8FF),
-                            unfocusedLabelColor = Color(0xFF4B5563),
-                            focusedBorderColor = Color(0xFF00A8FF),
-                            unfocusedBorderColor = Color(0xFFCCCCCC)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Keywords
-                    val keywordsCount = if (keywords.isBlank()) 0 else {
-                        keywords.split(",").map { it.trim() }.filter { it.isNotEmpty() }.size
-                    }
-                    OutlinedTextField(
-                        value = keywords,
-                        onValueChange = { viewModel.setKeywords(it) },
-                        label = { Text("Keywords ($keywordsCount)") },
-                        placeholder = { Text("Contoh: nature, mountain, sunset, peaceful") },
-                        maxLines = 5,
-                        trailingIcon = if (keywords.isNotEmpty()) {
-                            {
-                                IconButton(
-                                    onClick = { viewModel.setKeywords("") },
-                                    modifier = Modifier.testTag("clear_keywords_btn")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Delete,
-                                        contentDescription = "Hapus Keywords",
-                                        tint = Color(0xFFF25C05)
-                                    )
-                                }
-                            }
-                        } else null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("meta_keywords_field"),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
-                            focusedLabelColor = Color(0xFF00A8FF),
-                            unfocusedLabelColor = Color(0xFF4B5563),
-                            focusedBorderColor = Color(0xFF00A8FF),
-                            unfocusedBorderColor = Color(0xFFCCCCCC)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Creator
-                    OutlinedTextField(
-                        value = creator,
-                        onValueChange = { viewModel.setCreator(it) },
-                        label = { Text("Creator / Author (Pencipta)") },
-                        placeholder = { Text("Contoh: War Machine Studio") },
-                        singleLine = true,
-                        trailingIcon = if (creator.isNotEmpty()) {
-                            {
-                                IconButton(
-                                    onClick = { viewModel.setCreator("") },
-                                    modifier = Modifier.testTag("clear_creator_btn")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Delete,
-                                        contentDescription = "Hapus Creator",
-                                        tint = Color(0xFFF25C05)
-                                    )
-                                }
-                            }
-                        } else null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("meta_creator_field"),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1F2937),
-                            unfocusedTextColor = Color(0xFF1F2937),
-                            focusedLabelColor = Color(0xFF00A8FF),
-                            unfocusedLabelColor = Color(0xFF4B5563),
-                            focusedBorderColor = Color(0xFF00A8FF),
-                            unfocusedBorderColor = Color(0xFFCCCCCC)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Action buttons (INJECT and DOWNLOAD)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        // Inject Button is active if we selected images and have inputs
-                        val canInject = imagesList.any { it.isSelected } && 
-                                (title.isNotBlank() || description.isNotBlank() || keywords.isNotBlank() || creator.isNotBlank())
-                        val injectBgColor = if (canInject) Color(0xFF22C55E) else Color(0xFF6C757D)
-
-                        // Download Button is active if we have selected images and any is injected or we have something to download
-                        val canDownload = imagesList.any { it.isSelected } 
-                        val downloadBgColor = if (canDownload) Color(0xFF22C55E) else Color(0xFF6C757D)
-
-                        Button(
-                            onClick = { viewModel.injectMetadata() },
-                            enabled = canInject && !isInjecting,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = injectBgColor,
-                                disabledContainerColor = Color(0xFF6C757D)
-                            ),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(46.dp)
-                                .testTag("inject_btn")
-                        ) {
-                            if (isInjecting) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Default.DownloadForOffline, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("INJECT", fontWeight = FontWeight.Black, fontSize = 14.sp)
-                            }
-                        }
-
-                        Button(
-                            onClick = { viewModel.downloadInjectedFiles() },
-                            enabled = canDownload && !isInjecting && !isDownloading,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = downloadBgColor,
-                                disabledContainerColor = Color(0xFF6C757D)
-                            ),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(46.dp)
-                                .testTag("download_btn")
-                        ) {
-                            if (isDownloading) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("SAVING", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            } else {
-                                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("DOWNLOAD", fontWeight = FontWeight.Black, fontSize = 14.sp)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Progress indicators container (Always visible, matching the web version)
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // Determine progress status values
-                        val isProgressActive = isInjecting || isDownloading
-                        val hasInjectionDone = injectionStatusText.contains("DONE")
-                        val hasDownloadDone = downloadStatusText.contains("DONE") || downloadStatusText.contains("SUCCESS")
-
-                        val progressPercent = when {
-                            isDownloading || hasDownloadDone -> 1.0f
-                            isInjecting -> injectionProgress
-                            hasInjectionDone -> 1.0f
-                            else -> 0.0f
-                        }
-
-                        val progressColor = when {
-                            isDownloading || hasDownloadDone -> Color(0xFFF25C05) // Orange for Download
-                            isInjecting || hasInjectionDone -> Color(0xFF22C55E) // Green for Inject
-                            else -> Color(0xFF9CA3AF) // Gray
-                        }
-
-                        val animProgress by animateFloatAsState(
-                            targetValue = progressPercent, 
-                            label = "injection_download_progress"
-                        )
-
-                        // 1. Progress Bar (Rounded, 8dp tall)
-                        LinearProgressIndicator(
-                            progress = { animProgress },
-                            color = progressColor,
-                            trackColor = Color(0xFFE5E7EB),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        // 2. Centered Progress Text Label with Loading Spinner if active
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            if (isDownloading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(12.dp),
-                                    color = Color(0xFFF25C05),
-                                    strokeWidth = 1.5.dp
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "SAVING...",
-                                    color = Color(0xFFF25C05),
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    letterSpacing = 0.5.sp
-                                )
-                            } else if (hasDownloadDone) {
-                                Text(
-                                    text = "DOWNLOAD SUCCESS",
-                                    color = Color(0xFF22C55E),
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    letterSpacing = 0.5.sp
-                                )
-                            } else {
-                                val textCol = if (hasInjectionDone) Color(0xFF22C55E) else Color(0xFF9CA3AF)
-                                Text(
-                                    text = injectionStatusText.uppercase(),
-                                    color = textCol,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 3b. --- CONTAINER PILIH MODE (Background White, Border Blue `#00a8ff`) ---
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(BorderStroke(1.5.dp, Color(0xFF00A8FF)), RoundedCornerShape(10.dp)),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text(
-                        text = "PILIH MODE",
-                        color = Color(0xFF00A8FF),
-                        fontWeight = FontWeight.Black,
-                        fontSize = 15.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Online Button
-                    Button(
-                        onClick = { viewModel.setOfflineMode(false) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (!isOfflineMode) Color(0xFF00A8FF) else Color(0xFF6C757D)
-                        ),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(40.dp)
-                            .testTag("mode_online_btn")
-                    ) {
-                        Text(
-                            text = "Online With API Key",
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Offline Button
-                    Button(
-                        onClick = { viewModel.setOfflineMode(true) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isOfflineMode) Color(0xFF00A8FF) else Color(0xFF6C757D)
-                        ),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(40.dp)
-                            .testTag("mode_offline_btn")
-                    ) {
-                        Text(
-                            text = "WM Keyworder Offline",
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
+            // Bottom clearance for floating action bar if images are loaded
+            if (imagesList.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(72.dp))
+            } else {
+                Spacer(modifier = Modifier.height(16.dp))
             }
 
         } // Close inner Column
@@ -2136,7 +1569,15 @@ fun MainScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFF25C05))
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color(0xFF0A2558), // Deep tech navy blue
+                            Color(0xFF1D4ED8), // Royal blue
+                            Color(0xFF00A8FF)  // Vibrant cyan blue
+                        )
+                    )
+                )
                 .padding(vertical = 10.dp, horizontal = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -2187,7 +1628,7 @@ fun MainScreen(
                     }
                 )
                 Text(
-                    text = " • war machine hybrid app version 2.1.0",
+                    text = " • war machine hybrid app version 2.1.1",
                     fontSize = 9.sp,
                     color = Color.White.copy(alpha = 0.9f),
                     fontStyle = FontStyle.Italic
@@ -2270,6 +1711,139 @@ fun MainScreen(
                     }
                 )
         )
+    }
+
+    // --- Modern Floating Action Bar (Conditional: GENERATE & DOWNLOAD ALL) ---
+    if (imagesList.isNotEmpty()) {
+        val hasGeneratedMetadata = imagesList.any { it.isGenerated }
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, bottom = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Kondisi 1: Gambar Di-import -> GENERATE button
+            Surface(
+                shape = CircleShape,
+                shadowElevation = 8.dp,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .testTag("floating_generate_btn")
+            ) {
+                Box(
+                    modifier = Modifier
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(Color(0xFF8B5CF6), Color(0xFFD946EF))
+                            )
+                        )
+                        .clickable {
+                            if (isGeneratingAi) {
+                                viewModel.cancelGlobalGeneration()
+                            } else {
+                                viewModel.generateMetadata()
+                            }
+                        }
+                        .padding(horizontal = 18.dp, vertical = 11.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        if (isGeneratingAi) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "CANCEL",
+                                color = Color.White,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 12.5.sp,
+                                letterSpacing = 0.5.sp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "Generate All",
+                                tint = Color.White,
+                                modifier = Modifier.size(17.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "GENERATE",
+                                color = Color.White,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 12.5.sp,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Kondisi 2: Setelah Metadata Selesai Dihasilkan (isGenerated == true) -> DOWNLOAD ALL button
+            if (hasGeneratedMetadata) {
+                Surface(
+                    shape = CircleShape,
+                    shadowElevation = 8.dp,
+                    color = Color(0xFF0EA5E9),
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .testTag("floating_download_all_btn")
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clickable(enabled = !isDownloading) {
+                                viewModel.downloadInjectedFiles()
+                            }
+                            .padding(horizontal = 18.dp, vertical = 11.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            if (isDownloading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "SAVING...",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.5.sp,
+                                    letterSpacing = 0.5.sp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "Download All",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Download All",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.5.sp,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // --- Floating Action Button for Scroll ---

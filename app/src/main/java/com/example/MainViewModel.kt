@@ -42,7 +42,7 @@ data class ImageItem(
     val originalBytes: ByteArray?,
     val injectedBytes: ByteArray?,
     val hasMetadata: Boolean,
-    val isSelected: Boolean,
+    val isSelected: Boolean = false,
     val metadata: XmpData?,
     val individualTitle: String = "",
     val individualDescription: String = "",
@@ -54,6 +54,9 @@ data class ImageItem(
     val previewUri: Uri? = null,
     val previewBytes: ByteArray? = null
 ) {
+    val isGenerated: Boolean
+        get() = individualTitle.isNotBlank() || individualKeywords.isNotBlank() || individualDescription.isNotBlank() || hasMetadata
+
     fun getEffectiveKeywordItems(): List<KeywordItem> {
         if (individualKeywordItems.isNotEmpty()) return individualKeywordItems
         if (individualKeywords.isBlank()) return emptyList()
@@ -743,10 +746,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- AI Metadata Generation ---
     fun generateMetadata() {
-        val selected = _imagesList.value.filter { it.isSelected }
-        if (selected.isNotEmpty()) {
+        if (_imagesList.value.isNotEmpty()) {
             if (!_isOfflineMode.value) {
-                generateMetadataFromSelectedImage()
+                generateMetadataForAllImages()
             } else {
                 _toastFlow.value = "Fitur analisis gambar hanya tersedia di Mode Online!"
             }
@@ -920,15 +922,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         individualGenerationJobs[imageItem.id] = job
     }
 
-    fun generateMetadataFromSelectedImage() {
+    fun generateMetadataForAllImages() {
         if (_isOfflineMode.value) {
             _toastFlow.value = "Fitur analisis gambar hanya tersedia di Mode Online!"
             return
         }
 
-        val selected = _imagesList.value.filter { it.isSelected }
-        if (selected.isEmpty()) {
-            _toastFlow.value = "Silakan centang/pilih satu gambar terlebih dahulu!"
+        val allImages = _imagesList.value
+        if (allImages.isEmpty()) {
+            _toastFlow.value = "Belum ada gambar yang di-import!"
             return
         }
 
@@ -942,9 +944,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isGeneratingAi.value = true
             _isGlobalProcessing.value = true
             try {
-                val total = selected.size
+                val total = allImages.size
                 var completed = 0
-                for (imageItem in selected) {
+                for (imageItem in allImages) {
                     _globalProcessingText.value = "Generating Process...($completed/$total)"
 
                     _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = true) else it }
@@ -956,7 +958,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             if (it.isTrademark && !it.replacement.isNullOrBlank()) it.replacement else it.word 
                         }
 
-                        if (selected.size == 1) {
+                        if (allImages.size == 1) {
                             _title.value = parsed.title ?: ""
                             _description.value = parsed.description ?: ""
                             _keywords.value = kwsString
@@ -979,7 +981,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _globalProcessingText.value = "Generating Process...($completed/$total)"
                 }
                 
-                _toastFlow.value = "AI berhasil menganalisis gambar & menghasilkan metadata!"
+                _toastFlow.value = "AI berhasil menganalisis semua gambar & menghasilkan metadata!"
                 if (_isAutoInjectionEnabled.value) {
                     injectAllIndividualMetadata()
                 }
@@ -991,8 +993,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _isGeneratingAi.value = false
                 _isGlobalProcessing.value = false
                 _globalProcessingText.value = ""
+                _imagesList.value = _imagesList.value.map { it.copy(isGeneratingMetadata = false) }
             }
         }
+    }
+
+    fun generateMetadataFromSelectedImage() {
+        generateMetadataForAllImages()
     }
 
     private suspend fun performGeminiAnalysis(imageItem: ImageItem, apiKey: String, modelName: String): GeneratedMetadata? {
@@ -1479,9 +1486,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun injectAllIndividualMetadata() {
-        val selected = _imagesList.value.filter { it.isSelected }
+        val selected = if (_imagesList.value.any { it.isSelected }) _imagesList.value.filter { it.isSelected } else _imagesList.value
         if (selected.isEmpty()) {
-            _toastFlow.value = "Pilih minimal satu gambar untuk diinject!"
+            _toastFlow.value = "Belum ada gambar yang di-import!"
             return
         }
         
@@ -1708,9 +1715,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun showSvgExportDialogForBulk() {
-        val selected = _imagesList.value.filter { it.isSelected }
+        val selected = if (_imagesList.value.any { it.isSelected }) _imagesList.value.filter { it.isSelected } else _imagesList.value
         if (selected.isEmpty()) {
-            _toastFlow.value = "Pilih gambar yang ingin didownload!"
+            _toastFlow.value = "Belum ada gambar yang di-import!"
             return
         }
         val svgCount = selected.count { it.name.endsWith(".svg", ignoreCase = true) }
@@ -1839,9 +1846,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun downloadInjectedFilesWithFormat(format: SvgExportFormat) {
-        val selected = _imagesList.value.filter { it.isSelected }
+        val selected = if (_imagesList.value.any { it.isSelected }) _imagesList.value.filter { it.isSelected } else _imagesList.value
         if (selected.isEmpty()) {
-            _toastFlow.value = "Pilih gambar yang ingin didownload!"
+            _toastFlow.value = "Belum ada gambar yang di-import!"
             return
         }
 
