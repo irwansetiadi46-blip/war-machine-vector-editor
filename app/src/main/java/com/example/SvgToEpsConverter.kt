@@ -114,22 +114,19 @@ object SvgToEpsConverter {
 
             // 4. Build Standard Adobe Illustrator AI8-Compatible PostScript Header & Prolog
             val psBuilder = StringBuilder()
-            val creationDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date())
+
+            val cleanTitle = if (title.isNotEmpty()) {
+                title.replace("(", "[").replace(")", "]")
+            } else {
+                "converted_artwork"
+            }
 
             psBuilder.append("%!PS-Adobe-3.0 EPSF-3.0\n")
             psBuilder.append("%%Creator: Adobe Illustrator(R) 8.0\n")
             psBuilder.append("%%AI8_CreatorVersion: 8.0\n")
-            psBuilder.append("%%For: (WarMachineHybrid) ()\n")
-            if (title.isNotEmpty()) {
-                val cleanTitle = title.replace("(", "[").replace(")", "]")
-                psBuilder.append("%%Title: ($cleanTitle.eps)\n")
-            } else {
-                psBuilder.append("%%Title: (converted_artwork.eps)\n")
-            }
-            psBuilder.append("%%CreationDate: $creationDate\n")
+            psBuilder.append("%%Title: ($cleanTitle.eps)\n")
             psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", ceil(artboardWidth.toDouble()).toInt(), ceil(artboardHeight.toDouble()).toInt()))
             psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0 0 %.3f %.3f\n", artboardWidth, artboardHeight))
-            psBuilder.append("%%DocumentProcessColors: Cyan Magenta Yellow Black\n")
             psBuilder.append("%%DocumentNeededResources: procset Adobe_Illustrator_AI5 1.0 0\n")
             psBuilder.append("%%LanguageLevel: 2\n")
             psBuilder.append("%%Pages: 1\n")
@@ -141,9 +138,9 @@ object SvgToEpsConverter {
             psBuilder.append("/_AI_restore /restore load def\n")
             psBuilder.append("/q { gsave } bind def\n")
             psBuilder.append("/Q { grestore } bind def\n")
-            psBuilder.append("/u {} bind def\n")
+            psBuilder.append("/u { count 0 gt { dup type /stringtype eq { pop } if } if } bind def\n")
             psBuilder.append("/U {} bind def\n")
-            psBuilder.append("/*u {} bind def\n")
+            psBuilder.append("/*u { count 0 gt { dup type /stringtype eq { pop } if } if } bind def\n")
             psBuilder.append("/*U {} bind def\n")
             psBuilder.append("/m { moveto } bind def\n")
             psBuilder.append("/l { lineto } bind def\n")
@@ -182,11 +179,16 @@ object SvgToEpsConverter {
             psBuilder.append("%%BeginSetup\n")
             psBuilder.append("%%EndSetup\n\n")
 
-            // Global SVG-to-PostScript Coordinate Transformation
+            // Global SVG-to-PostScript Coordinate Transformation (1:1 top-left mapping)
             psBuilder.append("q\n")
             psBuilder.append(String.format(Locale.US, "0 %.3f translate\n", artboardHeight))
-            psBuilder.append(String.format(Locale.US, "%.5f %.5f scale\n", scaleX, -scaleY))
-            psBuilder.append(String.format(Locale.US, "%.3f %.3f translate\n", -minX, -minY))
+            psBuilder.append("1 -1 scale\n")
+            if (scaleX != 1f || scaleY != 1f) {
+                psBuilder.append(String.format(Locale.US, "%.5f %.5f scale\n", scaleX, scaleY))
+            }
+            if (minX != 0f || minY != 0f) {
+                psBuilder.append(String.format(Locale.US, "%.3f %.3f translate\n", -minX, -minY))
+            }
             psBuilder.append("\n")
 
             // Start Adobe Illustrator Layer 1 with mark keyword
@@ -508,9 +510,15 @@ object SvgToEpsConverter {
                     else -> ""
                 }
                 if (pathCmds.isNotBlank()) {
+                    val clipRule = elem.getAttribute("clip-rule").ifEmpty { elem.getAttribute("fill-rule") }
+                    val isEvenOdd = clipRule.equals("evenodd", ignoreCase = true)
                     sb.append("n\n")
                     sb.append(pathCmds)
-                    sb.append("W n\n")
+                    if (isEvenOdd) {
+                        sb.append("W* n\n")
+                    } else {
+                        sb.append("W n\n")
+                    }
                 }
             }
         }
@@ -1315,7 +1323,13 @@ object SvgToEpsConverter {
                 sb.append(String.format(Locale.US, "      << /FunctionType 2 /Domain [0.0 1.0] /C0 [%.3f %.3f %.3f] /C1 [%.3f %.3f %.3f] /N 1.0 >>\n", s0.r, s0.g, s0.b, s1.r, s1.g, s1.b))
             }
             sb.append("    ]\n")
-            val boundsStr = (1 until segCount).map { String.format(Locale.US, "%.3f", stops[it].offset) }.joinToString(" ")
+            val boundsList = mutableListOf<Float>()
+            for (i in 1 until segCount) {
+                val prev = if (boundsList.isNotEmpty()) boundsList.last() else stops[0].offset
+                val curr = stops[i].offset.coerceAtLeast(prev + 0.0001f)
+                boundsList.add(curr)
+            }
+            val boundsStr = boundsList.joinToString(" ") { String.format(Locale.US, "%.4f", it) }
             sb.append("    /Bounds [$boundsStr]\n")
             val encodeStr = (0 until segCount).joinToString(" ") { "0.0 1.0" }
             sb.append("    /Encode [$encodeStr]\n")

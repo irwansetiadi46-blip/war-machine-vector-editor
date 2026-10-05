@@ -283,33 +283,37 @@ object XmpInjector {
         """.trimMargin()
     }
 
+    /**
+     * Builds PostScript-safe XMP Packet. Every line begins with '%' so that the
+     * PostScript interpreter treats the entire XMP packet as PostScript comments.
+     */
     fun bangunXmpXml(title: String, description: String, keywords: List<String>, mimeType: String = "application/postscript"): String {
         val titleEsc = escapeXml(title.trim())
         val descEsc = escapeXml(description.trim())
         val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
-        val bagKeywords = cleanKeywords.joinToString("\n") { kw -> "    <rdf:li>${escapeXml(kw)}</rdf:li>" }
+        val bagKeywords = cleanKeywords.joinToString("\n") { kw -> "%    <rdf:li>${escapeXml(kw)}</rdf:li>" }
 
         val sb = java.lang.StringBuilder()
-        sb.append("<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n")
-        sb.append("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n")
-        sb.append("  <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n")
-        sb.append("    <rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n")
+        sb.append("%<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n")
+        sb.append("%<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n")
+        sb.append("%  <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n")
+        sb.append("%    <rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n")
         if (titleEsc.isNotEmpty()) {
-            sb.append("      <dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">$titleEsc</rdf:li></rdf:Alt></dc:title>\n")
+            sb.append("%      <dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">$titleEsc</rdf:li></rdf:Alt></dc:title>\n")
         }
         if (descEsc.isNotEmpty()) {
-            sb.append("      <dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">$descEsc</rdf:li></rdf:Alt></dc:description>\n")
+            sb.append("%      <dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">$descEsc</rdf:li></rdf:Alt></dc:description>\n")
         }
         if (cleanKeywords.isNotEmpty()) {
-            sb.append("      <dc:subject><rdf:Bag>\n$bagKeywords\n      </rdf:Bag></dc:subject>\n")
+            sb.append("%      <dc:subject><rdf:Bag>\n$bagKeywords\n%      </rdf:Bag></dc:subject>\n")
         }
         if (titleEsc.isNotEmpty()) {
-            sb.append("      <photoshop:Headline>$titleEsc</photoshop:Headline>\n")
+            sb.append("%      <photoshop:Headline>$titleEsc</photoshop:Headline>\n")
         }
-        sb.append("    </rdf:Description>\n")
-        sb.append("  </rdf:RDF>\n")
-        sb.append("</x:xmpmeta>\n")
-        sb.append("<?xpacket end=\"w\"?>")
+        sb.append("%    </rdf:Description>\n")
+        sb.append("%  </rdf:RDF>\n")
+        sb.append("%</x:xmpmeta>\n")
+        sb.append("%<?xpacket end=\"w\"?>")
         return sb.toString()
     }
 
@@ -479,10 +483,6 @@ object XmpInjector {
             val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
             val metaCreator = creator.trim()
 
-            if (metaTitle.isEmpty() && metaDesc.isEmpty() && cleanKeywords.isEmpty() && metaCreator.isEmpty()) {
-                return originalBytes
-            }
-
             // Check if DOS EPS binary header is present (Magic: 0xC5D0D3C6)
             val isDosEps = originalBytes.size >= 30 &&
                     (originalBytes[0].toInt() and 0xFF) == 0xC5 &&
@@ -547,18 +547,15 @@ object XmpInjector {
     ): ByteArray {
         var psStr = String(psBytes, StandardCharsets.ISO_8859_1)
 
-        // Clean up previous AI11EPS / Client Injection blocks if present
-        val existingAdobeSetupRegex = Regex("""%ADOBeginClientInjection:\s*PageSetup\s*End\s*"AI11EPS"[\s\S]*?%ADOEndClientInjection:\s*PageSetup\s*End\s*"AI11EPS"\r?\n?""")
-        psStr = psStr.replace(existingAdobeSetupRegex, "")
+        // 1. Remove ANY complex client injection scripts (%ADOBeginClientInjection ... %ADOEndClientInjection)
+        val clientInjectionRegex = Regex("""%ADOBeginClientInjection[\s\S]*?%ADOEndClientInjection[^\r\n]*\r?\n?""")
+        psStr = psStr.replace(clientInjectionRegex, "")
 
-        val existingAdobeTrailerRegex = Regex("""%ADOBeginClientInjection:\s*PageTrailer\s*Start\s*"AI11EPS"[\s\S]*?%ADOEndClientInjection:\s*PageTrailer\s*Start\s*"AI11EPS"\r?\n?""")
-        psStr = psStr.replace(existingAdobeTrailerRegex, "")
-
-        // Clean up previous XMP blocks if re-injecting
+        // 2. Remove previous XMP blocks if present
         val existingXmpRegex = Regex("""%BeginXMP: BeforeBegin[\s\S]*?%EndXMP:\r?\n?""")
         psStr = psStr.replace(existingXmpRegex, "")
 
-        // 1. PostScript standard comments & single universal XMP packet block
+        // 3. PostScript standard comments & single universal XMP packet block
         val xmpPacket = bangunXmpXml(metaTitle, metaDesc, cleanKeywords, "application/postscript")
         val headerKomentarList = mutableListOf<String>()
         headerKomentarList.add("%ADO_ContainsXMP: MainFirst")
@@ -574,19 +571,23 @@ object XmpInjector {
         headerKomentarList.add("%BeginXMP: BeforeBegin\n$xmpPacket\n%EndXMP:")
         val headerKomentar = headerKomentarList.joinToString("\n")
 
-        // 2. Inject comments right before %%EndComments
-        val endCommentsRegex = Regex("""(\r?\n%%EndComments)""")
+        // 4. Inject comments right before %%EndComments
+        val endCommentsRegex = Regex("""\r?\n%%EndComments""")
         if (psStr.contains(endCommentsRegex)) {
-            val quotedHeader = java.util.regex.Matcher.quoteReplacement(headerKomentar)
-            psStr = psStr.replace(endCommentsRegex, "\n" + quotedHeader + "\$1")
+            psStr = psStr.replace(endCommentsRegex) {
+                "\n" + headerKomentar + "\n%%EndComments"
+            }
         } else {
-            val psHeaderRegex = Regex("""(%!PS[^\r\n]*)""")
+            val psHeaderRegex = Regex("""%!PS-Adobe-3\.0[^\r\n]*""")
             if (psStr.contains(psHeaderRegex)) {
-                psStr = psStr.replace(psHeaderRegex, "\$1\n" + java.util.regex.Matcher.quoteReplacement(headerKomentar) + "\n%%EndComments")
+                psStr = psStr.replace(psHeaderRegex) { match ->
+                    match.value + "\n" + headerKomentar + "\n%%EndComments"
+                }
+            } else {
+                psStr = headerKomentar + "\n" + psStr
             }
         }
 
-        // Return binary bytes preserving UTF-8/ISO bytes cleanly
         return toBinaryPreservingBytes(psStr)
     }
 
