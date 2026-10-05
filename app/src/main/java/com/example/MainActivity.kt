@@ -71,6 +71,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -154,6 +155,7 @@ fun MainScreen(
     val toastMessage by viewModel.toastFlow.collectAsStateWithLifecycle()
     val svgExportDialogState by viewModel.svgExportDialogState.collectAsStateWithLifecycle()
     var showPrivacyPolicy by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
     var isBottomBarExpanded by remember { mutableStateOf(false) }
     var isGridView by remember { mutableStateOf(true) }
     var isViewAllExpanded by remember { mutableStateOf(false) }
@@ -304,7 +306,7 @@ fun MainScreen(
         val screenHeight = constraints.maxHeight.toFloat()
         var headerHeightPx by remember { mutableFloatStateOf(0f) }
         val animatedQuickScrollBottomPadding by animateDpAsState(
-            targetValue = if (isBottomBarExpanded) 134.dp else 52.dp,
+            targetValue = if (isBottomBarExpanded) 152.dp else 66.dp,
             label = "quick_scroll_padding"
         )
         val animatedFooterClearance by animateDpAsState(
@@ -315,7 +317,16 @@ fun MainScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF070E20))
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF070E20), // Top: Deep dark navy/tech slate
+                            Color(0xFF0C1329), // Upper mid: Midnight slate
+                            Color(0xFF171233), // Lower mid: Deep plum slate
+                            Color(0xFF27174A)  // Bottom: Luxurious brighter purple/violet glow
+                        )
+                    )
+                )
         ) {
             // 1. --- FIXED WEBSITE-STYLE HEADER (Always visible, does NOT scroll away) ---
             var showHeaderMenu by remember { mutableStateOf(false) }
@@ -339,7 +350,7 @@ fun MainScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Left Group: Hamburger Menu + WAR MACHINE HYBRID + PREMIUM
+            // Left Group: Hamburger Menu + WAR MACHINE HYBRID + Pro
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f, fill = false)
@@ -364,9 +375,19 @@ fun MainScreen(
                         onDismissRequest = { showHeaderMenu = false }
                     ) {
                         DropdownMenuItem(
+                            text = { Text("About", fontSize = 13.sp, fontWeight = FontWeight.Medium) },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.Info, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFF38BDF8))
+                            },
+                            onClick = {
+                                showHeaderMenu = false
+                                showAbout = true
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Privacy Policy", fontSize = 13.sp, fontWeight = FontWeight.Medium) },
                             leadingIcon = {
-                                Icon(Icons.Outlined.Info, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Outlined.Security, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFF6FFFE9))
                             },
                             onClick = {
                                 showHeaderMenu = false
@@ -403,21 +424,24 @@ fun MainScreen(
 
                 Spacer(modifier = Modifier.width(6.dp))
 
+                // Teks Pro warna putih, Background Orange, Border putih, ukuran diperbesar
                 Surface(
-                    color = Color(0x33000000),
-                    shape = RoundedCornerShape(6.dp),
-                    border = BorderStroke(1.dp, Color(0x40FFFFFF)),
+                    color = Color(0xFFF25C05),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.5.dp, Color.White),
+                    shadowElevation = 3.dp,
                     modifier = Modifier.testTag("premium_label")
                 ) {
                     Box(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_crown),
-                            contentDescription = "Simbol Mahkota Pro / Premium",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
+                        Text(
+                            text = "Pro",
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.5.sp,
+                            letterSpacing = 0.6.sp
                         )
                     }
                 }
@@ -425,51 +449,35 @@ fun MainScreen(
 
             Spacer(modifier = Modifier.width(6.dp))
 
-            // Right Group: Gemini API status pill + Info Icon
+            // Right Group: War Engine capsule pill with dark purple background and bright purple border
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    color = Color(0x33000000),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Color(0x40FFFFFF))
+                    color = Color(0xFF261245),
+                    shape = CircleShape,
+                    border = BorderStroke(1.5.dp, Color(0xFFC084FC))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Gemini API",
+                            text = "War Engine",
                             color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.width(5.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Box(
                             modifier = Modifier
-                                .size(7.dp)
+                                .size(8.dp)
                                 .background(
                                     if (geminiKey.isNotEmpty()) Color(0xFF22C55E) else Color(0xFF94A3B8),
                                     shape = CircleShape
                                 )
                         )
                     }
-                }
-
-                Spacer(modifier = Modifier.width(2.dp))
-
-                IconButton(
-                    onClick = { showPrivacyPolicy = true },
-                    modifier = Modifier
-                        .size(36.dp)
-                        .testTag("header_info_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Info,
-                        contentDescription = "Informasi Aplikasi & Privacy Policy",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
                 }
             }
         }
@@ -977,82 +985,76 @@ fun MainScreen(
                     )
                 }
 
-                // Controls Row: Switch Grid 3 / Vertical & View All / Hide
-                if (imagesList.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Title and Controls Row (Title on Left, Icon Switch & Icon View All on Right)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 12.dp, start = 2.dp, end = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Left side: Title
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp, bottom = 4.dp),
-                        horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Switch 3-Kolom vs Vertical
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF1E293B),
-                            border = BorderStroke(1.dp, Color(0x4038BDF8)),
-                            modifier = Modifier
-                                .height(32.dp)
-                                .clickable {
+                        Icon(
+                            imageVector = Icons.Default.Collections,
+                            contentDescription = null,
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(19.dp)
+                        )
+                        Spacer(modifier = Modifier.width(7.dp))
+                        Text(
+                            text = "Preview",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.5.sp,
+                            letterSpacing = 0.3.sp
+                        )
+                    }
+
+                    // Right side: Icons only (No button container, comfortable touch targets)
+                    if (imagesList.isNotEmpty()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            // Switch Grid 3 / Vertical: Pure Icon
+                            IconButton(
+                                onClick = {
                                     isGridView = !isGridView
                                     isViewAllExpanded = false
-                                }
-                                .testTag("toggle_grid_vertical_btn")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .testTag("toggle_grid_vertical_btn")
                             ) {
                                 Icon(
                                     imageVector = if (isGridView) Icons.Default.ViewAgenda else Icons.Default.GridView,
                                     contentDescription = if (isGridView) "Switch to Vertical" else "Switch to Grid 3",
                                     tint = Color(0xFF38BDF8),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(5.dp))
-                                Text(
-                                    text = if (isGridView) "Grid 3" else "Vertical",
-                                    color = Color.White,
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Medium
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
-                        }
 
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Tombol Icon Kaca Pembesar View All / Hide
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isViewAllExpanded) Color(0xFF0284C7) else Color(0xFF1E293B),
-                            border = BorderStroke(1.dp, if (isViewAllExpanded) Color(0xFF38BDF8) else Color(0x4038BDF8)),
-                            modifier = Modifier
-                                .height(32.dp)
-                                .clickable { isViewAllExpanded = !isViewAllExpanded }
-                                .testTag("toggle_view_all_btn")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            // View All / Hide: Pure Icon (Search / Magnifying glass)
+                            IconButton(
+                                onClick = { isViewAllExpanded = !isViewAllExpanded },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .testTag("toggle_view_all_btn")
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Search,
                                     contentDescription = if (isViewAllExpanded) "Hide" else "View All",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(5.dp))
-                                Text(
-                                    text = if (isViewAllExpanded) "Hide" else "View All",
-                                    color = Color.White,
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold
+                                    tint = if (isViewAllExpanded) Color(0xFF38BDF8) else Color.White,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }
                     }
-                } else {
-                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
                 // Image List Area (Breathes directly on app background)
@@ -1061,17 +1063,29 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                            .padding(vertical = 80.dp),
+                            .padding(vertical = 160.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "Belum ada file gambar.",
-                            color = Color(0xFF94A3B8),
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 13.sp,
-                            modifier = Modifier.testTag("empty_placeholder_text"),
-                            fontFamily = FontFamily.Monospace
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Collections,
+                                contentDescription = null,
+                                tint = Color(0xFF64748B),
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Belum ada Preview Gambar.",
+                                color = Color(0xFF94A3B8),
+                                fontWeight = FontWeight.Normal,
+                                fontSize = 13.5.sp,
+                                modifier = Modifier.testTag("empty_placeholder_text"),
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                     }
                 } else {
                     if (isViewAllExpanded) {
@@ -1128,128 +1142,10 @@ fun MainScreen(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Petunjuk Penggunaan AI (Paling bawah di bawah Card Preview tepat di atas footer)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF0F172A).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                    .border(1.dp, Color(0x20FFFFFF), RoundedCornerShape(8.dp))
-                    .padding(10.dp)
-            ) {
-                Column {
-                    Text(
-                        text = "Petunjuk Penggunaan AI:",
-                        color = Color(0xFF00A8FF),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "1. Masukkan API Key Gemini, lalu klik SAVE API untuk mengaktifkan.\n" +
-                               "2. Import gambar yang ingin diproses melalui tombol Import.\n" +
-                               "3. Klik tombol GENERATE melayang di pojok bawah untuk analisis dan pembuatan metadata otomatis.",
-                        color = Color(0xFFCBD5E1),
-                        fontSize = 10.sp,
-                        lineHeight = 14.sp
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Dapatkan Gemini API Key di sini",
-                        color = Color(0xFF38BDF8),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable {
-                            uriHandler.openUri("https://aistudio.google.com/app/apikey")
-                        }
-                    )
-                }
-            }
-
-            // Bottom clearance for floating action bar if images are loaded
-            if (imagesList.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(72.dp))
-            } else {
-                Spacer(modifier = Modifier.height(16.dp))
-            }
+            // Generous bottom clearance so the main screen remains spacious and scrollable even when empty
+            Spacer(modifier = Modifier.height(if (imagesList.isEmpty()) 380.dp else (animatedFooterClearance + 160.dp)))
 
         } // Close inner Column
-
-
-        // --- Custom Footer Container ---
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(
-                            Color(0xFF0A2558), // Deep tech navy blue
-                            Color(0xFF1D4ED8), // Royal blue
-                            Color(0xFF00A8FF)  // Vibrant cyan blue
-                        )
-                    )
-                )
-                .padding(vertical = 10.dp, horizontal = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "www.masbonet.com",
-                    fontSize = 9.sp,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontStyle = FontStyle.Italic,
-                    modifier = Modifier.clickable {
-                        try {
-                            val intent = android.content.Intent(
-                                android.content.Intent.ACTION_VIEW,
-                                Uri.parse("https://masbonet.blogspot.com/?m=1")
-                            )
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Tidak dapat membuka link", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                )
-                Text(
-                    text = " • Designed by Irwan Setiadi • ",
-                    fontSize = 9.sp,
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontStyle = FontStyle.Italic
-                )
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "Privacy Policy",
-                    fontSize = 9.sp,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontStyle = FontStyle.Italic,
-                    modifier = Modifier.clickable {
-                        showPrivacyPolicy = true
-                    }
-                )
-                Text(
-                    text = " • war machine hybrid app version 2.1.1",
-                    fontSize = 9.sp,
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontStyle = FontStyle.Italic
-                )
-            }
-        }
-
-        // Dynamic clearance so footer is fully visible above bottom action bar
-        Spacer(modifier = Modifier.height(animatedFooterClearance))
     } // Close scrollable Column
 
     // Custom Draggable Scroll Handle (within the scroll area)
@@ -1299,7 +1195,7 @@ fun MainScreen(
     // --- Global Processing & Downloading Indicator (Centered directly above bottom Container Bar) ---
     if (isGlobalProcessing) {
         val indicatorBottomPadding by animateDpAsState(
-            targetValue = if (isBottomBarExpanded) 136.dp else 56.dp,
+            targetValue = if (isBottomBarExpanded) 154.dp else 68.dp,
             label = "indicator_bottom"
         )
         Box(
@@ -1340,8 +1236,8 @@ fun MainScreen(
     ) {
         Surface(
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
-            color = Color(0xFF0F172A).copy(alpha = 0.96f),
-            border = BorderStroke(1.dp, Color(0x3338BDF8)),
+            color = Color(0xFF1E293B).copy(alpha = 0.96f),
+            border = BorderStroke(1.dp, Color(0x5038BDF8)),
             shadowElevation = 16.dp,
             modifier = Modifier
                 .fillMaxWidth()
@@ -1654,7 +1550,7 @@ fun MainScreen(
     ) {
         Surface(
             shape = CircleShape,
-            color = Color(0xFF0F172A).copy(alpha = 0.95f),
+            color = Color(0xFF1E293B).copy(alpha = 0.95f),
             border = BorderStroke(1.dp, Color(0x5538BDF8)),
             shadowElevation = 10.dp,
             modifier = Modifier
@@ -1702,17 +1598,30 @@ fun MainScreen(
                 }
             },
             shape = CircleShape,
-            containerColor = Color(0xFF1E293B),
-            contentColor = Color(0xFF38BDF8),
+            containerColor = Color(0xFFF25C05),
+            contentColor = Color.White,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 16.dp, bottom = animatedQuickScrollBottomPadding)
         ) {
             Icon(
                 imageVector = if (isPointingDown) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
-                contentDescription = "Scroll to top/bottom"
+                contentDescription = "Scroll to top/bottom",
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
             )
         }
+    }
+
+    // --- About Full-screen Overlay ---
+    if (showAbout) {
+        AboutScreen(
+            onClose = { showAbout = false },
+            onOpenPrivacyPolicy = {
+                showAbout = false
+                showPrivacyPolicy = true
+            }
+        )
     }
 
     // --- Privacy Policy Full-screen Overlay ---
@@ -1736,242 +1645,737 @@ fun MainScreen(
 }
 
 @Composable
-fun PrivacyPolicyScreen(onClose: () -> Unit) {
+fun AboutScreen(
+    onClose: () -> Unit,
+    onOpenPrivacyPolicy: () -> Unit
+) {
     BackHandler { onClose() }
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0B132B))
-            .padding(top = 28.dp, bottom = 24.dp)
+            .background(Color(0xFF070E20))
             .clickable(enabled = true, onClick = {}) // Block clicks from passing through
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Back Button Row
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.Start,
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color(0xFF0A2558), Color(0xFF1D4ED8), Color(0xFF00A8FF))
+                        )
+                    )
+                    .padding(horizontal = 8.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onClose
-                ) {
+                IconButton(onClick = onClose) {
                     Icon(
                         imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Close Privacy Policy",
-                        tint = Color(0xFF6FFFE9),
-                        modifier = Modifier.size(24.dp)
+                        contentDescription = "Kembali ke Beranda",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
-                Text(
-                    text = "Kembali ke Aplikasi",
-                    color = Color(0xFF6FFFE9),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable { onClose() }
-                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "TENTANG APLIKASI",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "War Machine Hybrid v2.1.2 Pro",
+                        color = Color(0xFFBAE6FD),
+                        fontSize = 11.sp
+                    )
+                }
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Tutup Halaman About",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
 
-            // Card Container
-            Card(
+            // Scrollable Content
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .border(BorderStroke(1.dp, Color(0xFF3A506B)), RoundedCornerShape(12.dp)),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1C2541))
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                // 1. App Identity Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Color(0x3338BDF8))
                 ) {
-                    // Header inside card
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp),
+                        modifier = Modifier.padding(18.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        Surface(
+                            color = Color(0xFF1E1435),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                Brush.horizontalGradient(listOf(Color(0xFFC084FC), Color(0xFFA855F7)))
+                            ),
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        ) {
+                            Text(
+                                text = "Pro Edition",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                style = TextStyle(
+                                    brush = Brush.horizontalGradient(
+                                        listOf(Color(0xFFF3E8FF), Color(0xFFD8B4FE), Color(0xFFF472B6))
+                                    ),
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 12.sp,
+                                    letterSpacing = 0.5.sp
+                                )
+                            )
+                        }
+
                         Text(
-                            text = "PRIVACY POLICY",
-                            color = Color(0xFF5BC0BE),
-                            fontSize = 22.sp,
+                            text = "WAR MACHINE HYBRID",
+                            color = Color.White,
+                            fontSize = 20.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 1.sp,
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
+                            letterSpacing = 1.sp
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "War Machine Hybrid",
-                            color = Color(0xFF6FFFE9),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
+                            text = "AI-Powered Microstock Metadata & Vector Conversion Engine",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "Last updated: June 04, 2026",
-                            color = Color(0xFFA5B4FC),
+                            text = "War Machine Hybrid adalah solusi komprehensif untuk microstocker dan desainer vektor. Dilengkapi dengan War Engine berbasis Gemini AI untuk visual recognition cerdas, injeksi metadata XMP otomatis ke berbagai format, serta konverter SVG ke Adobe Illustrator AI-Compatible EPS berstandar microstock.",
+                            color = Color(0xFFCBD5E1),
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        // Safe custom divider
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(1.5.dp)
-                                .background(Color(0xFF3A506B))
+                            lineHeight = 18.sp,
+                            textAlign = TextAlign.Justify
                         )
                     }
+                }
 
-                    // Section 1
-                    PrivacyPolicySection(
-                        number = "1. No Data Collection",
-                        content = {
+                // 2. Petunjuk Penggunaan AI (Dipindahkan dari Halaman Utama)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Color(0xFF00A8FF).copy(alpha = 0.5f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = Color(0xFF00A8FF),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "War Machine Hybrid does not collect, store, or share any personal information or usage data from its users.\n\nWe do not require you to create an account, log in, or provide any personal details such as name, email, phone number, or location.",
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp
+                                text = "Petunjuk Penggunaan AI",
+                                color = Color(0xFF00A8FF),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
                             )
                         }
-                    )
 
-                    // Section 2
-                    PrivacyPolicySection(
-                        number = "2. No Internet Required",
-                        content = {
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        val instructions = listOf(
+                            "1. Masukkan API Key Gemini pada kolom War Engine / Gemini API, lalu klik SAVE API untuk mengaktifkan fitur cerdas.",
+                            "2. Import gambar yang ingin diproses melalui tombol Import Images (mendukung format PNG, JPG, SVG, dan EPS).",
+                            "3. Konfigurasi preferensi Auto Inject Metadata (Default ON) dan opsi seleksi sesuai kebutuhan Anda.",
+                            "4. Klik tombol GENERATE BATCH (atau GENERATE jika satu gambar) pada Bar Bawah untuk memulai analisis visual dan pembuatan metadata secara otomatis.",
+                            "5. Periksa hasil judul, deskripsi, dan keywords. Klik card gambar untuk membuka jendela detail mandiri guna mengedit atau menyesuaikan kata kunci.",
+                            "6. Klik tombol Download All atau simpan per gambar untuk memperoleh file berinjeksi metadata XMP siap upload ke pasar microstock."
+                        )
+
+                        instructions.forEach { step ->
                             Text(
-                                text = "The App functions entirely offline. No internet permission is requested, and the App never sends any data over the network.",
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp
+                                text = step,
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 11.5.sp,
+                                lineHeight = 17.sp,
+                                modifier = Modifier.padding(bottom = 6.dp)
                             )
                         }
-                    )
 
-                    // Section 3
-                    PrivacyPolicySection(
-                        number = "3. Permissions Used",
-                        content = {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    text = "The App may request the following permission only:",
-                                    color = Color(0xFFCBD5E1),
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp
-                                )
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(text = "•", color = Color(0xFF5BC0BE), fontSize = 14.sp)
-                                    Text(
-                                        text = "Storage access (READ/WRITE_EXTERNAL_STORAGE) – This is required solely to allow you to read media files (audio, video, images) and embed/edit metadata into those files. All file processing happens locally on your device. The App never uploads, shares, or transmits your files anywhere.",
-                                        color = Color(0xFFCBD5E1),
-                                        fontSize = 14.sp,
-                                        lineHeight = 20.sp
-                                    )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                            border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    uriHandler.openUri("https://aistudio.google.com/app/apikey")
                                 }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Key,
+                                    contentDescription = null,
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Dapatkan Gemini API Key di Google AI Studio ➔",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
-                    )
+                    }
+                }
 
-                    // Section 4
-                    PrivacyPolicySection(
-                        number = "4. No Third-Party Services",
-                        content = {
+                // 3. Fitur Utama & Keunggulan
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Color(0x3338BDF8))
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Text(
+                            text = "Fitur Utama",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        val features = listOf(
+                            "• Injeksi Metadata XMP Standar Industri: Menyimpan Title, Description, Keywords, dan Creator langsung ke dalam file EPS, SVG, PNG, dan JPEG.",
+                            "• SVG to Adobe Illustrator EPS: Mengonversi vektor SVG menjadi format EPS Illustrator 8.0 dengan PostScript Shading (ShadingType 2 & 3) native dan hirarki grup terstruktur.",
+                            "• Standar Resolusi Microstock: Artboard otomatis diskalakan ke ukuran optimal (≥ 16 MP) guna memenuhi regulasi Adobe Stock, Shutterstock, Freepik, dan platform terkemuka.",
+                            "• Analisis Trademark & Demand Score: Memeriksa keamanan kata kunci dari pelanggaran merek dagang dan memberikan rekomendasi demand score."
+                        )
+
+                        features.forEach { feat ->
                             Text(
-                                text = "The App does not integrate any analytics, advertising, crash reporting, or passive monetization SDKs. No data is sent to any external server.",
+                                text = feat,
                                 color = Color(0xFFCBD5E1),
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp
+                                fontSize = 11.5.sp,
+                                lineHeight = 17.sp,
+                                modifier = Modifier.padding(bottom = 6.dp)
                             )
                         }
-                    )
+                    }
+                }
 
-                    // Section 5
-                    PrivacyPolicySection(
-                        number = "5. Children’s Privacy",
-                        content = {
-                            Text(
-                                text = "The App is safe for all ages. Since no data is collected, there is no risk of unintentional data gathering from children under 13.",
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp
-                            )
-                        }
-                    )
+                // 4. Informasi Pengembang, Website, & Lisensi (Dipindahkan dari Footer Halaman Utama)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Color(0x3338BDF8))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Informasi Pengembang & Layanan",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
 
-                    // Section 6
-                    PrivacyPolicySection(
-                        number = "6. Changes to This Privacy Policy",
-                        content = {
-                            Text(
-                                text = "If the App is updated in the future to include internet-based features or monetization, this policy will be revised and clearly stated within the App.",
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp
-                            )
-                        }
-                    )
+                        Spacer(modifier = Modifier.height(4.dp))
 
-                    // Section 7
-                    PrivacyPolicySection(
-                        number = "7. Contact Us",
-                        content = {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    text = "If you have any questions regarding this policy, you may contact us at:",
-                                    color = Color(0xFFCBD5E1),
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp
-                                )
-                                Text(
-                                    text = "irwansetiadi46@gmail.com",
-                                    color = Color(0xFF6FFFE9),
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.clickable {
-                                        try {
-                                            val mailIntent = Intent(Intent.ACTION_SENDTO).apply {
-                                                data = Uri.parse("mailto:irwansetiadi46@gmail.com")
-                                            }
-                                            context.startActivity(mailIntent)
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Tidak ada aplikasi email", Toast.LENGTH_SHORT).show()
-                                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF1E293B),
+                            border = BorderStroke(1.dp, Color(0x4038BDF8)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    try {
+                                        val intent = android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            Uri.parse("https://masbonet.blogspot.com/?m=1")
+                                        )
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        Toast.makeText(context, "Tidak dapat membuka link", Toast.LENGTH_SHORT).show()
                                     }
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Language,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00A8FF),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "www.masbonet.com",
+                                    color = Color(0xFF38BDF8),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
                                 )
                             }
                         }
-                    )
 
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(Color(0xFF3A506B))
-                    )
+                        Text(
+                            text = "Designed by Irwan Setiadi",
+                            color = Color(0xFFE2E8F0),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
 
-                    // Card Footer
-                    Text(
-                        text = "© 2026 War Machine Hybrid. All rights reserved.",
-                        color = Color(0xFF657786),
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
+                        Text(
+                            text = "war machine hybrid app version 2.1.2",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp,
+                            fontStyle = FontStyle.Italic
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Button(
+                            onClick = onOpenPrivacyPolicy,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.6f)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Security,
+                                contentDescription = null,
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Buka Privacy Policy",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(2.dp))
+
+                        Text(
+                            text = "© 2026 War Machine Hybrid. All rights reserved.",
+                            color = Color(0xFF64748B),
+                            fontSize = 10.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun PrivacyPolicyScreen(onClose: () -> Unit) {
+    BackHandler { onClose() }
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF070E20))
+            .clickable(enabled = true, onClick = {}) // Block clicks from passing through
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header Bar matching App Theme
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color(0xFF0A2558), Color(0xFF1D4ED8), Color(0xFF00A8FF))
+                        )
+                    )
+                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Kembali ke Beranda",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
+                Spacer(modifier = Modifier.width(4.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "PRIVACY POLICY",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "War Machine Hybrid v2.1.2 Pro",
+                        color = Color(0xFFBAE6FD),
+                        fontSize = 11.sp
+                    )
+                }
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Tutup Privacy Policy",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+
+            // Scrollable Policy Content
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Header Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Color(0x3338BDF8))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Surface(
+                            color = Color(0xFF1E293B),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0x5538BDF8)),
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        ) {
+                            Text(
+                                text = "Version 2.1.2 • October 2026",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+
+                        Text(
+                            text = "KEBIJAKAN PRIVASI",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 0.8.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Komitmen Keamanan & Privasi Data Pengguna",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "War Machine Hybrid dirancang dengan prinsip Zero-Knowledge dan Local-First Architecture. Kami menghargai hak privasi, kerahasiaan karya seni komersial, dan kedaulatan data Anda. Kebijakan ini menjelaskan bagaimana data diproses secara aman dalam aplikasi versi 2.1.2.",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            textAlign = TextAlign.Justify
+                        )
+                    }
+                }
+
+                // Section 1: Tanpa Pengumpulan Data Pribadi
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Color(0x3338BDF8))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "1. Tanpa Pengumpulan Data & Pelacakan (Zero Tracking)",
+                            color = Color(0xFF38BDF8),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "War Machine Hybrid TIDAK mengumpulkan, menyimpan, membuat profil, atau menjual informasi pribadi Anda. Aplikasi ini:\n" +
+                                    "• Tidak memerlukan pendaftaran akun, login pihak ketiga, nomor telepon, atau identitas pribadi.\n" +
+                                    "• Bebas dari SDK iklan pihak ketiga, pelacak analitik, crash-reporting eksternal, atau background telemetry.\n" +
+                                    "• Tidak memantau kebiasaan penggunaan atau aktivitas kreatif Anda.",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                // Section 2: War Engine AI & Gemini API
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Color(0x3338BDF8))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "2. Integrasi War Engine AI & Kunci API Gemini",
+                            color = Color(0xFF38BDF8),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Fitur analisis visual dan pembuatan metadata otomatis memanfaatkan Gemini API (War Engine):\n" +
+                                    "• API Key pribadi Anda disimpan secara aman dan terenkripsi di penyimpanan lokal perangkat (SharedPreferences privat). API Key tersebut TIDAK PERNAH dikirim ke server pengembang atau pihak ketiga mana pun.\n" +
+                                    "• Saat proses Generate metadata, gambar dikirim secara langsung dari perangkat Anda ke endpoint resmi Google Gemini API melalui koneksi aman HTTPS terenkripsi. Tidak ada server perantara yang menyimpan atau mencegat berkas Anda.",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                // Section 3: Konversi Vektor & Rendering Lokal
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Color(0x3338BDF8))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "3. Pemrosesan Vektor & Konversi 100% On-Device",
+                            color = Color(0xFF38BDF8),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Semua modul manipulasi grafis bekerja sepenuhnya secara lokal (on-device) pada CPU/GPU perangkat Anda:\n" +
+                                    "• Konverter SVG ke Adobe Illustrator AI-Compatible EPS (PostScript ShadingType 2 & 3, compound path, dan hierarki grup) diproses langsung tanpa cloud server.\n" +
+                                    "• Mesin rendering EPS, decoder TIFF, dan ekstraksi bitmap bekerja sepenuhnya di dalam memori lokal aplikasi.\n" +
+                                    "• Desain vektor orisinal Anda tidak pernah meninggalkan perangkat.",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                // Section 4: Injeksi Metadata XMP & Kepemilikan Hak Cipta
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Color(0x3338BDF8))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "4. Injeksi Metadata XMP & Kepemilikan Penuh Hak Cipta",
+                            color = Color(0xFF38BDF8),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "• Injeksi metadata standar industri (Title, Description, Keywords, Creator) ditulis langsung ke struktur internal file (EPS, SVG, PNG, JPG) di penyimpanan lokal Anda.\n" +
+                                    "• Pengguna memegang 100% hak cipta, kepemilikan komersial, dan hak distribusi atas seluruh karya seni serta metadata yang dihasilkan.",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                // Section 5: Izin Akses Berkas & Storage Access Framework
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Color(0x3338BDF8))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "5. Izin Penyimpanan & Akses Berkas",
+                            color = Color(0xFF38BDF8),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Aplikasi mengadopsi standar keamanan Android modern (Photo Picker & Storage Access Framework):\n" +
+                                    "• Aplikasi hanya membaca berkas media yang Anda pilih secara eksplisit untuk diproses.\n" +
+                                    "• Hasil ekspor gambar dan file berinjeksi disimpan langsung ke folder unduhan atau lokasi penyimpanan yang Anda tentukan sendiri tanpa memerlukan izin akses luas yang invasif.",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                // Section 6: Kontrol & Penghapusan Data Mandiri
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Color(0x3338BDF8))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "6. Kontrol & Penghapusan Data Mandiri",
+                            color = Color(0xFF38BDF8),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Anda memiliki kontrol penuh atas berkas yang diimpor. Kapan pun Anda dapat menekan opsi 'Hapus Semua Gambar' di menu header untuk membersihkan seluruh antrean dan memori lokal aplikasi secara instan.",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                // Section 7: Pengembang & Kontak
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Color(0x3338BDF8))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "7. Kontak & Pengembang",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+
+                        Text(
+                            text = "Jika Anda memiliki pertanyaan mengenai kebijakan privasi atau aplikasi ini, silakan hubungi kami:",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF1E293B),
+                            border = BorderStroke(1.dp, Color(0x4038BDF8)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    try {
+                                        val intent = android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            Uri.parse("https://masbonet.blogspot.com/?m=1")
+                                        )
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        Toast.makeText(context, "Tidak dapat membuka link", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Language,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00A8FF),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "www.masbonet.com",
+                                    color = Color(0xFF38BDF8),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.5.sp
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "Email: irwansetiadi46@gmail.com",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.clickable {
+                                try {
+                                    val mailIntent = Intent(Intent.ACTION_SENDTO).apply {
+                                        data = Uri.parse("mailto:irwansetiadi46@gmail.com")
+                                    }
+                                    context.startActivity(mailIntent)
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, "Tidak ada aplikasi email", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+
+                        Text(
+                            text = "Designed & Developed by Irwan Setiadi",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp
+                        )
+
+                        Text(
+                            text = "© 2026 War Machine Hybrid v2.1.2. All rights reserved.",
+                            color = Color(0xFF64748B),
+                            fontSize = 10.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
@@ -2106,7 +2510,7 @@ fun PrivacyPolicySection(
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = number,
-            color = Color(0xFF6FFFE9),
+            color = Color(0xFF38BDF8),
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold
         )

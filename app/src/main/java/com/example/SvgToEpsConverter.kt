@@ -5,6 +5,8 @@ import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.abs
@@ -29,9 +31,16 @@ object SvgToEpsConverter {
         val cxStr: String = "50%",
         val cyStr: String = "50%",
         val rStr: String = "50%",
+        val fxStr: String = "",
+        val fyStr: String = "",
         val isUserSpace: Boolean = false,
         val stops: List<GradientStopDef> = emptyList(),
         val transform: String = ""
+    )
+
+    data class SvgClipPathDef(
+        val id: String,
+        val element: Element
     )
 
     fun convertSvgToEps(
@@ -42,8 +51,6 @@ object SvgToEpsConverter {
         creator: String = ""
     ): ByteArray {
         try {
-            val svgStr = String(svgBytes, StandardCharsets.UTF_8)
-
             // 1. Parse XML Document
             val factory = DocumentBuilderFactory.newInstance()
             factory.isNamespaceAware = false
@@ -92,10 +99,10 @@ object SvgToEpsConverter {
                 vbHeight = artboardHeight
             }
 
-            // Ensure Microstock Artboard Compliance (Adobe Stock minimum 15 MP, maximum 65 MP; e.g. 16 MP standard = 4000x4000pt)
+            // Ensure Microstock Artboard Compliance (Adobe Stock >= 15 MP, Shutterstock >= 4 MP, <= 65 MP)
             val currentArea = artboardWidth * artboardHeight
-            val minAreaMicrostock = 16_000_000f // 16 Megapixels (complies with Adobe Stock >= 15 MP & Shutterstock >= 4 MP)
-            val maxAreaMicrostock = 60_000_000f // 60 Megapixels (complies with Adobe Stock <= 65 MP limit)
+            val minAreaMicrostock = 16_000_000f // 16 Megapixels standard
+            val maxAreaMicrostock = 60_000_000f // 60 Megapixels limit
 
             if (currentArea < minAreaMicrostock && currentArea > 0f) {
                 val scaleUp = sqrt(minAreaMicrostock / currentArea)
@@ -114,38 +121,125 @@ object SvgToEpsConverter {
             val scaleX = artboardWidth / vbWidth
             val scaleY = artboardHeight / vbHeight
 
-            // 3. Collect Defs, IDs, Styles, and Gradients
+            // 3. Index Defs, IDs, Styles, Gradients, and ClipPaths
             val idMap = mutableMapOf<String, Element>()
             val gradientMap = mutableMapOf<String, String>() // id -> fallback hex color
             val fullGradientMap = mutableMapOf<String, SvgGradientDef>()
+            val clipPathMap = mutableMapOf<String, SvgClipPathDef>()
             val cssClassMap = parseCssStyles(root)
 
-            indexElementsAndGradients(root, idMap, gradientMap, fullGradientMap)
+            indexElementsAndGradients(root, idMap, gradientMap, fullGradientMap, clipPathMap)
 
-            // 4. Build EPS PostScript Content
+            // 4. Build Adobe Illustrator AI-Compatible EPS PostScript Header & Prolog
             val psBuilder = StringBuilder()
+            val creationDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date())
+
             psBuilder.append("%!PS-Adobe-3.0 EPSF-3.0\n")
-            psBuilder.append("%%Creator: WarMachineHybrid SVG Converter\n")
-            if (title.isNotEmpty()) psBuilder.append("%%Title: $title\n")
+            psBuilder.append("%%Creator: Adobe Illustrator(R) 8.0\n")
+            psBuilder.append("%%AI8_CreatorVersion: 8.0\n")
+            psBuilder.append("%%For: (WarMachineHybrid) ()\n")
+            if (title.isNotEmpty()) {
+                val cleanTitle = title.replace("(", "[").replace(")", "]")
+                psBuilder.append("%%Title: ($cleanTitle.eps)\n")
+            } else {
+                psBuilder.append("%%Title: (converted_artwork.eps)\n")
+            }
+            psBuilder.append("%%CreationDate: $creationDate\n")
             psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", artboardWidth.toInt(), artboardHeight.toInt()))
             psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0 0 %.3f %.3f\n", artboardWidth, artboardHeight))
+            psBuilder.append(String.format(Locale.US, "%%%%DocumentProcessColors: Cyan Magenta Yellow Black\n"))
+            psBuilder.append("%%DocumentSuppliedResources: procset Adobe_level2_AI5 1.2 0\n")
+            psBuilder.append("%%+ procset Adobe_Illustrator_AI5 1.3 0\n")
+            psBuilder.append("%%+ procset Adobe_ColorImage_AI6 1.0 0\n")
+            psBuilder.append("%%+ procset Adobe_Shading_AI8 1.0 0\n")
+            psBuilder.append("%AI5_FileFormat 3\n")
+            psBuilder.append("%AI3_ColorUsage: Color\n")
+            psBuilder.append("%AI3_TemplateBox: 0 0 0 0\n")
+            psBuilder.append(String.format(Locale.US, "%%AI3_TileBox: 0 0 %d %d\n", artboardWidth.toInt(), artboardHeight.toInt()))
             psBuilder.append(String.format(Locale.US, "%%%%DocumentMedia: Canvas %.3f %.3f 0 () ()\n", artboardWidth, artboardHeight))
             psBuilder.append("%%LanguageLevel: 3\n")
             psBuilder.append("%%Pages: 1\n")
             psBuilder.append("%%EndComments\n\n")
 
-            // Global SVG to PostScript Coordinate Transformation
-            psBuilder.append("gsave\n")
+            // --- AI & PostScript Prolog (Operator Definitions for Grouping & Rendering) ---
+            psBuilder.append("%%BeginProlog\n")
+            psBuilder.append("/_AI_save /save load def\n")
+            psBuilder.append("/_AI_restore /restore load def\n")
+            psBuilder.append("/q { gsave } bind def\n")
+            psBuilder.append("/Q { grestore } bind def\n")
+            psBuilder.append("/u {} bind def\n") // AI Begin Group operator
+            psBuilder.append("/U {} bind def\n") // AI End Group operator
+            psBuilder.append("/*u {} bind def\n") // AI Begin Compound / Group
+            psBuilder.append("/*U {} bind def\n") // AI End Compound / Group
+            psBuilder.append("/m { moveto } bind def\n")
+            psBuilder.append("/l { lineto } bind def\n")
+            psBuilder.append("/c { curveto } bind def\n")
+            psBuilder.append("/v { currentpoint 6 2 roll curveto } bind def\n")
+            psBuilder.append("/y { 2 copy curveto } bind def\n")
+            psBuilder.append("/h { closepath } bind def\n")
+            psBuilder.append("/n { newpath } bind def\n")
+            psBuilder.append("/f { fill } bind def\n")
+            psBuilder.append("/F { fill } bind def\n")
+            psBuilder.append("/f* { eofill } bind def\n")
+            psBuilder.append("/s { stroke } bind def\n")
+            psBuilder.append("/S { stroke } bind def\n")
+            psBuilder.append("/b { gsave fill grestore stroke } bind def\n")
+            psBuilder.append("/B { gsave fill grestore stroke } bind def\n")
+            psBuilder.append("/b* { gsave eofill grestore stroke } bind def\n")
+            psBuilder.append("/B* { gsave eofill grestore stroke } bind def\n")
+            psBuilder.append("/W { clip } bind def\n")
+            psBuilder.append("/W* { eoclip } bind def\n")
+            psBuilder.append("/w { setlinewidth } bind def\n")
+            psBuilder.append("/J { setlinecap } bind def\n")
+            psBuilder.append("/j { setlinejoin } bind def\n")
+            psBuilder.append("/M { setmiterlimit } bind def\n")
+            psBuilder.append("/d { setdash } bind def\n")
+            psBuilder.append("/rg { setrgbcolor } bind def\n")
+            psBuilder.append("/RG { setrgbcolor } bind def\n")
+            psBuilder.append("/k { setcmykcolor } bind def\n")
+            psBuilder.append("/K { setcmykcolor } bind def\n")
+            psBuilder.append("/g { setgray } bind def\n")
+            psBuilder.append("/G { setgray } bind def\n")
+            psBuilder.append("/Lb { pop pop pop pop pop pop pop pop pop pop } bind def\n")
+            psBuilder.append("/Ln { pop } bind def\n")
+            psBuilder.append("/LB {} bind def\n")
+            psBuilder.append("%%EndProlog\n\n")
+
+            psBuilder.append("%%BeginSetup\n")
+            psBuilder.append("%%EndSetup\n\n")
+
+            // Global SVG-to-PostScript Coordinate Transformation
+            psBuilder.append("q\n")
             psBuilder.append(String.format(Locale.US, "0 %.3f translate\n", artboardHeight))
             psBuilder.append(String.format(Locale.US, "%.5f %.5f scale\n", scaleX, -scaleY))
             psBuilder.append(String.format(Locale.US, "%.3f %.3f translate\n", -minX, -minY))
             psBuilder.append("\n")
 
-            // Recursive traversal of SVG DOM
-            val defaultStyle = StyleContext()
-            processChildrenNodes(root, defaultStyle, psBuilder, idMap, gradientMap, fullGradientMap, cssClassMap)
+            // Start Adobe Illustrator Layer 1
+            val layerName = root.getAttribute("id").ifEmpty { "Layer 1" }.replace("(", "[").replace(")", "]")
+            psBuilder.append("%AI5_BeginLayer\n")
+            psBuilder.append("1 1 1 1 0 0 0 79 128 255 Lb\n")
+            psBuilder.append("($layerName) Ln\n")
 
-            psBuilder.append("grestore\n")
+            // Recursive traversal of SVG DOM with AI Group Tracking
+            val defaultStyle = StyleContext()
+            processChildrenNodes(
+                parent = root,
+                parentStyle = defaultStyle,
+                sb = psBuilder,
+                idMap = idMap,
+                gradientMap = gradientMap,
+                fullGradientMap = fullGradientMap,
+                clipPathMap = clipPathMap,
+                cssClassMap = cssClassMap,
+                depth = 0
+            )
+
+            // Close Adobe Illustrator Layer
+            psBuilder.append("LB\n")
+            psBuilder.append("%AI5_EndLayer\n")
+
+            psBuilder.append("Q\n")
             psBuilder.append("showpage\n%%EOF\n")
 
             val rawEpsBytes = psBuilder.toString().toByteArray(StandardCharsets.UTF_8)
@@ -164,7 +258,7 @@ object SvgToEpsConverter {
         }
     }
 
-    // --- DOM Traverser & Group Manager ---
+    // --- DOM Traverser & Group Hierarchy Manager ---
 
     private fun processChildrenNodes(
         parent: Element,
@@ -173,13 +267,25 @@ object SvgToEpsConverter {
         idMap: Map<String, Element>,
         gradientMap: Map<String, String>,
         fullGradientMap: Map<String, SvgGradientDef>,
-        cssClassMap: Map<String, Map<String, String>>
+        clipPathMap: Map<String, SvgClipPathDef>,
+        cssClassMap: Map<String, Map<String, String>>,
+        depth: Int
     ) {
         val childNodes = parent.childNodes
         for (i in 0 until childNodes.length) {
             val node = childNodes.item(i)
             if (node.nodeType == Node.ELEMENT_NODE) {
-                processNode(node as Element, parentStyle, sb, idMap, gradientMap, fullGradientMap, cssClassMap)
+                processNode(
+                    element = node as Element,
+                    parentStyle = parentStyle,
+                    sb = sb,
+                    idMap = idMap,
+                    gradientMap = gradientMap,
+                    fullGradientMap = fullGradientMap,
+                    clipPathMap = clipPathMap,
+                    cssClassMap = cssClassMap,
+                    depth = depth
+                )
             }
         }
     }
@@ -191,26 +297,48 @@ object SvgToEpsConverter {
         idMap: Map<String, Element>,
         gradientMap: Map<String, String>,
         fullGradientMap: Map<String, SvgGradientDef>,
-        cssClassMap: Map<String, Map<String, String>>
+        clipPathMap: Map<String, SvgClipPathDef>,
+        cssClassMap: Map<String, Map<String, String>>,
+        depth: Int
     ) {
         val tagName = element.tagName.lowercase(Locale.US)
 
         // Ignore defs, style, metadata, script, title, desc
-        if (tagName in listOf("defs", "style", "metadata", "script", "title", "desc")) {
+        if (tagName in listOf("defs", "style", "metadata", "script", "title", "desc", "clippath")) {
             return
         }
 
         val nodeStyle = resolveElementStyle(element, parentStyle, cssClassMap, gradientMap)
         val transformStr = element.getAttribute("transform").trim()
         val idAttr = element.getAttribute("id").trim()
+        val clipPathAttr = element.getAttribute("clip-path").trim().ifEmpty {
+            val styleMap = parseStyleDeclarations(element.getAttribute("style"))
+            styleMap["clip-path"] ?: ""
+        }
+
+        val hasTransform = transformStr.isNotEmpty()
+        val hasClipPath = clipPathAttr.isNotEmpty()
 
         when (tagName) {
             "g", "a", "svg" -> {
-                sb.append("gsave\n")
-                if (idAttr.isNotEmpty()) {
-                    sb.append("% Group: $idAttr\n")
+                // Determine if group needs state isolation (transform or clip)
+                val needsStateIsolation = hasTransform || hasClipPath || (tagName == "svg" && element.parentNode != null)
+
+                if (needsStateIsolation) {
+                    sb.append("q\n")
                 }
-                if (transformStr.isNotEmpty()) {
+
+                // Handle Clip-Path on Group
+                if (hasClipPath) {
+                    val clipId = clipPathAttr.substringAfter("url(").substringBefore(")").removePrefix("#").removeSurrounding("'", "\"").trim()
+                    val clipDef = clipPathMap[clipId]
+                    if (clipDef != null) {
+                        emitClipPath(sb, clipDef.element)
+                    }
+                }
+
+                // Handle Transform on Group
+                if (hasTransform) {
                     sb.append(convertSvgTransformToPostScript(transformStr))
                 }
 
@@ -223,8 +351,34 @@ object SvgToEpsConverter {
                     }
                 }
 
-                processChildrenNodes(element, nodeStyle, sb, idMap, gradientMap, fullGradientMap, cssClassMap)
-                sb.append("grestore\n")
+                // AI Group Begin Operator: 'u'
+                if (idAttr.isNotEmpty()) {
+                    val cleanId = idAttr.replace("(", "[").replace(")", "]")
+                    sb.append("% AI Group: $cleanId\n")
+                    sb.append("($cleanId) u\n")
+                } else {
+                    sb.append("u\n")
+                }
+
+                // Process children inside Group
+                processChildrenNodes(
+                    parent = element,
+                    parentStyle = nodeStyle,
+                    sb = sb,
+                    idMap = idMap,
+                    gradientMap = gradientMap,
+                    fullGradientMap = fullGradientMap,
+                    clipPathMap = clipPathMap,
+                    cssClassMap = cssClassMap,
+                    depth = depth + 1
+                )
+
+                // AI Group End Operator: 'U'
+                sb.append("U\n")
+
+                if (needsStateIsolation) {
+                    sb.append("Q\n")
+                }
             }
 
             "use" -> {
@@ -233,17 +387,29 @@ object SvgToEpsConverter {
                     val targetId = href.removePrefix("#")
                     val targetElem = idMap[targetId]
                     if (targetElem != null) {
-                        sb.append("gsave\n")
+                        sb.append("q\n")
                         val x = parseLengthToPt(element.getAttribute("x"), 0f)
                         val y = parseLengthToPt(element.getAttribute("y"), 0f)
                         if (x != 0f || y != 0f) {
                             sb.append(String.format(Locale.US, "%.3f %.3f translate\n", x, y))
                         }
-                        if (transformStr.isNotEmpty()) {
+                        if (hasTransform) {
                             sb.append(convertSvgTransformToPostScript(transformStr))
                         }
-                        processNode(targetElem, nodeStyle, sb, idMap, gradientMap, fullGradientMap, cssClassMap)
-                        sb.append("grestore\n")
+                        sb.append("u\n")
+                        processNode(
+                            element = targetElem,
+                            parentStyle = nodeStyle,
+                            sb = sb,
+                            idMap = idMap,
+                            gradientMap = gradientMap,
+                            fullGradientMap = fullGradientMap,
+                            clipPathMap = clipPathMap,
+                            cssClassMap = cssClassMap,
+                            depth = depth + 1
+                        )
+                        sb.append("U\n")
+                        sb.append("Q\n")
                     }
                 }
             }
@@ -262,61 +428,128 @@ object SvgToEpsConverter {
 
                 if (pathCommands.isBlank()) return
 
-                sb.append("gsave\n")
-                if (transformStr.isNotEmpty()) {
+                val needsLocalState = hasTransform || hasClipPath
+                if (needsLocalState) {
+                    sb.append("q\n")
+                }
+
+                // Handle local Clip-Path if present on shape
+                if (hasClipPath) {
+                    val clipId = clipPathAttr.substringAfter("url(").substringBefore(")").removePrefix("#").removeSurrounding("'", "\"").trim()
+                    val clipDef = clipPathMap[clipId]
+                    if (clipDef != null) {
+                        emitClipPath(sb, clipDef.element)
+                    }
+                }
+
+                // Handle local transform if present
+                if (hasTransform) {
                     sb.append(convertSvgTransformToPostScript(transformStr))
                 }
 
-                sb.append("newpath\n")
-                sb.append(pathCommands)
-
-                // Render Fill (with Gradient Shading or flat color)
+                // Resolve Fill and Stroke styles
                 val fillStr = nodeStyle.fill ?: "black"
                 val gradId = if (fillStr.startsWith("url(")) {
                     fillStr.substringAfter("url(").substringBefore(")").removePrefix("#").removeSurrounding("'", "\"").trim()
                 } else null
 
                 val gradDef = if (gradId != null) fullGradientMap[gradId] else null
-                if (gradDef != null && gradDef.stops.isNotEmpty()) {
-                    writeGradientShading(sb, gradDef, nodeStyle.fillRule)
-                } else {
-                    val fillRgb = parseColorToRgb(fillStr, gradientMap)
-                    if (fillRgb != null) {
-                        sb.append("gsave\n")
-                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f setrgbcolor\n", fillRgb[0], fillRgb[1], fillRgb[2]))
-                        if (nodeStyle.fillRule == "evenodd") {
-                            sb.append("eofill\n")
-                        } else {
-                            sb.append("fill\n")
-                        }
-                        sb.append("grestore\n")
-                    }
-                }
+                val fillRgb = if (gradDef == null) parseColorToRgb(fillStr, gradientMap) else null
 
-                // Render Stroke
                 val strokeRgb = parseColorToRgb(nodeStyle.stroke ?: "none", gradientMap)
                 val strokeWidth = nodeStyle.strokeWidth ?: 1f
-                if (strokeRgb != null && strokeWidth > 0f) {
-                    sb.append("gsave\n")
-                    sb.append(String.format(Locale.US, "%.3f setlinewidth\n", strokeWidth))
+                val hasStroke = strokeRgb != null && strokeWidth > 0f
 
-                    val lineCapInt = when (nodeStyle.strokeLineCap) {
-                        "round" -> 1
-                        "square" -> 2
-                        else -> 0 // butt
+                // --- Case A: Gradient Shading Fill (Native ShadingType 2/3) ---
+                if (gradDef != null && gradDef.stops.isNotEmpty()) {
+                    // Set clipping to the shape path and render gradient via shfill
+                    sb.append("q\n")
+                    sb.append("n\n")
+                    sb.append(pathCommands)
+                    if (nodeStyle.fillRule == "evenodd") {
+                        sb.append("W* n\n")
+                    } else {
+                        sb.append("W n\n")
                     }
-                    val lineJoinInt = when (nodeStyle.strokeLineJoin) {
-                        "round" -> 1
-                        "bevel" -> 2
-                        else -> 0 // miter
+                    writeGradientShading(sb, gradDef)
+                    sb.append("Q\n")
+
+                    // Render Stroke on top of gradient if shape has stroke
+                    if (hasStroke) {
+                        emitStrokeState(sb, nodeStyle, strokeRgb!!, strokeWidth)
+                        sb.append("n\n")
+                        sb.append(pathCommands)
+                        sb.append("s\n")
                     }
-                    sb.append(String.format(Locale.US, "%d setlinecap\n%d setlinejoin\n", lineCapInt, lineJoinInt))
-                    sb.append(String.format(Locale.US, "%.3f %.3f %.3f setrgbcolor\n", strokeRgb[0], strokeRgb[1], strokeRgb[2]))
-                    sb.append("stroke\n")
-                    sb.append("grestore\n")
+                } else {
+                    // --- Case B: Flat Vector Fill & Stroke (Clean AI Syntax, No Redundant gsave/grestore) ---
+                    val isEvenOdd = nodeStyle.fillRule == "evenodd"
+
+                    if (fillRgb != null && hasStroke) {
+                        // Both Fill and Stroke
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f rg\n", fillRgb[0], fillRgb[1], fillRgb[2]))
+                        emitStrokeState(sb, nodeStyle, strokeRgb!!, strokeWidth)
+                        sb.append("n\n")
+                        sb.append(pathCommands)
+                        sb.append(if (isEvenOdd) "b*\n" else "b\n")
+                    } else if (fillRgb != null) {
+                        // Fill only
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f rg\n", fillRgb[0], fillRgb[1], fillRgb[2]))
+                        sb.append("n\n")
+                        sb.append(pathCommands)
+                        sb.append(if (isEvenOdd) "f*\n" else "f\n")
+                    } else if (hasStroke) {
+                        // Stroke only
+                        emitStrokeState(sb, nodeStyle, strokeRgb!!, strokeWidth)
+                        sb.append("n\n")
+                        sb.append(pathCommands)
+                        sb.append("s\n")
+                    }
                 }
 
-                sb.append("grestore\n")
+                if (needsLocalState) {
+                    sb.append("Q\n")
+                }
+            }
+        }
+    }
+
+    private fun emitStrokeState(sb: StringBuilder, nodeStyle: StyleContext, strokeRgb: FloatArray, strokeWidth: Float) {
+        sb.append(String.format(Locale.US, "%.3f %.3f %.3f RG\n", strokeRgb[0], strokeRgb[1], strokeRgb[2]))
+        sb.append(String.format(Locale.US, "%.3f w\n", strokeWidth))
+        val lineCapInt = when (nodeStyle.strokeLineCap) {
+            "round" -> 1
+            "square" -> 2
+            else -> 0 // butt
+        }
+        val lineJoinInt = when (nodeStyle.strokeLineJoin) {
+            "round" -> 1
+            "bevel" -> 2
+            else -> 0 // miter
+        }
+        sb.append(String.format(Locale.US, "%d J %d j\n", lineCapInt, lineJoinInt))
+    }
+
+    private fun emitClipPath(sb: StringBuilder, clipElement: Element) {
+        val childNodes = clipElement.childNodes
+        for (i in 0 until childNodes.length) {
+            val node = childNodes.item(i)
+            if (node.nodeType == Node.ELEMENT_NODE) {
+                val elem = node as Element
+                val tag = elem.tagName.lowercase(Locale.US)
+                val pathCmds = when (tag) {
+                    "path" -> convertPathToPostScript(elem.getAttribute("d"))
+                    "rect" -> convertRectToPostScript(elem)
+                    "circle" -> convertCircleToPostScript(elem)
+                    "ellipse" -> convertEllipseToPostScript(elem)
+                    "polygon" -> convertPolygonToPostScript(elem, isClosed = true)
+                    else -> ""
+                }
+                if (pathCmds.isNotBlank()) {
+                    sb.append("n\n")
+                    sb.append(pathCmds)
+                    sb.append("W n\n")
+                }
             }
         }
     }
@@ -338,25 +571,25 @@ object SvgToEpsConverter {
         if (rx <= 0f || ry <= 0f) {
             return String.format(
                 Locale.US,
-                "%.3f %.3f moveto %.3f %.3f lineto %.3f %.3f lineto %.3f %.3f lineto closepath\n",
+                "%.3f %.3f m %.3f %.3f l %.3f %.3f l %.3f %.3f l h\n",
                 x, y, x + w, y, x + w, y + h, x, y + h
             )
         }
 
-        // Rounded Rectangle
+        // Rounded Rectangle with cubic beziers
         val kx = rx * 0.55228475f
         val ky = ry * 0.55228475f
         val sb = StringBuilder()
-        sb.append(String.format(Locale.US, "%.3f %.3f moveto\n", x + rx, y))
-        sb.append(String.format(Locale.US, "%.3f %.3f lineto\n", x + w - rx, y))
-        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f curveto\n", x + w - rx + kx, y, x + w, y + ry - ky, x + w, y + ry))
-        sb.append(String.format(Locale.US, "%.3f %.3f lineto\n", x + w, y + h - ry))
-        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f curveto\n", x + w, y + h - ry + ky, x + w - rx + kx, y + h, x + w - rx, y + h))
-        sb.append(String.format(Locale.US, "%.3f %.3f lineto\n", x + rx, y + h))
-        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f curveto\n", x + rx - kx, y + h, x, y + h - ry + ky, x, y + h - ry))
-        sb.append(String.format(Locale.US, "%.3f %.3f lineto\n", x, y + ry))
-        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f curveto\n", x, y + ry - ky, x + rx - kx, y, x + rx, y))
-        sb.append("closepath\n")
+        sb.append(String.format(Locale.US, "%.3f %.3f m\n", x + rx, y))
+        sb.append(String.format(Locale.US, "%.3f %.3f l\n", x + w - rx, y))
+        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", x + w - rx + kx, y, x + w, y + ry - ky, x + w, y + ry))
+        sb.append(String.format(Locale.US, "%.3f %.3f l\n", x + w, y + h - ry))
+        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", x + w, y + h - ry + ky, x + w - rx + kx, y + h, x + w - rx, y + h))
+        sb.append(String.format(Locale.US, "%.3f %.3f l\n", x + rx, y + h))
+        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", x + rx - kx, y + h, x, y + h - ry + ky, x, y + h - ry))
+        sb.append(String.format(Locale.US, "%.3f %.3f l\n", x, y + ry))
+        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", x, y + ry - ky, x + rx - kx, y, x + rx, y))
+        sb.append("h\n")
         return sb.toString()
     }
 
@@ -382,7 +615,7 @@ object SvgToEpsConverter {
         val ky = ry * 0.55228475f
         return String.format(
             Locale.US,
-            "%.3f %.3f moveto %.3f %.3f %.3f %.3f %.3f %.3f curveto %.3f %.3f %.3f %.3f %.3f %.3f curveto %.3f %.3f %.3f %.3f %.3f %.3f curveto %.3f %.3f %.3f %.3f %.3f %.3f curveto closepath\n",
+            "%.3f %.3f m %.3f %.3f %.3f %.3f %.3f %.3f c %.3f %.3f %.3f %.3f %.3f %.3f c %.3f %.3f %.3f %.3f %.3f %.3f c %.3f %.3f %.3f %.3f %.3f %.3f c h\n",
             cx + rx, cy,
             cx + rx, cy + ky, cx + kx, cy + ry, cx, cy + ry,
             cx - kx, cy + ry, cx - rx, cy + ky, cx - rx, cy,
@@ -396,7 +629,7 @@ object SvgToEpsConverter {
         val y1 = parseLengthToPt(element.getAttribute("y1"), 0f)
         val x2 = parseLengthToPt(element.getAttribute("x2"), 0f)
         val y2 = parseLengthToPt(element.getAttribute("y2"), 0f)
-        return String.format(Locale.US, "%.3f %.3f moveto %.3f %.3f lineto\n", x1, y1, x2, y2)
+        return String.format(Locale.US, "%.3f %.3f m %.3f %.3f l\n", x1, y1, x2, y2)
     }
 
     private fun convertPolygonToPostScript(element: Element, isClosed: Boolean): String {
@@ -411,13 +644,13 @@ object SvgToEpsConverter {
             val x = tokens[i]
             val y = tokens[i + 1]
             if (i == 0) {
-                sb.append(String.format(Locale.US, "%.3f %.3f moveto\n", x, y))
+                sb.append(String.format(Locale.US, "%.3f %.3f m\n", x, y))
             } else {
-                sb.append(String.format(Locale.US, "%.3f %.3f lineto\n", x, y))
+                sb.append(String.format(Locale.US, "%.3f %.3f l\n", x, y))
             }
             i += 2
         }
-        if (isClosed) sb.append("closepath\n")
+        if (isClosed) sb.append("h\n")
         return sb.toString()
     }
 
@@ -456,12 +689,12 @@ object SvgToEpsConverter {
                         val finalY = if (isRelative && !isFirstPair) currentY + y else if (isRelative) currentY + y else y
 
                         if (isFirstPair) {
-                            sb.append(String.format(Locale.US, "%.3f %.3f moveto\n", finalX, finalY))
+                            sb.append(String.format(Locale.US, "%.3f %.3f m\n", finalX, finalY))
                             startX = finalX
                             startY = finalY
                             isFirstPair = false
                         } else {
-                            sb.append(String.format(Locale.US, "%.3f %.3f lineto\n", finalX, finalY))
+                            sb.append(String.format(Locale.US, "%.3f %.3f l\n", finalX, finalY))
                         }
                         currentX = finalX
                         currentY = finalY
@@ -480,7 +713,7 @@ object SvgToEpsConverter {
                         val finalX = if (isRelative) currentX + x else x
                         val finalY = if (isRelative) currentY + y else y
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f lineto\n", finalX, finalY))
+                        sb.append(String.format(Locale.US, "%.3f %.3f l\n", finalX, finalY))
                         currentX = finalX
                         currentY = finalY
                         lastControlX = currentX
@@ -496,7 +729,7 @@ object SvgToEpsConverter {
                         val x = tokenizer.nextNumber() ?: break
                         val finalX = if (isRelative) currentX + x else x
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f lineto\n", finalX, currentY))
+                        sb.append(String.format(Locale.US, "%.3f %.3f l\n", finalX, currentY))
                         currentX = finalX
                         lastControlX = currentX
                         lastControlY = currentY
@@ -511,7 +744,7 @@ object SvgToEpsConverter {
                         val y = tokenizer.nextNumber() ?: break
                         val finalY = if (isRelative) currentY + y else y
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f lineto\n", currentX, finalY))
+                        sb.append(String.format(Locale.US, "%.3f %.3f l\n", currentX, finalY))
                         currentY = finalY
                         lastControlX = currentX
                         lastControlY = currentY
@@ -537,7 +770,7 @@ object SvgToEpsConverter {
                         val fx = if (isRelative) currentX + x else x
                         val fy = if (isRelative) currentY + y else y
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f curveto\n", fx1, fy1, fx2, fy2, fx, fy))
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", fx1, fy1, fx2, fy2, fx, fy))
                         lastControlX = fx2
                         lastControlY = fy2
                         currentX = fx
@@ -562,7 +795,7 @@ object SvgToEpsConverter {
                         val fx = if (isRelative) currentX + x else x
                         val fy = if (isRelative) currentY + y else y
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f curveto\n", fx1, fy1, fx2, fy2, fx, fy))
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", fx1, fy1, fx2, fy2, fx, fy))
                         lastControlX = fx2
                         lastControlY = fy2
                         currentX = fx
@@ -590,7 +823,7 @@ object SvgToEpsConverter {
                         val cx2 = fx + (2f / 3f) * (qx1 - fx)
                         val cy2 = fy + (2f / 3f) * (qy1 - fy)
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f curveto\n", cx1, cy1, cx2, cy2, fx, fy))
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", cx1, cy1, cx2, cy2, fx, fy))
                         lastQuadControlX = qx1
                         lastQuadControlY = qy1
                         currentX = fx
@@ -616,7 +849,7 @@ object SvgToEpsConverter {
                         val cx2 = fx + (2f / 3f) * (qx1 - fx)
                         val cy2 = fy + (2f / 3f) * (qy1 - fy)
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f curveto\n", cx1, cy1, cx2, cy2, fx, fy))
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", cx1, cy1, cx2, cy2, fx, fy))
                         lastQuadControlX = qx1
                         lastQuadControlY = qy1
                         currentX = fx
@@ -646,7 +879,7 @@ object SvgToEpsConverter {
                         )
 
                         for (b in beziers) {
-                            sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f curveto\n", b[0], b[1], b[2], b[3], b[4], b[5]))
+                            sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", b[0], b[1], b[2], b[3], b[4], b[5]))
                         }
 
                         currentX = fx
@@ -660,7 +893,7 @@ object SvgToEpsConverter {
                 }
 
                 'Z' -> {
-                    sb.append("closepath\n")
+                    sb.append("h\n")
                     currentX = startX
                     currentY = startY
                     lastControlX = currentX
@@ -670,9 +903,7 @@ object SvgToEpsConverter {
                     lastCmd = if (isRelative) 'z' else 'Z'
                 }
 
-                else -> {
-                    // Unknown command, skip token
-                }
+                else -> {}
             }
         }
 
@@ -982,7 +1213,8 @@ object SvgToEpsConverter {
         element: Element,
         idMap: MutableMap<String, Element>,
         gradientMap: MutableMap<String, String>,
-        fullGradientMap: MutableMap<String, SvgGradientDef>
+        fullGradientMap: MutableMap<String, SvgGradientDef>,
+        clipPathMap: MutableMap<String, SvgClipPathDef>
     ) {
         val idAttr = element.getAttribute("id").trim()
         if (idAttr.isNotEmpty()) {
@@ -990,6 +1222,10 @@ object SvgToEpsConverter {
         }
 
         val tagName = element.tagName.lowercase(Locale.US)
+        if (tagName == "clippath" && idAttr.isNotEmpty()) {
+            clipPathMap[idAttr] = SvgClipPathDef(idAttr, element)
+        }
+
         if (tagName == "lineargradient" || tagName == "radialgradient") {
             if (idAttr.isNotEmpty()) {
                 val isRadial = tagName == "radialgradient"
@@ -1039,6 +1275,8 @@ object SvgToEpsConverter {
                     cxStr = element.getAttribute("cx").ifEmpty { "50%" },
                     cyStr = element.getAttribute("cy").ifEmpty { "50%" },
                     rStr = element.getAttribute("r").ifEmpty { "50%" },
+                    fxStr = element.getAttribute("fx"),
+                    fyStr = element.getAttribute("fy"),
                     isUserSpace = isUserSpace,
                     stops = stopsList,
                     transform = gradTransform
@@ -1050,24 +1288,15 @@ object SvgToEpsConverter {
         for (i in 0 until childNodes.length) {
             val child = childNodes.item(i)
             if (child.nodeType == Node.ELEMENT_NODE) {
-                indexElementsAndGradients(child as Element, idMap, gradientMap, fullGradientMap)
+                indexElementsAndGradients(child as Element, idMap, gradientMap, fullGradientMap, clipPathMap)
             }
         }
     }
 
     private fun writeGradientShading(
         sb: StringBuilder,
-        grad: SvgGradientDef,
-        fillRule: String?
+        grad: SvgGradientDef
     ) {
-        sb.append("gsave\n")
-        if (fillRule == "evenodd") {
-            sb.append("eoclip\n")
-        } else {
-            sb.append("clip\n")
-        }
-        sb.append("newpath\n")
-
         if (grad.transform.isNotEmpty()) {
             sb.append(convertSvgTransformToPostScript(grad.transform))
         }
@@ -1077,11 +1306,13 @@ object SvgToEpsConverter {
             val cx = parseCoordinateOrPercent(grad.cxStr, 256f)
             val cy = parseCoordinateOrPercent(grad.cyStr, 256f)
             val r = parseCoordinateOrPercent(grad.rStr, 256f)
+            val fx = if (grad.fxStr.isNotEmpty()) parseCoordinateOrPercent(grad.fxStr, 256f) else cx
+            val fy = if (grad.fyStr.isNotEmpty()) parseCoordinateOrPercent(grad.fyStr, 256f) else cy
 
             sb.append("<<\n")
             sb.append("  /ShadingType 3\n")
             sb.append("  /ColorSpace /DeviceRGB\n")
-            sb.append(String.format(Locale.US, "  /Coords [%.3f %.3f 0.0 %.3f %.3f %.3f]\n", cx, cy, cx, cy, r))
+            sb.append(String.format(Locale.US, "  /Coords [%.3f %.3f 0.0 %.3f %.3f %.3f]\n", fx, fy, cx, cy, r))
             writeFunction(sb, stops)
             sb.append("  /Extend [true true]\n")
             sb.append(">> shfill\n")
@@ -1099,8 +1330,6 @@ object SvgToEpsConverter {
             sb.append("  /Extend [true true]\n")
             sb.append(">> shfill\n")
         }
-
-        sb.append("grestore\n")
     }
 
     private fun writeFunction(sb: StringBuilder, stops: List<GradientStopDef>) {
