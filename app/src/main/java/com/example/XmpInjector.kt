@@ -17,10 +17,15 @@ object XmpInjector {
 
     private fun escapeXml(input: String): String {
         return input.replace("&", "&amp;")
+            .replace("\"", "&quot;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
-            .replace("\"", "&quot;")
-            .replace("'", "&apos;")
+    }
+
+    private fun cleanSingleLine(input: String): String {
+        return input.replace(Regex("""[\r\n]+"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
     }
 
     fun cleanXmlAndHtml(input: String): String {
@@ -261,232 +266,86 @@ object XmpInjector {
         }
     }
 
-    fun generateXmpMeta(title: String, description: String, keywords: List<String>, creator: String): String {
-        val rawTitle = title.trim()
-        val rawDesc = description.trim()
-        val effectiveTitle = if (rawTitle.isNotEmpty()) rawTitle else rawDesc
-        val effectiveDesc = if (rawDesc.isNotEmpty()) rawDesc else rawTitle
+    /**
+     * Generates raw XMP Packet string matching version 2.0.0 reference implementation (`Xn` in JS).
+     */
+    fun generateXmpPacket(title: String, description: String, keywords: List<String>): String {
+        val t = title.trim()
+        val d = description.trim()
+        val kwList = keywords.map { it.trim() }.filter { it.isNotEmpty() }
 
-        val titleEsc = escapeXml(effectiveTitle)
-        val descEsc = escapeXml(effectiveDesc)
-        val creatorEsc = escapeXml(creator.trim())
-        val keywordsHtml = keywords.map { it.trim() }.filter { it.isNotEmpty() }.joinToString("") { kw ->
-            "<rdf:li>${escapeXml(kw)}</rdf:li>"
+        val kwLines = if (kwList.isNotEmpty()) {
+            kwList.joinToString("\n") { kw -> "    <rdf:li>${escapeXml(kw)}</rdf:li>" }
+        } else ""
+
+        val lines = mutableListOf<String>()
+        lines.add("<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>")
+        lines.add("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">")
+        lines.add("<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">")
+        lines.add("<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">")
+
+        if (t.isNotEmpty()) {
+            lines.add("<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">${escapeXml(t)}</rdf:li></rdf:Alt></dc:title>")
+        }
+        if (d.isNotEmpty()) {
+            lines.add("<dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">${escapeXml(d)}</rdf:li></rdf:Alt></dc:description>")
+        }
+        if (kwLines.isNotEmpty()) {
+            lines.add("<dc:subject><rdf:Bag>\n$kwLines\n</rdf:Bag></dc:subject>")
+        }
+        if (t.isNotEmpty()) {
+            lines.add("<photoshop:Headline>${escapeXml(t)}</photoshop:Headline>")
         }
 
-        return """
-            |<x:xmpmeta xmlns:x="adobe:ns:meta/">
-            |  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-            |    <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">
-            |      <dc:title><rdf:Alt><rdf:li xml:lang="x-default">$titleEsc</rdf:li></rdf:Alt></dc:title>
-            |      <dc:description><rdf:Alt><rdf:li xml:lang="x-default">$descEsc</rdf:li></rdf:Alt></dc:description>
-            |      <dc:creator><rdf:Seq><rdf:li>$creatorEsc</rdf:li></rdf:Seq></dc:creator>
-            |      <dc:subject><rdf:Bag>$keywordsHtml</rdf:Bag></dc:subject>
-            |      <photoshop:Headline>$titleEsc</photoshop:Headline>
-            |      <photoshop:Caption>$descEsc</photoshop:Caption>
-            |    </rdf:Description>
-            |  </rdf:RDF>
-            |</x:xmpmeta>
-        """.trimMargin()
+        lines.add("</rdf:Description>")
+        lines.add("</rdf:RDF>")
+        lines.add("</x:xmpmeta>")
+        lines.add("<?xpacket end=\"w\"?>")
+
+        return lines.joinToString("\n")
     }
 
     /**
-     * Builds PostScript-safe XMP Packet for EPS files.
-     * Guarantees that dc:description, dc:title, photoshop:Caption, and photoshop:Headline
-     * are populated for Shutterstock & microstock compliance.
-     * Every line begins with '%' so that PostScript interpreters treat the packet as comments.
+     * Builds AI11_PDFMark5 Client Injection PageSetup block matching version 2.0.0 (`me` in JS).
      */
-    fun bangunXmpXml(title: String, description: String, keywords: List<String>, mimeType: String = "application/postscript"): String {
-        val rawTitle = title.trim()
-        val rawDesc = description.trim()
-        val effectiveTitle = if (rawTitle.isNotEmpty()) rawTitle else rawDesc
-        val effectiveDesc = if (rawDesc.isNotEmpty()) rawDesc else rawTitle
+    private fun buildClientInjectionPageSetup(title: String, description: String, keywords: List<String>): String {
+        val xmpXml = generateXmpPacket(title, description, keywords)
+        val endMarker = "%  &&end XMP packet marker&&"
 
-        val titleEsc = escapeXml(effectiveTitle)
-        val descEsc = escapeXml(effectiveDesc)
-        val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
-        val bagKeywords = cleanKeywords.joinToString("\n") { kw -> "%        <rdf:li>${escapeXml(kw)}</rdf:li>" }
+        val sb = StringBuilder()
+        sb.append("%ADOBeginClientInjection: PageSetup End \"AI11EPS\"\n")
+        sb.append("/currentdistillerparams where\n")
+        sb.append("{pop currentdistillerparams /CoreDistVersion get 5000 lt} {true} ifelse\n")
+        sb.append("{ userdict /AI11_PDFMark5 /cleartomark load put\n")
+        sb.append("userdict /AI11_ReadMetadata_PDFMark5 {flushfile cleartomark } bind put}\n")
+        sb.append("{ userdict /AI11_PDFMark5 /pdfmark load put\n")
+        sb.append("userdict /AI11_ReadMetadata_PDFMark5 {/PUT pdfmark} bind put } ifelse\n")
+        sb.append("[/NamespacePush AI11_PDFMark5\n")
+        sb.append("[/_objdef {vector_design_metadata_stream} /type /stream /OBJ AI11_PDFMark5\n")
+        sb.append("[{vector_design_metadata_stream}\n")
+        sb.append("currentfile 0 ($endMarker)\n")
+        sb.append("/SubFileDecode filter AI11_ReadMetadata_PDFMark5\n")
+        sb.append(xmpXml).append("\n")
+        sb.append(endMarker).append("\n")
+        sb.append("[{vector_design_metadata_stream}\n")
+        sb.append("<</Type /Metadata /Subtype /XML>>\n")
+        sb.append("/PUT AI11_PDFMark5\n")
+        sb.append("[/Document\n")
+        sb.append("1 dict begin /Metadata {vector_design_metadata_stream} def\n")
+        sb.append("currentdict end /BDC AI11_PDFMark5\n")
+        sb.append("%ADOEndClientInjection: PageSetup End \"AI11EPS\"\n")
 
-        val sb = java.lang.StringBuilder()
-        sb.append("%<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n")
-        sb.append("%<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n")
-        sb.append("%  <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n")
-        sb.append("%    <rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n")
-        sb.append("%      <dc:format>image/eps</dc:format>\n")
-        if (titleEsc.isNotEmpty()) {
-            sb.append("%      <dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">$titleEsc</rdf:li></rdf:Alt></dc:title>\n")
-        }
-        if (descEsc.isNotEmpty()) {
-            sb.append("%      <dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">$descEsc</rdf:li></rdf:Alt></dc:description>\n")
-        }
-        if (cleanKeywords.isNotEmpty()) {
-            sb.append("%      <dc:subject><rdf:Bag>\n$bagKeywords\n%      </rdf:Bag></dc:subject>\n")
-        }
-        if (titleEsc.isNotEmpty()) {
-            sb.append("%      <photoshop:Headline>$titleEsc</photoshop:Headline>\n")
-        }
-        if (descEsc.isNotEmpty()) {
-            sb.append("%      <photoshop:Caption>$descEsc</photoshop:Caption>\n")
-        }
-        sb.append("%    </rdf:Description>\n")
-        sb.append("%  </rdf:RDF>\n")
-        sb.append("%</x:xmpmeta>\n")
-        sb.append("%<?xpacket end=\"w\"?>")
         return sb.toString()
     }
 
-    fun injectIntoJpeg(
-        originalBytes: ByteArray,
-        title: String,
-        description: String,
-        keywords: List<String>,
-        creator: String
-    ): ByteArray {
-        if (originalBytes.size < 2 || originalBytes[0] != 0xFF.toByte() || originalBytes[1] != 0xD8.toByte()) {
-            return originalBytes
-        }
-
-        val xmpXml = generateXmpMeta(title, description, keywords, creator)
-        val xmpBytes = xmpXml.toByteArray(StandardCharsets.UTF_8)
-        
-        val signature = "http://ns.adobe.com/xap/1.0/\u0000"
-        val signatureBytes = signature.toByteArray(StandardCharsets.UTF_8)
-        
-        val seg = ByteArray(4 + signatureBytes.size + xmpBytes.size)
-        seg[0] = 0xFF.toByte()
-        seg[1] = 0xE1.toByte()
-        val len = signatureBytes.size + xmpBytes.size + 2
-        seg[2] = ((len ushr 8) and 0xFF).toByte()
-        seg[3] = (len and 0xFF).toByte()
-        
-        System.arraycopy(signatureBytes, 0, seg, 4, signatureBytes.size)
-        System.arraycopy(xmpBytes, 0, seg, 4 + signatureBytes.size, xmpBytes.size)
-        
-        var pos = 2
-        while (pos < originalBytes.size - 4) {
-            if (originalBytes[pos] == 0xFF.toByte() && originalBytes[pos + 1] == 0xE1.toByte()) {
-                val l = ((originalBytes[pos + 2].toInt() and 0xFF) shl 8) + (originalBytes[pos + 3].toInt() and 0xFF)
-                var isXmp = true
-                for (h in signatureBytes.indices) {
-                    if (pos + 4 + h >= originalBytes.size || originalBytes[pos + 4 + h] != signatureBytes[h]) {
-                        isXmp = false
-                        break
-                    }
-                }
-                if (isXmp) {
-                    val newJpeg = ByteArray(originalBytes.size - (2 + l) + seg.size)
-                    System.arraycopy(originalBytes, 0, newJpeg, 0, pos)
-                    System.arraycopy(seg, 0, newJpeg, pos, seg.size)
-                    System.arraycopy(originalBytes, pos + 2 + l, newJpeg, pos + seg.size, originalBytes.size - (pos + 2 + l))
-                    return newJpeg
-                }
-                pos += 2 + l
-            } else if (originalBytes[pos] == 0xFF.toByte() && (originalBytes[pos + 1] == 0xDA.toByte() || originalBytes[pos + 1] == 0xD9.toByte())) {
-                break
-            } else {
-                pos++
-            }
-        }
-        
-        val out = ByteArray(originalBytes.size + seg.size)
-        System.arraycopy(originalBytes, 0, out, 0, 2)
-        System.arraycopy(seg, 0, out, 2, seg.size)
-        System.arraycopy(originalBytes, 2, out, 2 + seg.size, originalBytes.size - 2)
-        return out
-    }
-
-    fun injectIntoPng(
-        originalBytes: ByteArray,
-        title: String,
-        description: String,
-        keywords: List<String>,
-        creator: String
-    ): ByteArray {
-        val xmpXml = generateXmpMeta(title, description, keywords, creator)
-        val xmpBytes = xmpXml.toByteArray(StandardCharsets.UTF_8)
-
-        val keywordBytes = "XML:com.adobe.xmp\u0000".toByteArray(StandardCharsets.UTF_8)
-        val compBytes = byteArrayOf(0, 0)
-        val langAndTransBytes = byteArrayOf(0, 0)
-
-        val chunkDataOutput = ByteArrayOutputStream()
-        chunkDataOutput.write(keywordBytes)
-        chunkDataOutput.write(compBytes)
-        chunkDataOutput.write(langAndTransBytes)
-        chunkDataOutput.write(xmpBytes)
-
-        val chunkData = chunkDataOutput.toByteArray()
-        val chunkTypeBytes = "iTXt".toByteArray(StandardCharsets.UTF_8)
-
-        val buffer = ByteBuffer.allocate(4 + chunkTypeBytes.size + chunkData.size + 4)
-        buffer.order(ByteOrder.BIG_ENDIAN)
-        buffer.putInt(chunkData.size)
-        buffer.put(chunkTypeBytes)
-        buffer.put(chunkData)
-
-        val crc = CRC32()
-        crc.update(chunkTypeBytes)
-        crc.update(chunkData)
-        buffer.putInt(crc.value.toInt())
-
-        val itxtChunkBytes = buffer.array()
-
-        val pngSignature = byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10)
-        if (originalBytes.size < 8) {
-            throw IllegalArgumentException("Not a valid PNG file (Too short)")
-        }
-        for (i in 0..7) {
-            if (originalBytes[i] != pngSignature[i]) {
-                throw IllegalArgumentException("Not a valid PNG file (Signature mismatch)")
-            }
-        }
-
-        val outputStream = ByteArrayOutputStream()
-        outputStream.write(pngSignature)
-
-        var offset = 8
-        while (offset < originalBytes.size) {
-            if (offset + 8 > originalBytes.size) {
-                outputStream.write(originalBytes, offset, originalBytes.size - offset)
-                break
-            }
-
-            val lenBuf = ByteBuffer.wrap(originalBytes, offset, 4)
-            lenBuf.order(ByteOrder.BIG_ENDIAN)
-            val chunkLen = lenBuf.int
-
-            val typeBytes = ByteArray(4)
-            System.arraycopy(originalBytes, offset + 4, typeBytes, 0, 4)
-            val chunkType = String(typeBytes, StandardCharsets.US_ASCII)
-
-            var isExistingXmp = false
-            if (chunkType == "iTXt" && offset + 8 + "XML:com.adobe.xmp\u0000".length <= originalBytes.size) {
-                val kwCompare = String(originalBytes, offset + 8, "XML:com.adobe.xmp\u0000".length, StandardCharsets.UTF_8)
-                if (kwCompare == "XML:com.adobe.xmp\u0000") {
-                    isExistingXmp = true
-                }
-            }
-
-            if (isExistingXmp) {
-                offset += 4 + 4 + chunkLen + 4
-            } else {
-                val totalChunkSize = 4 + 4 + chunkLen + 4
-                if (offset + totalChunkSize <= originalBytes.size) {
-                    outputStream.write(originalBytes, offset, totalChunkSize)
-                    offset += totalChunkSize
-                } else {
-                    outputStream.write(originalBytes, offset, originalBytes.size - offset)
-                    break
-                }
-
-                if (chunkType == "IHDR") {
-                    outputStream.write(itxtChunkBytes)
-                }
-            }
-        }
-
-        return outputStream.toByteArray()
-    }
+    /**
+     * AI11_PDFMark5 Client Injection PageTrailer block matching version 2.0.0 (`xe` in JS).
+     */
+    private const val CLIENT_INJECTION_TRAILER =
+        "%ADOBeginClientInjection: PageTrailer Start \"AI11EPS\"\n" +
+        "[/EMC AI11_PDFMark5\n" +
+        "[/NamespacePop AI11_PDFMark5\n" +
+        "%ADOEndClientInjection: PageTrailer Start \"AI11EPS\"\n"
 
     fun injectIntoEps(
         originalBytes: ByteArray,
@@ -499,7 +358,10 @@ object XmpInjector {
             val metaTitle = title.trim()
             val metaDesc = description.trim()
             val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
-            val metaCreator = creator.trim()
+
+            if (metaTitle.isEmpty() && metaDesc.isEmpty() && cleanKeywords.isEmpty()) {
+                return originalBytes
+            }
 
             // Check if DOS EPS binary header is present (Magic: 0xC5D0D3C6)
             val isDosEps = originalBytes.size >= 30 &&
@@ -518,7 +380,7 @@ object XmpInjector {
 
                 if (psOffset in 30..originalBytes.size && psLength > 0 && psOffset + psLength <= originalBytes.size) {
                     val rawPsBytes = originalBytes.copyOfRange(psOffset, psOffset + psLength)
-                    val injectedPsBytes = injectIntoPostScriptBytes(rawPsBytes, metaTitle, metaDesc, cleanKeywords, metaCreator)
+                    val injectedPsBytes = injectIntoPostScriptBytes(rawPsBytes, metaTitle, metaDesc, cleanKeywords)
                     val diff = injectedPsBytes.size - rawPsBytes.size
 
                     val newHeader = originalBytes.copyOfRange(0, 30)
@@ -549,71 +411,83 @@ object XmpInjector {
             }
 
             // Pure PostScript EPS
-            return injectIntoPostScriptBytes(originalBytes, metaTitle, metaDesc, cleanKeywords, metaCreator)
+            return injectIntoPostScriptBytes(originalBytes, metaTitle, metaDesc, cleanKeywords)
         } catch (e: Exception) {
             e.printStackTrace()
             return originalBytes
         }
     }
 
+    /**
+     * Injects EPS metadata matching version 2.0.0 reference implementation (`we` in JS).
+     */
     private fun injectIntoPostScriptBytes(
         psBytes: ByteArray,
         metaTitle: String,
         metaDesc: String,
-        cleanKeywords: List<String>,
-        metaCreator: String
+        cleanKeywords: List<String>
     ): ByteArray {
+        val t = metaTitle.trim()
+        val d = metaDesc.trim()
+        val kwList = cleanKeywords.map { it.trim() }.filter { it.isNotEmpty() }
+
         var psStr = String(psBytes, StandardCharsets.ISO_8859_1)
 
-        // 1. Remove ANY complex client injection scripts (%ADOBeginClientInjection ... %ADOEndClientInjection)
-        val clientInjectionRegex = Regex("""%ADOBeginClientInjection[\s\S]*?%ADOEndClientInjection[^\r\n]*\r?\n?""")
-        psStr = psStr.replace(clientInjectionRegex, "")
+        // 1. Remove previous client injection blocks or DSC comments if re-injecting
+        val clientPageSetupRegex = Regex("""%ADOBeginClientInjection:\s*PageSetup\s*End\s*"AI11EPS"[\s\S]*?%ADOEndClientInjection:\s*PageSetup\s*End\s*"AI11EPS"\r?\n?""")
+        psStr = psStr.replace(clientPageSetupRegex, "")
 
-        // 2. Remove previous XMP blocks if present
-        val existingXmpRegex = Regex("""%BeginXMP: BeforeBegin[\s\S]*?%EndXMP:\r?\n?""")
-        psStr = psStr.replace(existingXmpRegex, "")
+        val clientTrailerRegex = Regex("""%ADOBeginClientInjection:\s*PageTrailer\s*Start\s*"AI11EPS"[\s\S]*?%ADOEndClientInjection:\s*PageTrailer\s*Start\s*"AI11EPS"\r?\n?""")
+        psStr = psStr.replace(clientTrailerRegex, "")
 
-        // 3. PostScript standard comments & single universal XMP packet block
-        val xmpPacket = bangunXmpXml(metaTitle, metaDesc, cleanKeywords, "application/postscript")
-        val headerKomentarList = mutableListOf<String>()
-        headerKomentarList.add("%ADO_ContainsXMP: MainFirst")
+        val oldDscRegex = Regex("""%ADO_ContainsXMP:\s*MainFirst[\s\S]*?(?=%%EndComments|\r?\n)""")
+        psStr = psStr.replace(oldDscRegex, "")
 
-        val rawTitle = metaTitle.trim()
-        val rawDesc = metaDesc.trim()
-        val effectiveTitle = if (rawTitle.isNotEmpty()) rawTitle else rawDesc
-        val effectiveDesc = if (rawDesc.isNotEmpty()) rawDesc else rawTitle
-
-        if (effectiveTitle.isNotEmpty()) {
-            headerKomentarList.add("%%Title: $effectiveTitle")
+        // 2. Build DSC Comments (matches `we` in JS)
+        val dscList = mutableListOf<String>()
+        dscList.add("%ADO_ContainsXMP: MainFirst")
+        if (t.isNotEmpty()) {
+            dscList.add("%%Title: ${cleanSingleLine(t)}")
         }
-        if (effectiveDesc.isNotEmpty()) {
-            headerKomentarList.add("%%Subject: $effectiveDesc")
-            headerKomentarList.add("%%Comments: $effectiveDesc")
+        if (kwList.isNotEmpty()) {
+            dscList.add("%%Keywords: ${cleanSingleLine(kwList.joinToString(", "))}")
         }
-        if (metaCreator.isNotEmpty()) {
-            headerKomentarList.add("%%Creator: $metaCreator")
-        }
-        if (cleanKeywords.isNotEmpty()) {
-            headerKomentarList.add("%%Keywords: " + cleanKeywords.joinToString(", "))
-        }
-        headerKomentarList.add("%BeginXMP: BeforeBegin\n$xmpPacket\n%EndXMP:")
-        val headerKomentar = headerKomentarList.joinToString("\n")
+        val dscCommentBlock = dscList.joinToString("\n")
 
-        // 4. Inject comments right before %%EndComments
-        val endCommentsRegex = Regex("""\r?\n%%EndComments""")
-        if (psStr.contains(endCommentsRegex)) {
-            psStr = psStr.replace(endCommentsRegex) {
-                "\n" + headerKomentar + "\n%%EndComments"
-            }
-        } else {
-            val psHeaderRegex = Regex("""%!PS-Adobe-3\.0[^\r\n]*""")
-            if (psStr.contains(psHeaderRegex)) {
-                psStr = psStr.replace(psHeaderRegex) { match ->
-                    match.value + "\n" + headerKomentar + "\n%%EndComments"
+        // 3. Build PageSetup Client Injection (matches `me` in JS)
+        val pageSetupBlock = buildClientInjectionPageSetup(t, d, kwList)
+
+        // 4. Inject DSC comments right before %%EndComments
+        if (dscCommentBlock.isNotEmpty()) {
+            val endCommentsRegex = Regex("""\r?\n%%EndComments""")
+            if (psStr.contains(endCommentsRegex)) {
+                psStr = psStr.replace(endCommentsRegex) { match ->
+                    "\n" + dscCommentBlock + "\n%%EndComments"
                 }
             } else {
-                psStr = headerKomentar + "\n" + psStr
+                val psHeaderRegex = Regex("""%!PS-Adobe-3\.0[^\r\n]*""")
+                if (psStr.contains(psHeaderRegex)) {
+                    psStr = psStr.replace(psHeaderRegex) { match ->
+                        match.value + "\n" + dscCommentBlock
+                    }
+                }
             }
+        }
+
+        // 5. Inject PageSetup Client Injection right after %%EndComments
+        val endCommentsPattern = Regex("""(%%EndComments\s*)""")
+        if (psStr.contains(endCommentsPattern)) {
+            psStr = psStr.replace(endCommentsPattern, "$1\n$pageSetupBlock\n")
+        } else {
+            psStr = pageSetupBlock + "\n" + psStr
+        }
+
+        // 6. Inject PageTrailer Client Injection before showpage \n %%EOF
+        val eofRegex = Regex("""\r?\nshowpage\r?\n%%EOF""")
+        if (psStr.contains(eofRegex)) {
+            psStr = psStr.replace(eofRegex, "\n$CLIENT_INJECTION_TRAILER\nshowpage\n%%EOF")
+        } else {
+            psStr += "\n$CLIENT_INJECTION_TRAILER"
         }
 
         return toBinaryPreservingBytes(psStr)
@@ -654,6 +528,9 @@ object XmpInjector {
         bytes[offset + 1] = ((value ushr 8) and 0xFF).toByte()
     }
 
+    /**
+     * Injects SVG metadata matching version 2.0.0 reference implementation (`he` / `$e` in JS).
+     */
     fun injectIntoSvg(
         originalBytes: ByteArray,
         title: String,
@@ -661,58 +538,34 @@ object XmpInjector {
         keywords: List<String>
     ): ByteArray {
         try {
-            val metaTitle = title.trim()
-            val metaDesc = description.trim()
-            val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
+            val t = title.trim()
+            val d = description.trim()
+            val kwList = keywords.map { it.trim() }.filter { it.isNotEmpty() }
 
-            if (metaTitle.isEmpty() && metaDesc.isEmpty() && cleanKeywords.isEmpty()) {
+            if (t.isEmpty() && d.isEmpty() && kwList.isEmpty()) {
                 return originalBytes
             }
 
-            val effectiveTitle = if (metaTitle.isNotEmpty()) metaTitle else metaDesc
-            val effectiveDesc = if (metaDesc.isNotEmpty()) metaDesc else metaTitle
+            val kwStr = kwList.joinToString(", ")
+            val titleTag = if (t.isNotEmpty()) "<title>${escapeXml(t)}</title>" else ""
+            val descTag = if (d.isNotEmpty()) "<desc>${escapeXml(d)}</desc>" else ""
+
+            val dcTitle = if (t.isNotEmpty()) "<dc:title>${escapeXml(t)}</dc:title>" else ""
+            val dcDesc = if (d.isNotEmpty()) "<dc:description>${escapeXml(d)}</dc:description>" else ""
+            val dcSubj = if (kwStr.isNotEmpty()) "<dc:subject>${escapeXml(kwStr)}</dc:subject>" else ""
+
+            val metadataContent = listOf(dcTitle, dcDesc, dcSubj).filter { it.isNotEmpty() }.joinToString("")
+            val metadataTag = if (metadataContent.isNotEmpty()) "<metadata>$metadataContent</metadata>" else ""
+
+            val svgMetaBlock = listOf(titleTag, descTag, metadataTag).filter { it.isNotEmpty() }.joinToString("\n")
+            if (svgMetaBlock.isEmpty()) return originalBytes
 
             val fileStr = String(originalBytes, StandardCharsets.UTF_8)
-            val titleEsc = escapeXml(effectiveTitle)
-            val descEsc = escapeXml(effectiveDesc)
-            val bagKeywords = cleanKeywords
-                .map { kw -> "          <rdf:li>${escapeXml(kw)}</rdf:li>" }
-                .joinToString("\n")
-
-            val svgRdfXml = """<metadata id="metadata-xmp">
-  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-           xmlns:dc="http://purl.org/dc/elements/1.1/"
-           xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">
-    <rdf:Description rdf:about="">
-      <dc:format>image/svg+xml</dc:format>
-      <dc:title>
-        <rdf:Alt>
-          <rdf:li xml:lang="x-default">$titleEsc</rdf:li>
-        </rdf:Alt>
-      </dc:title>
-      <dc:description>
-        <rdf:Alt>
-          <rdf:li xml:lang="x-default">$descEsc</rdf:li>
-        </rdf:Alt>
-      </dc:description>
-      <dc:subject>
-        <rdf:Bag>
-$bagKeywords
-        </rdf:Bag>
-      </dc:subject>
-      <photoshop:Headline>$titleEsc</photoshop:Headline>
-      <photoshop:Caption>$descEsc</photoshop:Caption>
-    </rdf:Description>
-  </rdf:RDF>
-</metadata>"""
-
-            var hasilSvg = fileStr
-            if (hasilSvg.contains("<metadata")) {
-                val metadataRegex = Regex("<metadata[\\s\\S]*?</metadata>")
-                hasilSvg = hasilSvg.replace(metadataRegex, svgRdfXml)
+            val svgOpenTagRegex = Regex("""(<svg\b[^>]*>)""")
+            val hasilSvg = if (fileStr.contains(svgOpenTagRegex)) {
+                fileStr.replace(svgOpenTagRegex, "$1 xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n$svgMetaBlock")
             } else {
-                val svgOpenTagRegex = Regex("(<svg[^>]*>)")
-                hasilSvg = hasilSvg.replace(svgOpenTagRegex, "$1\n$svgRdfXml")
+                svgMetaBlock + "\n" + fileStr
             }
 
             return hasilSvg.toByteArray(StandardCharsets.UTF_8)
@@ -720,5 +573,134 @@ $bagKeywords
             e.printStackTrace()
             return originalBytes
         }
+    }
+
+    /**
+     * Injects JPEG APP1 XMP metadata matching version 2.0.0 reference implementation (`ve` in JS).
+     */
+    fun injectIntoJpeg(
+        originalBytes: ByteArray,
+        title: String,
+        description: String,
+        keywords: List<String>,
+        creator: String = ""
+    ): ByteArray {
+        val t = title.trim()
+        val d = description.trim()
+        val kwList = keywords.map { it.trim() }.filter { it.isNotEmpty() }
+
+        if (t.isEmpty() && d.isEmpty() && kwList.isEmpty()) {
+            return originalBytes
+        }
+
+        if (originalBytes.size < 2 || originalBytes[0] != 0xFF.toByte() || originalBytes[1] != 0xD8.toByte()) {
+            return originalBytes
+        }
+
+        val xmpXml = generateXmpPacket(t, d, kwList)
+        val xmpHeader = "http://ns.adobe.com/xap/1.0/\u0000"
+        val payload = (xmpHeader + xmpXml).toByteArray(StandardCharsets.UTF_8)
+
+        val seg = ByteArray(4 + payload.size)
+        seg[0] = 0xFF.toByte()
+        seg[1] = 0xE1.toByte()
+        val len = payload.size + 2
+        seg[2] = ((len ushr 8) and 0xFF).toByte()
+        seg[3] = (len and 0xFF).toByte()
+
+        System.arraycopy(payload, 0, seg, 4, payload.size)
+
+        val out = ByteArray(originalBytes.size + seg.size)
+        System.arraycopy(originalBytes, 0, out, 0, 2)
+        System.arraycopy(seg, 0, out, 2, seg.size)
+        System.arraycopy(originalBytes, 2, out, 2 + seg.size, originalBytes.size - 2)
+        return out
+    }
+
+    /**
+     * Injects PNG tEXt chunks matching version 2.0.0 reference implementation (`Se` / `an` in JS).
+     */
+    fun injectIntoPng(
+        originalBytes: ByteArray,
+        title: String,
+        description: String,
+        keywords: List<String>,
+        creator: String = ""
+    ): ByteArray {
+        val t = title.trim()
+        val d = description.trim()
+        val kwList = keywords.map { it.trim() }.filter { it.isNotEmpty() }
+
+        if (t.isEmpty() && d.isEmpty() && kwList.isEmpty()) {
+            return originalBytes
+        }
+
+        val pngSignature = byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10)
+        if (originalBytes.size < 8) return originalBytes
+        for (i in 0..7) {
+            if (originalBytes[i] != pngSignature[i]) return originalBytes
+        }
+
+        var iendOffset = -1
+        var offset = 8
+        while (offset + 8 <= originalBytes.size) {
+            val lenBuf = ByteBuffer.wrap(originalBytes, offset, 4)
+            lenBuf.order(ByteOrder.BIG_ENDIAN)
+            val chunkLen = lenBuf.int
+
+            val typeBytes = ByteArray(4)
+            System.arraycopy(originalBytes, offset + 4, typeBytes, 0, 4)
+            val chunkType = String(typeBytes, StandardCharsets.US_ASCII)
+
+            if (chunkType == "IEND") {
+                iendOffset = offset
+                break
+            }
+            offset += 12 + chunkLen
+        }
+
+        if (iendOffset < 0) return originalBytes
+
+        val textChunks = mutableListOf<ByteArray>()
+        if (t.isNotEmpty()) textChunks.add(createPngTextChunk("Title", t))
+        if (d.isNotEmpty()) textChunks.add(createPngTextChunk("Description", d))
+        if (kwList.isNotEmpty()) textChunks.add(createPngTextChunk("Keywords", kwList.joinToString(", ")))
+
+        val totalExtraSize = textChunks.sumOf { it.size }
+        val out = ByteArray(originalBytes.size + totalExtraSize)
+
+        System.arraycopy(originalBytes, 0, out, 0, iendOffset)
+        var writePos = iendOffset
+        for (chunk in textChunks) {
+            System.arraycopy(chunk, 0, out, writePos, chunk.size)
+            writePos += chunk.size
+        }
+        System.arraycopy(originalBytes, iendOffset, out, writePos, originalBytes.size - iendOffset)
+
+        return out
+    }
+
+    private fun createPngTextChunk(keyword: String, text: String): ByteArray {
+        val keywordBytes = keyword.toByteArray(StandardCharsets.UTF_8)
+        val textBytes = text.toByteArray(StandardCharsets.UTF_8)
+        val chunkData = ByteArray(keywordBytes.size + 1 + textBytes.size)
+        System.arraycopy(keywordBytes, 0, chunkData, 0, keywordBytes.size)
+        chunkData[keywordBytes.size] = 0.toByte()
+        System.arraycopy(textBytes, 0, chunkData, keywordBytes.size + 1, textBytes.size)
+
+        val typeBytes = "tEXt".toByteArray(StandardCharsets.US_ASCII)
+
+        val crc = CRC32()
+        crc.update(typeBytes)
+        crc.update(chunkData)
+
+        val buffer = ByteBuffer.allocate(4 + typeBytes.size + chunkData.size + 4)
+        buffer.order(ByteOrder.BIG_ENDIAN)
+        buffer.putInt(chunkData.size)
+        buffer.put(typeBytes)
+        buffer.put(chunkData)
+        buffer.putInt(crc.value.toInt())
+
+        return buffer.array()
     }
 }

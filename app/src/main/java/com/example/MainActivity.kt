@@ -1928,11 +1928,22 @@ fun AutoMetadataSettingsScreen(
     val descCharLimit by viewModel.descCharLimit.collectAsStateWithLifecycle()
     val keywordsLimit by viewModel.keywordsLimit.collectAsStateWithLifecycle()
     val blacklistWords by viewModel.blacklistWords.collectAsStateWithLifecycle()
+    val savedBlacklistWords by viewModel.savedBlacklistWords.collectAsStateWithLifecycle()
     val promptConcept by viewModel.promptConcept.collectAsStateWithLifecycle()
+    val savedPromptConcept by viewModel.savedPromptConcept.collectAsStateWithLifecycle()
     val isAutoInjectionEnabled by viewModel.isAutoInjectionEnabled.collectAsStateWithLifecycle()
 
-    val blacklistSaveColor = if (blacklistWords.isNotBlank()) Color(0xFF22C55E) else Color(0xFF64748B)
-    val conceptSaveColor = if (promptConcept.isNotBlank()) Color(0xFF22C55E) else Color(0xFF64748B)
+    val blacklistSaveColor = when {
+        blacklistWords.isBlank() -> Color(0xFF64748B)
+        savedBlacklistWords.isNotBlank() && blacklistWords == savedBlacklistWords -> Color(0xFF22C55E)
+        else -> Color(0xFFF25C05)
+    }
+
+    val conceptSaveColor = when {
+        promptConcept.isBlank() -> Color(0xFF64748B)
+        savedPromptConcept.isNotBlank() && promptConcept == savedPromptConcept -> Color(0xFF22C55E)
+        else -> Color(0xFFF25C05)
+    }
 
     var tempGeminiKey by remember(geminiKey) { mutableStateOf(geminiKey) }
     var keyVisibility by remember { mutableStateOf(false) }

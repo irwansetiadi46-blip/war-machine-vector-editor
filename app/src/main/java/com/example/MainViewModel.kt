@@ -626,15 +626,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _keywords.value = ""
         recalculateMetadataFormFromSelection()
 
-        // Thoroughly clear cache directory, temp preview files, and Coil image disk/memory cache
+        // Clean temp preview files and Coil image disk/memory cache (preserve offline keyword database)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 context.cacheDir?.listFiles()?.forEach { file ->
-                    try { file.deleteRecursively() } catch (_: Exception) {}
-                }
-                val localShutter = java.io.File(context.filesDir, "shutterstock_keywords_local.json")
-                if (localShutter.exists()) {
-                    localShutter.delete()
+                    if (file.name.startsWith("preview_svg_") || file.name.startsWith("preview_eps_")) {
+                        try { file.deleteRecursively() } catch (_: Exception) {}
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -2123,5 +2121,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun downloadIndividualFile(id: Int) {
         showSvgExportDialogForIndividual(id)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        // Clean temporary preview files only when ViewModel is completely destroyed (App closed from background)
+        try {
+            context.cacheDir?.listFiles()?.forEach { file ->
+                if (file.name.startsWith("preview_svg_") || file.name.startsWith("preview_eps_")) {
+                    try { file.delete() } catch (_: Exception) {}
+                }
+            }
+        } catch (_: Exception) {}
     }
 }
