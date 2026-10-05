@@ -47,93 +47,9 @@ class OfflineKeywordMatcher(private val context: Context) {
     private val tfIdfIndex = SimpleTfIdfIndex()
 
     fun init(context: Context) {
-        Log.d(TAG, "Initializing OfflineKeywordMatcher database in background...")
-        
-        // UPDATE 2 START: Parser with flexible backward compat for former array structure & new object structure
-        try {
-            val file = File(context.filesDir, "shutterstock_keywords_local.json")
-            val jsonString = if (file.exists()) {
-                Log.d(TAG, "Loading keywords from local file: ${file.absolutePath}")
-                file.readText()
-            } else {
-                Log.d(TAG, "Loading keywords from assets: shutterstock_keywords.json")
-                context.assets.open("shutterstock_keywords.json").bufferedReader().use { it.readText() }
-            }
-
-            val parser = JsonParser()
-            val rootElement = parser.parse(jsonString)
-            keywordsDb.clear()
-
-            if (rootElement.isJsonObject) {
-                val rootObj = rootElement.asJsonObject
-                for ((key, value) in rootObj.entrySet()) {
-                    if (value.isJsonArray) {
-                        // Former format: CategoryName -> Array definition of strings
-                        val arr = value.asJsonArray
-                        for (elem in arr) {
-                            val kw = elem.asString.lowercase(Locale.ROOT).trim()
-                            if (kw.isNotEmpty()) {
-                                keywordsDb[kw] = KeywordDbItem(keyword = kw, weight = 50, synonyms = emptyList())
-                            }
-                        }
-                    } else if (value.isJsonObject) {
-                        // New format: KeywordName -> Object definition
-                        val kwObj = value.asJsonObject
-                        val kw = key.lowercase(Locale.ROOT).trim()
-                        val weight = if (kwObj.has("weight")) kwObj.get("weight").asInt else 50
-                        val synonymsList = mutableListOf<String>()
-                        if (kwObj.has("synonyms") && kwObj.get("synonyms").isJsonArray) {
-                            val synArr = kwObj.get("synonyms").asJsonArray
-                            for (s in synArr) {
-                                synonymsList.add(s.asString.lowercase(Locale.ROOT).trim())
-                            }
-                        }
-                        keywordsDb[kw] = KeywordDbItem(keyword = kw, weight = weight, synonyms = synonymsList)
-                    }
-                }
-            }
-            Log.d(TAG, "Successfully prepared ${keywordsDb.size} keywords in system.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed parsing keywords DB: ${e.message}", e)
-        }
-        // UPDATE 2 END
-
-        // UPDATE 3 START: Loading synonyms from asset synonyms.json
-        try {
-            val fileExists = context.assets.list("")?.contains("synonyms.json") == true
-            if (fileExists) {
-                val synString = context.assets.open("synonyms.json").bufferedReader().use { it.readText() }
-                val parser = JsonParser()
-                val rootElement = parser.parse(synString)
-                synonymsMap.clear()
-                if (rootElement.isJsonObject) {
-                    val rootObj = rootElement.asJsonObject
-                    for ((key, value) in rootObj.entrySet()) {
-                        if (value.isJsonArray) {
-                            val arr = value.asJsonArray
-                            val list = mutableListOf<String>()
-                            for (elem in arr) {
-                                list.add(elem.asString.lowercase(Locale.ROOT).trim())
-                            }
-                            synonymsMap[key.lowercase(Locale.ROOT).trim()] = list
-                        }
-                    }
-                }
-                Log.d(TAG, "Successfully loaded ${synonymsMap.size} synonyms classifications.")
-            } else {
-                Log.w(TAG, "synonyms.json not found in assets directory.")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed loading synonyms map: ${e.message}", e)
-        }
-        // UPDATE 3 END
-
-        // UPDATE 4 START: Indices initialization
-        try {
-            tfIdfIndex.index(keywordsDb)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error indexing TF-IDF: ${e.message}", e)
-        }
+        // Offline keyword assets removed per user requirement
+        keywordsDb.clear()
+        synonymsMap.clear()
     }
 
     suspend fun matchKeywords(description: String, context: Context): List<String> {

@@ -35,6 +35,14 @@ data class KeywordItem(
     val replacement: String? = null
 )
 
+enum class ProcessStatus {
+    IDLE,
+    WAITING,
+    PROCESSING,
+    SUCCESS,
+    FAILED
+}
+
 data class ImageItem(
     val id: Int,
     val name: String,
@@ -52,7 +60,8 @@ data class ImageItem(
     val isGeneratingMetadata: Boolean = false,
     val isInjectingIndividual: Boolean = false,
     val previewUri: Uri? = null,
-    val previewBytes: ByteArray? = null
+    val previewBytes: ByteArray? = null,
+    val processStatus: ProcessStatus = ProcessStatus.IDLE
 ) {
     val isGenerated: Boolean
         get() = individualTitle.isNotBlank() || individualKeywords.isNotBlank() || individualDescription.isNotBlank() || hasMetadata
@@ -165,6 +174,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var globalGenerationJob: kotlinx.coroutines.Job? = null
     private val individualGenerationJobs = mutableMapOf<Int, kotlinx.coroutines.Job>()
+    private var currentBatchProcessingId: Int? = null
 
     private val _isInjecting = MutableStateFlow(false)
     val isInjecting = _isInjecting.asStateFlow()
@@ -193,17 +203,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isOfflineMode = MutableStateFlow(false)
     val isOfflineMode = _isOfflineMode.asStateFlow()
 
+    private val _isTouchEffectEnabled = MutableStateFlow(true)
+    val isTouchEffectEnabled = _isTouchEffectEnabled.asStateFlow()
+
+    private val _selectedTouchEffect = MutableStateFlow("Glowing Ring")
+    val selectedTouchEffect = _selectedTouchEffect.asStateFlow()
+
     private val _toastFlow = MutableStateFlow<String?>(null)
     val toastFlow = _toastFlow.asStateFlow()
 
-    private var localKeywordsDb: MutableMap<String, MutableList<String>> = mutableMapOf()
-
     init {
         loadApiKeys()
-        loadKeywordsDatabase()
-        viewModelScope.launch(Dispatchers.IO) {
-            offlineKeywordMatcher.init(context)
-        }
     }
 
     fun setOfflineMode(enabled: Boolean) {
@@ -212,88 +222,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putBoolean("is_offline_mode", enabled).apply()
     }
 
-    private fun loadKeywordsDatabase() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val gson = Gson()
-                val file = java.io.File(context.filesDir, "shutterstock_keywords_local.json")
-                val jsonString = if (file.exists()) {
-                    file.readText()
-                } else {
-                    context.assets.open("shutterstock_keywords.json").bufferedReader().use { it.readText() }
-                }
-                val type = object : com.google.gson.reflect.TypeToken<Map<String, List<String>>>() {}.type
-                val parsed: Map<String, List<String>> = gson.fromJson(jsonString, type)
-                localKeywordsDb = parsed.mapValues { it.value.toMutableList() }.toMutableMap()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    private fun saveKeywordsDatabaseLocal() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val gson = Gson()
-                val file = java.io.File(context.filesDir, "shutterstock_keywords_local.json")
-                val jsonString = gson.toJson(localKeywordsDb)
-                file.writeText(jsonString)
-                offlineKeywordMatcher.init(context)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    fun updateDatabaseWithNewOnlineKeywords(keywordsString: String) {
-        if (keywordsString.isBlank() || localKeywordsDb.isEmpty()) return
-
-        val currentKeywords = keywordsString.split(",")
-            .map { it.trim().lowercase() }
-            .filter { it.isNotEmpty() }
-
-        if (currentKeywords.isEmpty()) return
-
-        // 1. Collect all keywords that currently exist in the database (flatten)
-        val existingKeywordsSet = localKeywordsDb.values.flatten().map { it.lowercase() }.toSet()
-
-        // 2. Identify missing keywords
-        val missingKeywords = currentKeywords.filter { it !in existingKeywordsSet }
-        if (missingKeywords.isEmpty()) return
-
-        // 3. Find the best matching category by counting overlaps of existing keywords
-        var bestCategory = "arts" // fallback
-        var maxOverlap = -1
-
-        for ((category, keywordsList) in localKeywordsDb) {
-            val catKeywordsSet = keywordsList.map { it.lowercase() }.toSet()
-            val overlapCount = currentKeywords.count { it in catKeywordsSet }
-            if (overlapCount > maxOverlap) {
-                maxOverlap = overlapCount
-                bestCategory = category
-            }
-        }
-
-        // 4. Add missing keywords to the best category, ensuring NO duplicates (though they are not in the existing set anyway)
-        val targetList = localKeywordsDb[bestCategory] ?: mutableListOf()
-        var dbChanged = false
-        for (kw in missingKeywords) {
-            if (!targetList.contains(kw)) {
-                targetList.add(kw)
-                dbChanged = true
-            }
-        }
-
-        if (dbChanged) {
-            localKeywordsDb[bestCategory] = targetList
-            saveKeywordsDatabaseLocal()
-        }
-    }
-
     fun generateKeywordsOffline() {
         val concept = _promptConcept.value
         if (concept.isBlank()) {
-            _toastFlow.value = "Konsep tidak boleh kosong!"
+            _toastFlow.value = "Need Concept"
             return
         }
 
@@ -306,7 +238,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val resultKeywords = offlineKeywordMatcher.matchKeywords(concept, context)
 
                 if (resultKeywords.isEmpty()) {
-                    _toastFlow.value = "Masukkan kata kunci inti atau deskripsi yang lebih spesifik!"
+                    _toastFlow.value = "Need Details"
                     return@launch
                 }
 
@@ -316,7 +248,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _keywords.value = resultString
                 _title.value = ""          // Leave empty as required by user in offline mode
                 _description.value = ""    // Leave empty as required by user in offline mode
-                _toastFlow.value = "Offline Keywords berhasil digenerate (${resultKeywords.size} kata kunci)!"
+                _toastFlow.value = "Generated"
 
                 if (_isAutoInjectionEnabled.value) {
                     withContext(Dispatchers.Main) {
@@ -330,7 +262,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             } catch (e: Exception) {
-                _toastFlow.value = "Error Offline Generation: ${e.message}"
+                _toastFlow.value = "AI Error"
             } finally {
                 _isGeneratingAi.value = false
             }
@@ -361,6 +293,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // Auto-load Auto Injection preference (Default ON)
         _isAutoInjectionEnabled.value = prefs.getBoolean("is_auto_injection", true)
+
+        // Auto-load Touch Effect preferences (Default ON, Glowing Ring)
+        _isTouchEffectEnabled.value = prefs.getBoolean("is_touch_effect_enabled", true)
+        _selectedTouchEffect.value = prefs.getString("selected_touch_effect", "Glowing Ring") ?: "Glowing Ring"
+    }
+
+    fun setTouchEffectEnabled(enabled: Boolean) {
+        _isTouchEffectEnabled.value = enabled
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("is_touch_effect_enabled", enabled).apply()
+    }
+
+    fun setSelectedTouchEffect(effect: String) {
+        _selectedTouchEffect.value = effect
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("selected_touch_effect", effect).apply()
     }
 
     fun saveApiKey(gemini: String) {
@@ -372,7 +320,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         _geminiKey.value = gemini
         _selectedProvider.value = "Gemini"
-        _toastFlow.value = "Kunci API Google Gemini Berhasil Disimpan"
+        _toastFlow.value = "API Saved"
     }
 
     fun saveApiKeys(groq: String = "", gemini: String, provider: String = "Gemini") {
@@ -401,7 +349,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
         prefs.edit().putString("saved_prompt_concept", concept).apply()
         _savedPromptConcept.value = concept
-        _toastFlow.value = "Kata kunci inti berhasil disimpan!"
+        _toastFlow.value = "Keywords Saved"
     }
 
     fun clearPromptConceptPermanent() {
@@ -409,7 +357,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _savedPromptConcept.value = ""
         val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
         prefs.edit().remove("saved_prompt_concept").apply()
-        _toastFlow.value = "Kata kunci inti dihapus"
+        _toastFlow.value = "Cleared"
     }
 
     fun setBlacklistWords(value: String) {
@@ -424,7 +372,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
         prefs.edit().putString("saved_blacklist_words", bl).apply()
         _savedBlacklistWords.value = bl
-        _toastFlow.value = "Blacklist words berhasil disimpan!"
+        _toastFlow.value = "Blacklist Saved"
     }
 
     fun clearBlacklistWordsPermanent() {
@@ -432,7 +380,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _savedBlacklistWords.value = ""
         val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
         prefs.edit().remove("saved_blacklist_words").apply()
-        _toastFlow.value = "Blacklist words dihapus"
+        _toastFlow.value = "Cleared"
     }
 
     fun setAutoInjectionEnabled(enabled: Boolean) {
@@ -578,7 +526,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // If user has manually input any metadata, do not overwrite it with original image metadata
             val shouldUpdateFieldsFromSelection = backupT.isBlank() && backupD.isBlank() && backupK.isBlank()
             recalculateMetadataFormFromSelection(updateFields = shouldUpdateFieldsFromSelection)
-            _toastFlow.value = "${uris.size} Gambar ditambahkan secara akumulatif."
         }
     }
 
@@ -639,20 +586,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val remaining = _imagesList.value.filter { !it.isSelected }
         _imagesList.value = remaining
         recalculateMetadataFormFromSelection()
-        _toastFlow.value = "Gambar terpilih berhasil dihapus."
+        _toastFlow.value = "Removed"
     }
 
     fun removeIndividualImage(id: Int) {
+        val itemToRemove = _imagesList.value.find { it.id == id }
         val remaining = _imagesList.value.filter { it.id != id }
         _imagesList.value = remaining
         recalculateMetadataFormFromSelection()
-        _toastFlow.value = "Gambar berhasil dihapus."
+        
+        // Clean cached preview file if any
+        itemToRemove?.previewUri?.path?.let { path ->
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val file = java.io.File(path)
+                    if (file.exists() && file.parentFile == context.cacheDir) {
+                        file.delete()
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+        _toastFlow.value = "Removed"
     }
 
     fun clearAllImages() {
+        // Cancel all ongoing jobs
+        globalGenerationJob?.cancel()
+        currentBatchProcessingId = null
+        individualGenerationJobs.values.forEach { it.cancel() }
+        individualGenerationJobs.clear()
+        _isGeneratingAi.value = false
+        _isGlobalProcessing.value = false
+        _globalProcessingText.value = ""
+
+        // Reset list and form metadata
         _imagesList.value = emptyList()
+        _title.value = ""
+        _description.value = ""
+        _keywords.value = ""
         recalculateMetadataFormFromSelection()
-        _toastFlow.value = "Semua gambar berhasil dibersihkan."
+
+        // Thoroughly clear cache directory, temp preview files, and Coil image disk/memory cache
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                context.cacheDir?.listFiles()?.forEach { file ->
+                    try { file.deleteRecursively() } catch (_: Exception) {}
+                }
+                val localShutter = java.io.File(context.filesDir, "shutterstock_keywords_local.json")
+                if (localShutter.exists()) {
+                    localShutter.delete()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            try {
+                val imageLoader = coil.Coil.imageLoader(context)
+                imageLoader.memoryCache?.clear()
+                imageLoader.diskCache?.clear()
+            } catch (_: Exception) {}
+            System.gc()
+        }
+
+        _toastFlow.value = "Cleared"
     }
 
     private fun recalculateMetadataFormFromSelection(updateFields: Boolean = true) {
@@ -722,22 +717,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelGlobalGeneration() {
         globalGenerationJob?.cancel()
+        currentBatchProcessingId = null
         _isGeneratingAi.value = false
         _isGlobalProcessing.value = false
         _globalProcessingText.value = ""
         _imagesList.value = _imagesList.value.map {
-            if (it.isSelected && it.isGeneratingMetadata) it.copy(isGeneratingMetadata = false) else it
+            when (it.processStatus) {
+                ProcessStatus.PROCESSING -> it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED)
+                ProcessStatus.WAITING -> it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.IDLE)
+                else -> it.copy(isGeneratingMetadata = false)
+            }
         }
-        _toastFlow.value = "Generate Metadata Dibatalkan"
+        _toastFlow.value = "Canceled"
     }
 
     fun cancelIndividualGeneration(id: Int) {
         individualGenerationJobs[id]?.cancel()
         individualGenerationJobs.remove(id)
-        _imagesList.value = _imagesList.value.map {
-            if (it.id == id) it.copy(isGeneratingMetadata = false) else it
+        if (currentBatchProcessingId == id) {
+            globalGenerationJob?.cancel()
+            currentBatchProcessingId = null
+            _isGeneratingAi.value = false
+            _isGlobalProcessing.value = false
+            _globalProcessingText.value = ""
+            _imagesList.value = _imagesList.value.map {
+                if (it.id == id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED)
+                else if (it.processStatus == ProcessStatus.WAITING) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.IDLE)
+                else it.copy(isGeneratingMetadata = false)
+            }
+            _toastFlow.value = "Canceled"
+            return
         }
-        _toastFlow.value = "Generate Individual Dibatalkan"
+        _imagesList.value = _imagesList.value.map {
+            if (it.id == id) {
+                val newStatus = if (it.processStatus == ProcessStatus.WAITING) ProcessStatus.IDLE else ProcessStatus.FAILED
+                it.copy(isGeneratingMetadata = false, processStatus = newStatus)
+            } else it
+        }
+        _toastFlow.value = "Canceled"
+    }
+
+    fun showToast(message: String) {
+        _toastFlow.value = message
     }
 
     fun clearToast() {
@@ -750,7 +771,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (!_isOfflineMode.value) {
                 generateMetadataForAllImages()
             } else {
-                _toastFlow.value = "Fitur analisis gambar hanya tersedia di Mode Online!"
+                _toastFlow.value = "Need Online"
             }
             return
         }
@@ -761,14 +782,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val concept = _promptConcept.value
         if (concept.isBlank()) {
-            _toastFlow.value = "Masukkan konsep deskripsi atau pilih satu gambar!"
+            _toastFlow.value = "Need Concept"
             return
         }
 
         val apiKey = _geminiKey.value
 
         if (apiKey.isBlank()) {
-            _toastFlow.value = "Masukkan API Key Google Gemini terlebih dahulu di bagian API Key!"
+            _toastFlow.value = "Need API Key"
             return
         }
 
@@ -843,7 +864,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _title.value = parsed.title ?: ""
                     _description.value = parsed.description ?: ""
                     _keywords.value = kwsString
-                    _toastFlow.value = "AI berhasil menghasilkan metadata!"
+                    _toastFlow.value = "Generated"
 
                     if (_isAutoInjectionEnabled.value) {
                         val hasSelected = _imagesList.value.any { it.isSelected }
@@ -855,11 +876,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 } else {
-                    _toastFlow.value = "Respon AI tidak valid JSON."
+                    _toastFlow.value = "Invalid AI"
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                _toastFlow.value = "Error AI: ${e.localizedMessage ?: e.message}"
+                _toastFlow.value = "AI Error"
             } finally {
                 _isGeneratingAi.value = false
             }
@@ -868,18 +889,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun generateMetadataForSingleImage(id: Int) {
         if (_isOfflineMode.value) {
-            _toastFlow.value = "Fitur analisis gambar hanya tersedia di Mode Online!"
+            _toastFlow.value = "Need Online"
             return
         }
         val apiKey = _geminiKey.value
         if (apiKey.isBlank()) {
-            _toastFlow.value = "Masukkan API Key Google Gemini terlebih dahulu di bagian API Key!"
+            _toastFlow.value = "Need API Key"
             return
         }
         val imageItem = _imagesList.value.find { it.id == id } ?: return
 
         val job = viewModelScope.launch {
-            _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = true) else it }
+            _imagesList.value = _imagesList.value.map { 
+                if (it.id == imageItem.id) it.copy(isGeneratingMetadata = true, processStatus = ProcessStatus.PROCESSING) else it 
+            }
             try {
                 val parsed = performGeminiAnalysis(imageItem, apiKey, _selectedModel.value)
                 if (parsed != null) {
@@ -898,22 +921,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             individualDescription = parsed.description ?: "",
                             individualKeywords = kwsString,
                             individualKeywordItems = kwsList,
-                            isGeneratingMetadata = false
+                            isGeneratingMetadata = false,
+                            processStatus = ProcessStatus.SUCCESS
                         ) else it
                     }
-                    _toastFlow.value = "Berhasil generate metadata untuk ${imageItem.name}"
+                    _toastFlow.value = "Generated"
                     if (_isAutoInjectionEnabled.value) {
                         injectIndividualMetadata(imageItem.id)
                     }
                 } else {
-                    _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false) else it }
-                    _toastFlow.value = "Gagal parse respon JSON untuk ${imageItem.name}"
+                    _imagesList.value = _imagesList.value.map { 
+                        if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                    }
+                    _toastFlow.value = "Invalid AI"
                 }
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
                     e.printStackTrace()
-                    _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false) else it }
-                    _toastFlow.value = "Error AI Gemini: ${e.localizedMessage ?: e.message}"
+                    _imagesList.value = _imagesList.value.map { 
+                        if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                    }
+                    _toastFlow.value = "AI Error"
+                } else {
+                    _imagesList.value = _imagesList.value.map { 
+                        if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                    }
                 }
             } finally {
                 individualGenerationJobs.remove(imageItem.id)
@@ -924,76 +956,127 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun generateMetadataForAllImages() {
         if (_isOfflineMode.value) {
-            _toastFlow.value = "Fitur analisis gambar hanya tersedia di Mode Online!"
+            _toastFlow.value = "Need Online"
             return
         }
 
         val allImages = _imagesList.value
         if (allImages.isEmpty()) {
-            _toastFlow.value = "Belum ada gambar yang di-import!"
+            _toastFlow.value = "No Images"
             return
         }
 
         val apiKey = _geminiKey.value
         if (apiKey.isBlank()) {
-            _toastFlow.value = "Masukkan API Key Google Gemini terlebih dahulu di bagian API Key!"
+            _toastFlow.value = "Need API Key"
             return
+        }
+
+        // Target failed or waiting items first if any, or non-generated, or all
+        val targetImages = if (allImages.any { it.processStatus == ProcessStatus.FAILED || it.processStatus == ProcessStatus.WAITING }) {
+            allImages.filter { it.processStatus != ProcessStatus.SUCCESS }
+        } else if (allImages.any { !it.isGenerated }) {
+            allImages.filter { !it.isGenerated }
+        } else {
+            allImages
+        }
+
+        if (targetImages.isEmpty()) {
+            _toastFlow.value = "Generated"
+            return
+        }
+
+        val targetIds = targetImages.map { it.id }.toSet()
+
+        // Set queued target images to WAITING status
+        _imagesList.value = _imagesList.value.map {
+            if (it.id in targetIds) it.copy(processStatus = ProcessStatus.WAITING, isGeneratingMetadata = false) else it
         }
 
         globalGenerationJob = viewModelScope.launch {
             _isGeneratingAi.value = true
             _isGlobalProcessing.value = true
             try {
-                val total = allImages.size
+                val total = targetImages.size
                 var completed = 0
-                for (imageItem in allImages) {
+                for (imageItem in targetImages) {
+                    currentBatchProcessingId = imageItem.id
                     _globalProcessingText.value = "Generating Process...($completed/$total)"
 
-                    _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = true) else it }
+                    _imagesList.value = _imagesList.value.map { 
+                        if (it.id == imageItem.id) it.copy(isGeneratingMetadata = true, processStatus = ProcessStatus.PROCESSING) else it 
+                    }
                     
-                    val parsed = performGeminiAnalysis(imageItem, apiKey, _selectedModel.value)
-                    if (parsed != null) {
-                        val kwsList = parsed.keywords ?: emptyList()
-                        val kwsString = kwsList.joinToString(",") { 
-                            if (it.isTrademark && !it.replacement.isNullOrBlank()) it.replacement else it.word 
-                        }
+                    try {
+                        val parsed = performGeminiAnalysis(imageItem, apiKey, _selectedModel.value)
+                        if (parsed != null) {
+                            val kwsList = parsed.keywords ?: emptyList()
+                            val kwsString = kwsList.joinToString(",") { 
+                                if (it.isTrademark && !it.replacement.isNullOrBlank()) it.replacement else it.word 
+                            }
 
-                        if (allImages.size == 1) {
-                            _title.value = parsed.title ?: ""
-                            _description.value = parsed.description ?: ""
-                            _keywords.value = kwsString
+                            if (targetImages.size == 1) {
+                                _title.value = parsed.title ?: ""
+                                _description.value = parsed.description ?: ""
+                                _keywords.value = kwsString
+                            }
+                            
+                            _imagesList.value = _imagesList.value.map { 
+                                if (it.id == imageItem.id) it.copy(
+                                    individualTitle = parsed.title ?: "",
+                                    individualDescription = parsed.description ?: "",
+                                    individualKeywords = kwsString,
+                                    individualKeywordItems = kwsList,
+                                    isGeneratingMetadata = false,
+                                    processStatus = ProcessStatus.SUCCESS
+                                ) else it
+                            }
+
+                            // Langsung Auto Inject Metadata jika fitur auto injection ON
+                            if (_isAutoInjectionEnabled.value) {
+                                injectIndividualMetadata(imageItem.id)
+                            }
+                        } else {
+                            _imagesList.value = _imagesList.value.map { 
+                                if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                            }
+                            _toastFlow.value = "Invalid AI"
                         }
-                        
-                        _imagesList.value = _imagesList.value.map { 
-                            if (it.id == imageItem.id) it.copy(
-                                individualTitle = parsed.title ?: "",
-                                individualDescription = parsed.description ?: "",
-                                individualKeywords = kwsString,
-                                individualKeywordItems = kwsList,
-                                isGeneratingMetadata = false
-                            ) else it
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) {
+                            _imagesList.value = _imagesList.value.map { 
+                                if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                            }
+                            throw e
+                        } else {
+                            e.printStackTrace()
+                            _imagesList.value = _imagesList.value.map { 
+                                if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                            }
+                            _toastFlow.value = "AI Error"
                         }
-                    } else {
-                        _imagesList.value = _imagesList.value.map { if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false) else it }
-                        _toastFlow.value = "Respon AI tidak valid JSON untuk ${imageItem.name}."
                     }
                     completed++
                     _globalProcessingText.value = "Generating Process...($completed/$total)"
                 }
                 
-                _toastFlow.value = "AI berhasil menganalisis semua gambar & menghasilkan metadata!"
-                if (_isAutoInjectionEnabled.value) {
-                    injectAllIndividualMetadata()
-                }
+                _toastFlow.value = "Generated"
                 
             } catch (e: Exception) {
-                e.printStackTrace()
-                _toastFlow.value = "Error AI Gemini: ${e.localizedMessage ?: e.message}"
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    e.printStackTrace()
+                    _toastFlow.value = "AI Error"
+                }
             } finally {
+                currentBatchProcessingId = null
                 _isGeneratingAi.value = false
                 _isGlobalProcessing.value = false
                 _globalProcessingText.value = ""
-                _imagesList.value = _imagesList.value.map { it.copy(isGeneratingMetadata = false) }
+                // Revert any leftover WAITING back to IDLE
+                _imagesList.value = _imagesList.value.map {
+                    if (it.processStatus == ProcessStatus.WAITING) it.copy(processStatus = ProcessStatus.IDLE)
+                    else it.copy(isGeneratingMetadata = false)
+                }
             }
         }
     }
@@ -1386,6 +1469,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun clearKeywordsFromImage(imageId: Int) {
+        _imagesList.value = _imagesList.value.map { item ->
+            if (item.id == imageId) {
+                item.copy(individualKeywordItems = emptyList(), individualKeywords = "")
+            } else item
+        }
+    }
+
     fun autoFixAllTrademarks(imageId: Int) {
         _imagesList.value = _imagesList.value.map { item ->
             if (item.id == imageId) {
@@ -1411,7 +1502,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 individualDescription = "", 
                 individualKeywords = "", 
                 individualKeywordItems = emptyList(), 
-                individualCreator = ""
+                individualCreator = "",
+                processStatus = ProcessStatus.IDLE
             ) else it 
         }
     }
@@ -1425,7 +1517,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val metaCreator = item.individualCreator
 
         if (metaTitle.isBlank() && metaDesc.isBlank() && metaKeywordsString.isBlank() && metaCreator.isBlank()) {
-            _toastFlow.value = "Form input metadata tidak boleh kosong!"
+            _toastFlow.value = "Metadata Empty"
             return
         }
 
@@ -1472,15 +1564,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             isInjectingIndividual = false
                         ) else it 
                     }
-                    _toastFlow.value = "Inject metadata berhasil untuk ${item.name}!"
+                    _toastFlow.value = "Injected"
                 } else {
                     _imagesList.value = _imagesList.value.map { if (it.id == id) it.copy(isInjectingIndividual = false) else it }
-                    _toastFlow.value = "Gagal membaca file ${item.name}"
+                    _toastFlow.value = "File Error"
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 _imagesList.value = _imagesList.value.map { if (it.id == id) it.copy(isInjectingIndividual = false) else it }
-                _toastFlow.value = "Gagal inject: ${e.message}"
+                _toastFlow.value = "Inject Failed"
             }
         }
     }
@@ -1488,7 +1580,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun injectAllIndividualMetadata() {
         val selected = if (_imagesList.value.any { it.isSelected }) _imagesList.value.filter { it.isSelected } else _imagesList.value
         if (selected.isEmpty()) {
-            _toastFlow.value = "Belum ada gambar yang di-import!"
+            _toastFlow.value = "No Images"
             return
         }
         
@@ -1572,7 +1664,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 e.printStackTrace()
                 _injectionStatusText.value = "INJECTION ERROR"
-                _toastFlow.value = "Terjadi kesalahan saat inject."
+                _toastFlow.value = "Inject Failed"
             } finally {
                 _isInjecting.value = false
             }
@@ -1582,7 +1674,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun injectMetadata() {
         val selected = _imagesList.value.filter { it.isSelected }
         if (selected.isEmpty()) {
-            _toastFlow.value = "Pilih minimal satu gambar untuk diinject!"
+            _toastFlow.value = "Select Image"
             return
         }
 
@@ -1592,7 +1684,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val metaCreator = _creator.value
 
         if (metaTitle.isBlank() && metaDesc.isBlank() && metaKeywordsString.isBlank() && metaCreator.isBlank()) {
-            _toastFlow.value = "Form input metadata tidak boleh kosong!"
+            _toastFlow.value = "Metadata Empty"
             return
         }
 
@@ -1686,18 +1778,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _injectionStatusText.value = "INJECTION ${(currentProgress * 100).toInt()}%"
                 }
 
-                if (successCount > 0 && !_isOfflineMode.value) {
-                    updateDatabaseWithNewOnlineKeywords(metaKeywordsString)
-                }
-
                 _imagesList.value = updatedList
                 _injectionStatusText.value = "INJECTION 100% DONE"
-                _toastFlow.value = "Selesai: $successCount Berhasil, $failCount Gagal di memori. Klik DOWNLOAD untuk menyimpan ke Disk."
+                _toastFlow.value = "Injected"
                 recalculateMetadataFormFromSelection()
             } catch (e: Exception) {
                 e.printStackTrace()
                 _injectionStatusText.value = "INJECTION FAILED"
-                _toastFlow.value = "Injeksi gagal: ${e.localizedMessage ?: e.message}"
+                _toastFlow.value = "Inject Failed"
             } finally {
                 _isInjecting.value = false
             }
@@ -1717,7 +1805,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun showSvgExportDialogForBulk() {
         val selected = if (_imagesList.value.any { it.isSelected }) _imagesList.value.filter { it.isSelected } else _imagesList.value
         if (selected.isEmpty()) {
-            _toastFlow.value = "Belum ada gambar yang di-import!"
+            _toastFlow.value = "No Images"
             return
         }
         val svgCount = selected.count { it.name.endsWith(".svg", ignoreCase = true) }
@@ -1747,7 +1835,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val item = _imagesList.value.find { it.id == id } ?: return
 
         viewModelScope.launch {
-            _toastFlow.value = "Memproses dan menyimpan..."
             _isDownloading.value = true
             _isGlobalProcessing.value = true
             _globalProcessingText.value = "Processing Export..."
@@ -1755,7 +1842,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val baseBytes = item.injectedBytes ?: item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
                 if (baseBytes == null) {
-                    _toastFlow.value = "Byte file tidak valid."
+                    _toastFlow.value = "File Error"
                     return@launch
                 }
 
@@ -1833,10 +1920,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                _toastFlow.value = "File berhasil disimpan ke folder Download/WarMachineHybrid"
+                _toastFlow.value = "File Saved"
             } catch (e: Exception) {
                 e.printStackTrace()
-                _toastFlow.value = "Gagal menyimpan file: ${e.message}"
+                _toastFlow.value = "Save Failed"
             } finally {
                 _isGlobalProcessing.value = false
                 _globalProcessingText.value = ""
@@ -1848,7 +1935,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun downloadInjectedFilesWithFormat(format: SvgExportFormat) {
         val selected = if (_imagesList.value.any { it.isSelected }) _imagesList.value.filter { it.isSelected } else _imagesList.value
         if (selected.isEmpty()) {
-            _toastFlow.value = "Belum ada gambar yang di-import!"
+            _toastFlow.value = "No Images"
             return
         }
 
@@ -2013,12 +2100,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 _downloadStatusText.value = "DOWNLOAD DONE"
-                _toastFlow.value = "Semua file berhasil disimpan ke folder Download/WarMachineHybrid"
+                _toastFlow.value = "Files Saved"
 
             } catch (e: Exception) {
                 e.printStackTrace()
                 _downloadStatusText.value = "DOWNLOAD ERROR"
-                _toastFlow.value = "Terjadi kesalahan saat menyimpan file: ${e.message}"
+                _toastFlow.value = "Save Failed"
             } finally {
                 _isGlobalProcessing.value = false
                 _globalProcessingText.value = ""
