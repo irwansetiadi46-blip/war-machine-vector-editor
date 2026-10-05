@@ -262,21 +262,28 @@ object XmpInjector {
     }
 
     fun generateXmpMeta(title: String, description: String, keywords: List<String>, creator: String): String {
-        val titleEsc = escapeXml(title)
-        val descEsc = escapeXml(description)
-        val creatorEsc = escapeXml(creator)
-        val keywordsHtml = keywords.joinToString("") { kw ->
-            "<rdf:li>${escapeXml(kw.trim())}</rdf:li>"
+        val rawTitle = title.trim()
+        val rawDesc = description.trim()
+        val effectiveTitle = if (rawTitle.isNotEmpty()) rawTitle else rawDesc
+        val effectiveDesc = if (rawDesc.isNotEmpty()) rawDesc else rawTitle
+
+        val titleEsc = escapeXml(effectiveTitle)
+        val descEsc = escapeXml(effectiveDesc)
+        val creatorEsc = escapeXml(creator.trim())
+        val keywordsHtml = keywords.map { it.trim() }.filter { it.isNotEmpty() }.joinToString("") { kw ->
+            "<rdf:li>${escapeXml(kw)}</rdf:li>"
         }
 
         return """
             |<x:xmpmeta xmlns:x="adobe:ns:meta/">
             |  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-            |    <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
+            |    <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">
             |      <dc:title><rdf:Alt><rdf:li xml:lang="x-default">$titleEsc</rdf:li></rdf:Alt></dc:title>
             |      <dc:description><rdf:Alt><rdf:li xml:lang="x-default">$descEsc</rdf:li></rdf:Alt></dc:description>
             |      <dc:creator><rdf:Seq><rdf:li>$creatorEsc</rdf:li></rdf:Seq></dc:creator>
             |      <dc:subject><rdf:Bag>$keywordsHtml</rdf:Bag></dc:subject>
+            |      <photoshop:Headline>$titleEsc</photoshop:Headline>
+            |      <photoshop:Caption>$descEsc</photoshop:Caption>
             |    </rdf:Description>
             |  </rdf:RDF>
             |</x:xmpmeta>
@@ -284,20 +291,28 @@ object XmpInjector {
     }
 
     /**
-     * Builds PostScript-safe XMP Packet. Every line begins with '%' so that the
-     * PostScript interpreter treats the entire XMP packet as PostScript comments.
+     * Builds PostScript-safe XMP Packet for EPS files.
+     * Guarantees that dc:description, dc:title, photoshop:Caption, and photoshop:Headline
+     * are populated for Shutterstock & microstock compliance.
+     * Every line begins with '%' so that PostScript interpreters treat the packet as comments.
      */
     fun bangunXmpXml(title: String, description: String, keywords: List<String>, mimeType: String = "application/postscript"): String {
-        val titleEsc = escapeXml(title.trim())
-        val descEsc = escapeXml(description.trim())
+        val rawTitle = title.trim()
+        val rawDesc = description.trim()
+        val effectiveTitle = if (rawTitle.isNotEmpty()) rawTitle else rawDesc
+        val effectiveDesc = if (rawDesc.isNotEmpty()) rawDesc else rawTitle
+
+        val titleEsc = escapeXml(effectiveTitle)
+        val descEsc = escapeXml(effectiveDesc)
         val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
-        val bagKeywords = cleanKeywords.joinToString("\n") { kw -> "%    <rdf:li>${escapeXml(kw)}</rdf:li>" }
+        val bagKeywords = cleanKeywords.joinToString("\n") { kw -> "%        <rdf:li>${escapeXml(kw)}</rdf:li>" }
 
         val sb = java.lang.StringBuilder()
         sb.append("%<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n")
         sb.append("%<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n")
         sb.append("%  <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n")
         sb.append("%    <rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n")
+        sb.append("%      <dc:format>image/eps</dc:format>\n")
         if (titleEsc.isNotEmpty()) {
             sb.append("%      <dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">$titleEsc</rdf:li></rdf:Alt></dc:title>\n")
         }
@@ -309,6 +324,9 @@ object XmpInjector {
         }
         if (titleEsc.isNotEmpty()) {
             sb.append("%      <photoshop:Headline>$titleEsc</photoshop:Headline>\n")
+        }
+        if (descEsc.isNotEmpty()) {
+            sb.append("%      <photoshop:Caption>$descEsc</photoshop:Caption>\n")
         }
         sb.append("%    </rdf:Description>\n")
         sb.append("%  </rdf:RDF>\n")
@@ -559,8 +577,18 @@ object XmpInjector {
         val xmpPacket = bangunXmpXml(metaTitle, metaDesc, cleanKeywords, "application/postscript")
         val headerKomentarList = mutableListOf<String>()
         headerKomentarList.add("%ADO_ContainsXMP: MainFirst")
-        if (metaTitle.isNotEmpty()) {
-            headerKomentarList.add("%%Title: $metaTitle")
+
+        val rawTitle = metaTitle.trim()
+        val rawDesc = metaDesc.trim()
+        val effectiveTitle = if (rawTitle.isNotEmpty()) rawTitle else rawDesc
+        val effectiveDesc = if (rawDesc.isNotEmpty()) rawDesc else rawTitle
+
+        if (effectiveTitle.isNotEmpty()) {
+            headerKomentarList.add("%%Title: $effectiveTitle")
+        }
+        if (effectiveDesc.isNotEmpty()) {
+            headerKomentarList.add("%%Subject: $effectiveDesc")
+            headerKomentarList.add("%%Comments: $effectiveDesc")
         }
         if (metaCreator.isNotEmpty()) {
             headerKomentarList.add("%%Creator: $metaCreator")
@@ -641,9 +669,12 @@ object XmpInjector {
                 return originalBytes
             }
 
+            val effectiveTitle = if (metaTitle.isNotEmpty()) metaTitle else metaDesc
+            val effectiveDesc = if (metaDesc.isNotEmpty()) metaDesc else metaTitle
+
             val fileStr = String(originalBytes, StandardCharsets.UTF_8)
-            val titleEsc = escapeXml(metaTitle)
-            val descEsc = escapeXml(metaDesc)
+            val titleEsc = escapeXml(effectiveTitle)
+            val descEsc = escapeXml(effectiveDesc)
             val bagKeywords = cleanKeywords
                 .map { kw -> "          <rdf:li>${escapeXml(kw)}</rdf:li>" }
                 .joinToString("\n")
@@ -670,6 +701,7 @@ $bagKeywords
         </rdf:Bag>
       </dc:subject>
       <photoshop:Headline>$titleEsc</photoshop:Headline>
+      <photoshop:Caption>$descEsc</photoshop:Caption>
     </rdf:Description>
   </rdf:RDF>
 </metadata>"""
