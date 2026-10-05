@@ -79,6 +79,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -140,6 +141,7 @@ fun MainScreen(
     val uriHandler = LocalUriHandler.current
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     
     // --- State Observables ---
     val imagesList by viewModel.imagesList.collectAsStateWithLifecycle()
@@ -333,6 +335,7 @@ fun MainScreen(
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         if (event.type == PointerEventType.Press) {
+                            keyboardController?.hide()
                             focusManager.clearFocus()
                             if (isTouchEffectEnabled) {
                                 val now = SystemClock.uptimeMillis()
@@ -1917,6 +1920,7 @@ fun AutoMetadataSettingsScreen(
 ) {
     BackHandler { onClose() }
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val geminiKey by viewModel.geminiKey.collectAsStateWithLifecycle()
     val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
     val isOfflineMode by viewModel.isOfflineMode.collectAsStateWithLifecycle()
@@ -1941,7 +1945,7 @@ fun AutoMetadataSettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF070E20))
-            .clickable(enabled = true, onClick = { focusManager.clearFocus() })
+            .clickable(enabled = true, onClick = { keyboardController?.hide(); focusManager.clearFocus() })
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Header Bar
@@ -2135,7 +2139,7 @@ fun AutoMetadataSettingsScreen(
                             placeholder = { Text("Masukkan API Key Gemini Anda...", color = Color(0xFF64748B)) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                            keyboardActions = KeyboardActions(onDone = { keyboardController?.hide(); focusManager.clearFocus() }),
                             shape = RoundedCornerShape(8.dp),
                             visualTransformation = if (keyVisibility) VisualTransformation.None else PasswordVisualTransformation(),
                             trailingIcon = {
@@ -2214,7 +2218,7 @@ fun AutoMetadataSettingsScreen(
                                     }
                                 },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                                keyboardActions = KeyboardActions(onDone = { keyboardController?.hide(); focusManager.clearFocus() }),
                                 singleLine = true,
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.width(65.dp),
@@ -2248,7 +2252,7 @@ fun AutoMetadataSettingsScreen(
                                     }
                                 },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                                keyboardActions = KeyboardActions(onDone = { keyboardController?.hide(); focusManager.clearFocus() }),
                                 singleLine = true,
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.width(65.dp),
@@ -2282,7 +2286,7 @@ fun AutoMetadataSettingsScreen(
                                     }
                                 },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                                keyboardActions = KeyboardActions(onDone = { keyboardController?.hide(); focusManager.clearFocus() }),
                                 singleLine = true,
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.width(65.dp),
@@ -2313,6 +2317,7 @@ fun AutoMetadataSettingsScreen(
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = {
+                                keyboardController?.hide()
                                 focusManager.clearFocus()
                                 if (blacklistWords.isNotBlank()) {
                                     viewModel.saveBlacklistWordsPermanent()
@@ -2373,6 +2378,7 @@ fun AutoMetadataSettingsScreen(
                             maxLines = 2,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = {
+                                keyboardController?.hide()
                                 focusManager.clearFocus()
                                 if (promptConcept.isNotBlank()) {
                                     viewModel.savePromptConceptPermanent()
@@ -4015,6 +4021,7 @@ fun FullImageCard(
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val isPng = item.name.endsWith(".png", ignoreCase = true)
     val isEps = item.name.endsWith(".eps", ignoreCase = true)
     val isSvg = item.name.endsWith(".svg", ignoreCase = true)
@@ -4327,7 +4334,7 @@ fun FullImageCard(
                 singleLine = false,
                 maxLines = Int.MAX_VALUE,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                keyboardActions = KeyboardActions(onDone = { keyboardController?.hide(); focusManager.clearFocus() }),
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -4367,7 +4374,7 @@ fun FullImageCard(
                 singleLine = false,
                 maxLines = Int.MAX_VALUE,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                keyboardActions = KeyboardActions(onDone = { keyboardController?.hide(); focusManager.clearFocus() }),
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -4487,6 +4494,7 @@ fun FullImageCard(
                         maxLines = 5,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = {
+                            keyboardController?.hide()
                             focusManager.clearFocus()
                             if (newKwText.isNotBlank()) {
                                 val words = newKwText.split(",").map { it.trim() }.filter { it.isNotEmpty() }

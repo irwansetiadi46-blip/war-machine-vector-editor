@@ -63,7 +63,7 @@ object SvgToEpsConverter {
             val doc: Document = builder.parse(ByteArrayInputStream(svgBytes))
             val root = doc.documentElement
 
-            // 2. Extract Document Dimensions and ViewBox
+            // 2. Extract Document Dimensions and ViewBox (Exact 1:1 Precision)
             var minX = 0f
             var minY = 0f
             var vbWidth = 512f
@@ -99,25 +99,7 @@ object SvgToEpsConverter {
                 vbHeight = artboardHeight
             }
 
-            // Ensure Microstock Artboard Compliance (Adobe Stock >= 15 MP, Shutterstock >= 4 MP, <= 65 MP)
-            val currentArea = artboardWidth * artboardHeight
-            val minAreaMicrostock = 16_000_000f // 16 Megapixels standard
-            val maxAreaMicrostock = 60_000_000f // 60 Megapixels limit
-
-            if (currentArea < minAreaMicrostock && currentArea > 0f) {
-                val scaleUp = sqrt(minAreaMicrostock / currentArea)
-                if (scaleUp.isFinite() && !scaleUp.isNaN()) {
-                    artboardWidth *= scaleUp
-                    artboardHeight *= scaleUp
-                }
-            } else if (currentArea > maxAreaMicrostock && currentArea > 0f) {
-                val scaleDown = sqrt(maxAreaMicrostock / currentArea)
-                if (scaleDown.isFinite() && !scaleDown.isNaN()) {
-                    artboardWidth *= scaleDown
-                    artboardHeight *= scaleDown
-                }
-            }
-
+            // Exact 1:1 scale mapping without distortion or auto-resizing
             val scaleX = artboardWidth / vbWidth
             val scaleY = artboardHeight / vbHeight
 
@@ -130,7 +112,7 @@ object SvgToEpsConverter {
 
             indexElementsAndGradients(root, idMap, gradientMap, fullGradientMap, clipPathMap)
 
-            // 4. Build Adobe Illustrator AI-Compatible EPS PostScript Header & Prolog
+            // 4. Build Standard Adobe Illustrator AI8-Compatible PostScript Header & Prolog
             val psBuilder = StringBuilder()
             val creationDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date())
 
@@ -145,32 +127,24 @@ object SvgToEpsConverter {
                 psBuilder.append("%%Title: (converted_artwork.eps)\n")
             }
             psBuilder.append("%%CreationDate: $creationDate\n")
-            psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", artboardWidth.toInt(), artboardHeight.toInt()))
+            psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", ceil(artboardWidth.toDouble()).toInt(), ceil(artboardHeight.toDouble()).toInt()))
             psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0 0 %.3f %.3f\n", artboardWidth, artboardHeight))
-            psBuilder.append(String.format(Locale.US, "%%%%DocumentProcessColors: Cyan Magenta Yellow Black\n"))
-            psBuilder.append("%%DocumentSuppliedResources: procset Adobe_level2_AI5 1.2 0\n")
-            psBuilder.append("%%+ procset Adobe_Illustrator_AI5 1.3 0\n")
-            psBuilder.append("%%+ procset Adobe_ColorImage_AI6 1.0 0\n")
-            psBuilder.append("%%+ procset Adobe_Shading_AI8 1.0 0\n")
-            psBuilder.append("%AI5_FileFormat 3\n")
-            psBuilder.append("%AI3_ColorUsage: Color\n")
-            psBuilder.append("%AI3_TemplateBox: 0 0 0 0\n")
-            psBuilder.append(String.format(Locale.US, "%%AI3_TileBox: 0 0 %d %d\n", artboardWidth.toInt(), artboardHeight.toInt()))
-            psBuilder.append(String.format(Locale.US, "%%%%DocumentMedia: Canvas %.3f %.3f 0 () ()\n", artboardWidth, artboardHeight))
-            psBuilder.append("%%LanguageLevel: 3\n")
+            psBuilder.append("%%DocumentProcessColors: Cyan Magenta Yellow Black\n")
+            psBuilder.append("%%DocumentNeededResources: procset Adobe_Illustrator_AI5 1.0 0\n")
+            psBuilder.append("%%LanguageLevel: 2\n")
             psBuilder.append("%%Pages: 1\n")
             psBuilder.append("%%EndComments\n\n")
 
-            // --- AI & PostScript Prolog (Operator Definitions for Grouping & Rendering) ---
+            // --- PostScript Prolog & Operator Definitions ---
             psBuilder.append("%%BeginProlog\n")
             psBuilder.append("/_AI_save /save load def\n")
             psBuilder.append("/_AI_restore /restore load def\n")
             psBuilder.append("/q { gsave } bind def\n")
             psBuilder.append("/Q { grestore } bind def\n")
-            psBuilder.append("/u {} bind def\n") // AI Begin Group operator
-            psBuilder.append("/U {} bind def\n") // AI End Group operator
-            psBuilder.append("/*u {} bind def\n") // AI Begin Compound / Group
-            psBuilder.append("/*U {} bind def\n") // AI End Compound / Group
+            psBuilder.append("/u {} bind def\n")
+            psBuilder.append("/U {} bind def\n")
+            psBuilder.append("/*u {} bind def\n")
+            psBuilder.append("/*U {} bind def\n")
             psBuilder.append("/m { moveto } bind def\n")
             psBuilder.append("/l { lineto } bind def\n")
             psBuilder.append("/c { curveto } bind def\n")
@@ -200,7 +174,7 @@ object SvgToEpsConverter {
             psBuilder.append("/K { setcmykcolor } bind def\n")
             psBuilder.append("/g { setgray } bind def\n")
             psBuilder.append("/G { setgray } bind def\n")
-            psBuilder.append("/Lb { pop pop pop pop pop pop pop pop pop pop } bind def\n")
+            psBuilder.append("/Lb { cleartomark } bind def\n")
             psBuilder.append("/Ln { pop } bind def\n")
             psBuilder.append("/LB {} bind def\n")
             psBuilder.append("%%EndProlog\n\n")
@@ -215,10 +189,11 @@ object SvgToEpsConverter {
             psBuilder.append(String.format(Locale.US, "%.3f %.3f translate\n", -minX, -minY))
             psBuilder.append("\n")
 
-            // Start Adobe Illustrator Layer 1
-            val layerName = root.getAttribute("id").ifEmpty { "Layer 1" }.replace("(", "[").replace(")", "]")
+            // Start Adobe Illustrator Layer 1 with mark keyword
+            val rawLayerId = root.getAttribute("id").trim()
+            val layerName = if (rawLayerId.isNotEmpty()) rawLayerId.replace("(", "[").replace(")", "]") else "Layer 1"
             psBuilder.append("%AI5_BeginLayer\n")
-            psBuilder.append("1 1 1 1 0 0 0 79 128 255 Lb\n")
+            psBuilder.append("mark 1 1 1 1 0 0 0 79 128 255 Lb\n")
             psBuilder.append("($layerName) Ln\n")
 
             // Recursive traversal of SVG DOM with AI Group Tracking
@@ -244,7 +219,7 @@ object SvgToEpsConverter {
 
             val rawEpsBytes = psBuilder.toString().toByteArray(StandardCharsets.UTF_8)
 
-            // 5. Inject XMP Metadata
+            // 5. Inject Clean Standard XMP Metadata
             return XmpInjector.injectIntoEps(
                 originalBytes = rawEpsBytes,
                 title = title,
@@ -303,7 +278,7 @@ object SvgToEpsConverter {
     ) {
         val tagName = element.tagName.lowercase(Locale.US)
 
-        // Ignore defs, style, metadata, script, title, desc
+        // Ignore defs, style, metadata, script, title, desc, clipPath
         if (tagName in listOf("defs", "style", "metadata", "script", "title", "desc", "clippath")) {
             return
         }
@@ -321,7 +296,6 @@ object SvgToEpsConverter {
 
         when (tagName) {
             "g", "a", "svg" -> {
-                // Determine if group needs state isolation (transform or clip)
                 val needsStateIsolation = hasTransform || hasClipPath || (tagName == "svg" && element.parentNode != null)
 
                 if (needsStateIsolation) {
@@ -342,7 +316,6 @@ object SvgToEpsConverter {
                     sb.append(convertSvgTransformToPostScript(transformStr))
                 }
 
-                // If nested SVG, handle x, y translation
                 if (tagName == "svg" && element.parentNode != null) {
                     val x = parseLengthToPt(element.getAttribute("x"), 0f)
                     val y = parseLengthToPt(element.getAttribute("y"), 0f)
@@ -351,10 +324,9 @@ object SvgToEpsConverter {
                     }
                 }
 
-                // AI Group Begin Operator: 'u'
+                // AI Group Begin Operator: 'u' or '(id) u'
                 if (idAttr.isNotEmpty()) {
                     val cleanId = idAttr.replace("(", "[").replace(")", "]")
-                    sb.append("% AI Group: $cleanId\n")
                     sb.append("($cleanId) u\n")
                 } else {
                     sb.append("u\n")
@@ -433,7 +405,6 @@ object SvgToEpsConverter {
                     sb.append("q\n")
                 }
 
-                // Handle local Clip-Path if present on shape
                 if (hasClipPath) {
                     val clipId = clipPathAttr.substringAfter("url(").substringBefore(")").removePrefix("#").removeSurrounding("'", "\"").trim()
                     val clipDef = clipPathMap[clipId]
@@ -442,12 +413,10 @@ object SvgToEpsConverter {
                     }
                 }
 
-                // Handle local transform if present
                 if (hasTransform) {
                     sb.append(convertSvgTransformToPostScript(transformStr))
                 }
 
-                // Resolve Fill and Stroke styles
                 val fillStr = nodeStyle.fill ?: "black"
                 val gradId = if (fillStr.startsWith("url(")) {
                     fillStr.substringAfter("url(").substringBefore(")").removePrefix("#").removeSurrounding("'", "\"").trim()
@@ -460,9 +429,7 @@ object SvgToEpsConverter {
                 val strokeWidth = nodeStyle.strokeWidth ?: 1f
                 val hasStroke = strokeRgb != null && strokeWidth > 0f
 
-                // --- Case A: Gradient Shading Fill (Native ShadingType 2/3) ---
                 if (gradDef != null && gradDef.stops.isNotEmpty()) {
-                    // Set clipping to the shape path and render gradient via shfill
                     sb.append("q\n")
                     sb.append("n\n")
                     sb.append(pathCommands)
@@ -474,7 +441,6 @@ object SvgToEpsConverter {
                     writeGradientShading(sb, gradDef)
                     sb.append("Q\n")
 
-                    // Render Stroke on top of gradient if shape has stroke
                     if (hasStroke) {
                         emitStrokeState(sb, nodeStyle, strokeRgb!!, strokeWidth)
                         sb.append("n\n")
@@ -482,24 +448,20 @@ object SvgToEpsConverter {
                         sb.append("s\n")
                     }
                 } else {
-                    // --- Case B: Flat Vector Fill & Stroke (Clean AI Syntax, No Redundant gsave/grestore) ---
                     val isEvenOdd = nodeStyle.fillRule == "evenodd"
 
                     if (fillRgb != null && hasStroke) {
-                        // Both Fill and Stroke
                         sb.append(String.format(Locale.US, "%.3f %.3f %.3f rg\n", fillRgb[0], fillRgb[1], fillRgb[2]))
                         emitStrokeState(sb, nodeStyle, strokeRgb!!, strokeWidth)
                         sb.append("n\n")
                         sb.append(pathCommands)
                         sb.append(if (isEvenOdd) "b*\n" else "b\n")
                     } else if (fillRgb != null) {
-                        // Fill only
                         sb.append(String.format(Locale.US, "%.3f %.3f %.3f rg\n", fillRgb[0], fillRgb[1], fillRgb[2]))
                         sb.append("n\n")
                         sb.append(pathCommands)
                         sb.append(if (isEvenOdd) "f*\n" else "f\n")
                     } else if (hasStroke) {
-                        // Stroke only
                         emitStrokeState(sb, nodeStyle, strokeRgb!!, strokeWidth)
                         sb.append("n\n")
                         sb.append(pathCommands)
@@ -520,12 +482,12 @@ object SvgToEpsConverter {
         val lineCapInt = when (nodeStyle.strokeLineCap) {
             "round" -> 1
             "square" -> 2
-            else -> 0 // butt
+            else -> 0
         }
         val lineJoinInt = when (nodeStyle.strokeLineJoin) {
             "round" -> 1
             "bevel" -> 2
-            else -> 0 // miter
+            else -> 0
         }
         sb.append(String.format(Locale.US, "%d J %d j\n", lineCapInt, lineJoinInt))
     }
@@ -576,7 +538,6 @@ object SvgToEpsConverter {
             )
         }
 
-        // Rounded Rectangle with cubic beziers
         val kx = rx * 0.55228475f
         val ky = ry * 0.55228475f
         val sb = StringBuilder()
@@ -910,7 +871,6 @@ object SvgToEpsConverter {
         return sb.toString()
     }
 
-    // Mathematical SVG Arc to Cubic Beziers Algorithm
     private fun endpointToCubicBeziers(
         x1: Float, y1: Float,
         rxIn: Float, ryIn: Float,
@@ -1469,7 +1429,7 @@ object SvgToEpsConverter {
                     val b = hex.substring(4, 6).toInt(16) / 255f
                     floatArrayOf(r, g, b)
                 }
-                8 -> { // RGBA hex
+                8 -> {
                     val r = hex.substring(0, 2).toInt(16) / 255f
                     val g = hex.substring(2, 4).toInt(16) / 255f
                     val b = hex.substring(4, 6).toInt(16) / 255f
