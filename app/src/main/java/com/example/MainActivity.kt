@@ -24,6 +24,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.animation.*
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -210,6 +212,11 @@ fun MainScreen(
     var tempGeminiKey by remember { mutableStateOf(geminiKey) }
     var apiInputsInitialized by remember { mutableStateOf(false) }
 
+    val activity = context as? ComponentActivity
+    BackHandler(enabled = !showSettingsScreen && !showPrivacyPolicy && !showAbout && !showTouchEffectDialog && selectedDetailImageId == null) {
+        activity?.moveTaskToBack(true)
+    }
+
     // Initialize temp keys once saved ones load from SharedPreferences
     LaunchedEffect(geminiKey) {
         if (!apiInputsInitialized && geminiKey.isNotEmpty()) {
@@ -349,6 +356,12 @@ fun MainScreen(
                                             "Neon Sparkle" -> 700L
                                             "Water Ripple" -> 750L
                                             "Duotone Wave" -> 700L
+                                            "Cyber Shard" -> 500L
+                                            "Laser Target" -> 400L
+                                            "Plasma Pulse" -> 300L
+                                            "Stardust" -> 800L
+                                            "Quantum Grid" -> 400L
+                                            "Sonic Shockwave" -> 500L
                                             else -> 600L
                                         },
                                         effectType = selectedTouchEffect
@@ -1402,14 +1415,11 @@ fun MainScreen(
         }
     }
 
-    // --- Touch Effect Configuration Dialog ---
+    // --- Touch Effect Configuration Screen ---
     if (showTouchEffectDialog) {
-        TouchEffectDialog(
-            isEnabled = isTouchEffectEnabled,
-            selectedEffect = selectedTouchEffect,
-            onToggleEnabled = { viewModel.setTouchEffectEnabled(it) },
-            onSelectEffect = { viewModel.setSelectedTouchEffect(it) },
-            onDismiss = { showTouchEffectDialog = false }
+        TouchEffectScreen(
+            onClose = { showTouchEffectDialog = false },
+            viewModel = viewModel
         )
     }
 
@@ -1669,6 +1679,206 @@ fun GlobalTouchOverlayCanvas(
                     }
                 }
 
+                "Cyber Shard" -> {
+                    val shardCount = 8
+                    for (i in 0 until shardCount) {
+                        val angle = (i * (2 * PI / shardCount) + (pt.id * 0.5f)).toFloat()
+                        val distance = progress * 90f
+                        val x = pt.x + cos(angle) * distance
+                        val y = pt.y + sin(angle) * distance
+
+                        val size = 12f * (1f - progress)
+                        if (size > 0f) {
+                            val path = Path().apply {
+                                moveTo(x + cos(angle) * size, y + sin(angle) * size)
+                                lineTo(x + cos(angle + 2.1f) * (size * 0.6f), y + sin(angle + 2.1f) * (size * 0.6f))
+                                lineTo(x + cos(angle - 2.1f) * (size * 0.6f), y + sin(angle - 2.1f) * (size * 0.6f))
+                                close()
+                            }
+                            drawPath(
+                                path = path,
+                                color = Color(0xFF00F0FF).copy(alpha = 1f - progress)
+                            )
+                        }
+                    }
+                }
+
+                "Laser Target" -> {
+                    val alpha = 1f - progress
+                    val scale = 1f - progress
+                    val angle = progress * 360f
+                    val radius = 40f * scale
+                    if (alpha > 0f && radius > 0f) {
+                        drawCircle(
+                            color = Color(0xFF38BDF8).copy(alpha = alpha),
+                            radius = radius,
+                            center = center,
+                            style = Stroke(width = 2f)
+                        )
+                        drawCircle(
+                            color = Color(0xFF38BDF8).copy(alpha = alpha * 0.5f),
+                            radius = radius * 0.5f,
+                            center = center,
+                            style = Stroke(width = 1f)
+                        )
+                        val angleRad = angle * (PI.toFloat() / 180f)
+                        val cosA = cos(angleRad)
+                        val sinA = sin(angleRad)
+                        val lineLen = radius * 1.3f
+
+                        drawLine(
+                            color = Color(0xFF38BDF8).copy(alpha = alpha),
+                            start = Offset(center.x - cosA * lineLen, center.y - sinA * lineLen),
+                            end = Offset(center.x + cosA * lineLen, center.y + sinA * lineLen),
+                            strokeWidth = 2f
+                        )
+                        val cosAV = cos(angleRad + PI.toFloat() / 2f)
+                        val sinAV = sin(angleRad + PI.toFloat() / 2f)
+                        drawLine(
+                            color = Color(0xFF38BDF8).copy(alpha = alpha),
+                            start = Offset(center.x - cosAV * lineLen, center.y - sinAV * lineLen),
+                            end = Offset(center.x + cosAV * lineLen, center.y + sinAV * lineLen),
+                            strokeWidth = 2f
+                        )
+                    }
+                }
+
+                "Plasma Pulse" -> {
+                    val alpha = 1f - progress
+                    if (alpha > 0f) {
+                        val lineCount = 5
+                        for (i in 0 until lineCount) {
+                            val angle = (i * (2 * PI / lineCount) + (pt.id * 1.1f)).toFloat()
+                            val segmentLength = 20f + (1f - progress) * 15f
+                            var currentPt = center
+                            for (seg in 1..3) {
+                                val segAngle = angle + (sin(progress * 15f + seg * 2f) * 0.3f)
+                                val nextPt = Offset(
+                                    currentPt.x + cos(segAngle) * segmentLength,
+                                    currentPt.y + sin(segAngle) * segmentLength
+                                )
+                                drawLine(
+                                    color = Color(0xFF00F2FF).copy(alpha = alpha * 0.4f),
+                                    start = currentPt,
+                                    end = nextPt,
+                                    strokeWidth = 4f
+                                )
+                                drawLine(
+                                    color = Color.White.copy(alpha = alpha),
+                                    start = currentPt,
+                                    end = nextPt,
+                                    strokeWidth = 1.5f
+                                )
+                                currentPt = nextPt
+                            }
+                        }
+                    }
+                }
+
+                "Stardust" -> {
+                    val particleCount = 12
+                    val starAlpha = 1f - progress
+                    for (i in 0 until particleCount) {
+                        val randomAngle = (i * (2 * PI / particleCount) + (pt.id * 0.3f)).toFloat()
+                        val spreadDistance = 15f + progress * 85f
+                        val driftY = -progress * 25f
+                        val px = pt.x + cos(randomAngle) * spreadDistance
+                        val py = pt.y + sin(randomAngle) * spreadDistance + driftY
+
+                        val isCyan = i % 2 == 0
+                        val baseColor = if (isCyan) Color(0xFF00F2FF) else Color.White
+                        val pRadius = (5f * (1f - progress)).coerceAtLeast(1f)
+
+                        drawCircle(
+                            color = baseColor.copy(alpha = starAlpha * 0.3f),
+                            radius = pRadius * 2.5f,
+                            center = Offset(px, py)
+                        )
+                        drawCircle(
+                            color = Color.White.copy(alpha = starAlpha),
+                            radius = pRadius,
+                            center = Offset(px, py)
+                        )
+                    }
+                }
+
+                "Quantum Grid" -> {
+                    val alpha = 1f - progress
+                    val scale = 1f - progress
+                    if (alpha > 0f && scale > 0f) {
+                        val gridSize = 75f * scale
+                        val halfGrid = gridSize / 2f
+                        val step = gridSize / 3f
+
+                        for (row in 0..3) {
+                            val y = center.y - halfGrid + row * step
+                            drawLine(
+                                color = Color(0xFF00FFCC).copy(alpha = alpha * 0.5f),
+                                start = Offset(center.x - halfGrid, y),
+                                end = Offset(center.x + halfGrid, y),
+                                strokeWidth = 1.5f
+                            )
+                        }
+                        for (col in 0..3) {
+                            val x = center.x - halfGrid + col * step
+                            drawLine(
+                                color = Color(0xFF00FFCC).copy(alpha = alpha * 0.5f),
+                                start = Offset(x, center.y - halfGrid),
+                                end = Offset(x, center.y + halfGrid),
+                                strokeWidth = 1.5f
+                            )
+                        }
+                        for (row in 0..3) {
+                            for (col in 0..3) {
+                                val x = center.x - halfGrid + col * step
+                                val y = center.y - halfGrid + row * step
+                                drawCircle(
+                                    color = Color(0xFF38BDF8).copy(alpha = alpha),
+                                    radius = 2.5f * scale,
+                                    center = Offset(x, y)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                "Sonic Shockwave" -> {
+                    val alpha = (1f - progress).coerceIn(0f, 1f)
+                    if (alpha > 0f) {
+                        val r1 = progress * 160f
+                        val p2 = (progress - 0.2f).coerceAtLeast(0f) / 0.8f
+                        val r2 = p2 * 130f
+
+                        val dashEffect = PathEffect.dashPathEffect(
+                            intervals = floatArrayOf(12f, 8f),
+                            phase = progress * 50f
+                        )
+
+                        if (r1 > 0f) {
+                            drawCircle(
+                                color = Color(0xFFFF5D8F).copy(alpha = alpha),
+                                radius = r1,
+                                center = center,
+                                style = Stroke(
+                                    width = 2.5f * (1f - progress),
+                                    pathEffect = dashEffect
+                                )
+                            )
+                        }
+                        if (r2 > 0f && p2 > 0f) {
+                            drawCircle(
+                                color = Color(0xFFF72585).copy(alpha = alpha * 0.7f),
+                                radius = r2,
+                                center = center,
+                                style = Stroke(
+                                    width = 1.8f * (1f - p2),
+                                    pathEffect = dashEffect
+                                )
+                            )
+                        }
+                    }
+                }
+
                 else -> { // "Glowing Ring" (Default)
                     val ringRadius = 12f + progress * 125f
                     val ringAlpha = (1f - progress) * 0.9f
@@ -1704,46 +1914,83 @@ fun GlobalTouchOverlayCanvas(
 }
 
 @Composable
-fun TouchEffectDialog(
-    isEnabled: Boolean,
-    selectedEffect: String,
-    onToggleEnabled: (Boolean) -> Unit,
-    onSelectEffect: (String) -> Unit,
-    onDismiss: () -> Unit
+fun TouchEffectScreen(
+    onClose: () -> Unit,
+    viewModel: MainViewModel
 ) {
+    BackHandler { onClose() }
+    val isTouchEffectEnabled by viewModel.isTouchEffectEnabled.collectAsStateWithLifecycle()
+    val selectedTouchEffect by viewModel.selectedTouchEffect.collectAsStateWithLifecycle()
+
     val effects = listOf(
         Pair("Glowing Ring", "Gelombang cincin neon futuristik (Default)"),
         Pair("Water Ripple", "Riak gelombang air multi-layer konsentris"),
         Pair("Neon Sparkle", "Letupan partikel bintang neon berkilau"),
-        Pair("Duotone Wave", "Pulsasi gelombang halo kontras duotone")
+        Pair("Duotone Wave", "Pulsasi gelombang halo kontras duotone"),
+        Pair("Cyber Shard", "Semburan pecahan geometri vektor sci-fi"),
+        Pair("Laser Target", "Rotasi bidikan target presisi berkecepatan tinggi"),
+        Pair("Plasma Pulse", "Percikan kilatan energi listrik mikro"),
+        Pair("Stardust", "Taburan debu bintang berkilau yang perlahan memudar"),
+        Pair("Quantum Grid", "Tarikan kisi matriks magnetik ke pusat sentuhan"),
+        Pair("Sonic Shockwave", "Gelombang getar audio frekuensi tinggi dengan aksen garis")
     )
 
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-            border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp)
-                .shadow(24.dp, RoundedCornerShape(20.dp), spotColor = Color(0xFF38BDF8))
-        ) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF070E20))
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color(0xFF0A2558), Color(0xFF1D4ED8), Color(0xFF00A8FF))
+                        )
+                    )
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Kembali",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Touch Effect Settings",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            // Scrollable List of Settings
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp)
+            ) {
+                // Intro Header Card with icon
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF0F172A),
+                    border = BorderStroke(1.dp, Color(0xFFF472B6).copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                 ) {
-                    // Header
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(end = 28.dp)
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(38.dp)
+                                .size(44.dp)
                                 .background(Color(0xFFF472B6).copy(alpha = 0.15f), CircleShape)
                                 .border(1.dp, Color(0xFFF472B6).copy(alpha = 0.5f), CircleShape),
                             contentAlignment = Alignment.Center
@@ -1752,57 +1999,56 @@ fun TouchEffectDialog(
                                 imageVector = Icons.Default.TouchApp,
                                 contentDescription = null,
                                 tint = Color(0xFFF472B6),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(16.dp))
                         Column {
                             Text(
-                                text = "Touch Effect",
-                                fontSize = 18.sp,
+                                text = "Global Touch Animation",
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
                             Text(
-                                text = "Kustomisasi animasi sentuhan layar",
-                                fontSize = 11.5.sp,
+                                text = "Kustomisasi animasi visual interaktif saat layar disentuh",
+                                fontSize = 11.sp,
                                 color = Color(0xFF94A3B8)
                             )
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                // Switch Section (Global Toggle)
+                // Global Switch Toggle
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = Color(0xFF1E293B).copy(alpha = 0.6f),
-                    border = BorderStroke(1.dp, if (isEnabled) Color(0xFF38BDF8).copy(alpha = 0.4f) else Color(0x20FFFFFF)),
-                    modifier = Modifier.fillMaxWidth()
+                    border = BorderStroke(1.dp, if (isTouchEffectEnabled) Color(0xFF38BDF8).copy(alpha = 0.4f) else Color(0x20FFFFFF)),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Global Touch Effect",
+                                text = "Enable Touch Effects",
                                 color = Color.White,
-                                fontSize = 13.5.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = if (isEnabled) "Efek sentuhan aktif" else "Efek sentuhan nonaktif",
-                                color = if (isEnabled) Color(0xFF10B981) else Color(0xFF94A3B8),
-                                fontSize = 11.sp
+                                text = if (isTouchEffectEnabled) "Efek sentuhan aktif di seluruh layar" else "Efek sentuhan nonaktif",
+                                color = if (isTouchEffectEnabled) Color(0xFF10B981) else Color(0xFF94A3B8),
+                                fontSize = 11.5.sp
                             )
                         }
                         Switch(
-                            checked = isEnabled,
-                            onCheckedChange = { onToggleEnabled(it) },
+                            checked = isTouchEffectEnabled,
+                            onCheckedChange = { viewModel.setTouchEffectEnabled(it) },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
                                 checkedTrackColor = Color(0xFF00A8FF),
@@ -1813,57 +2059,54 @@ fun TouchEffectDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Section Label
+                // Effects Section Label
                 Text(
-                    text = "PILIHAN EFEK",
+                    text = "PILIHAN ANIMASI EFEK (TOTAL 10 EFEK)",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (isEnabled) Color(0xFF38BDF8) else Color(0xFF64748B),
-                    letterSpacing = 0.5.sp
+                    color = if (isTouchEffectEnabled) Color(0xFF38BDF8) else Color(0xFF64748B),
+                    letterSpacing = 0.8.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
-
-                Spacer(modifier = Modifier.height(8.dp))
 
                 // Radio Options List
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     effects.forEach { (name, desc) ->
-                        val isSelected = isEnabled && selectedEffect == name
+                        val isSelected = isTouchEffectEnabled && selectedTouchEffect == name
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             color = when {
-                                !isEnabled -> Color(0xFF1E293B).copy(alpha = 0.25f)
-                                isSelected -> Color(0xFF00A8FF).copy(alpha = 0.15f)
+                                !isTouchEffectEnabled -> Color(0xFF1E293B).copy(alpha = 0.25f)
+                                isSelected -> Color(0xFF00A8FF).copy(alpha = 0.12f)
                                 else -> Color(0xFF1E293B).copy(alpha = 0.4f)
                             },
                             border = BorderStroke(
                                 1.dp,
                                 when {
-                                    !isEnabled -> Color(0x15FFFFFF)
-                                    isSelected -> Color(0xFF00A8FF).copy(alpha = 0.7f)
-                                    else -> Color(0x25FFFFFF)
+                                    !isTouchEffectEnabled -> Color(0x15FFFFFF)
+                                    isSelected -> Color(0xFF00A8FF).copy(alpha = 0.6f)
+                                    else -> Color(0x20FFFFFF)
                                 }
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable(enabled = isEnabled) {
-                                    onSelectEffect(name)
+                                .clickable(enabled = isTouchEffectEnabled) {
+                                    viewModel.setSelectedTouchEffect(name)
                                 }
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 RadioButton(
                                     selected = isSelected,
-                                    onClick = if (isEnabled) { { onSelectEffect(name) } } else null,
-                                    enabled = isEnabled,
+                                    onClick = if (isTouchEffectEnabled) { { viewModel.setSelectedTouchEffect(name) } } else null,
+                                    enabled = isTouchEffectEnabled,
                                     colors = RadioButtonDefaults.colors(
                                         selectedColor = Color(0xFF00A8FF),
                                         unselectedColor = Color(0xFF64748B),
@@ -1872,18 +2115,19 @@ fun TouchEffectDialog(
                                     ),
                                     modifier = Modifier.size(20.dp)
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
+                                Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
                                         text = name,
-                                        fontSize = 13.sp,
+                                        fontSize = 14.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isEnabled) Color.White else Color(0xFF64748B)
+                                        color = if (isTouchEffectEnabled) Color.White else Color(0xFF64748B)
                                     )
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = desc,
-                                        fontSize = 10.5.sp,
-                                        color = if (isEnabled) Color(0xFF94A3B8) else Color(0xFF475569)
+                                        fontSize = 11.sp,
+                                        color = if (isTouchEffectEnabled) Color(0xFF94A3B8) else Color(0xFF475569)
                                     )
                                 }
                             }
@@ -1891,25 +2135,8 @@ fun TouchEffectDialog(
                     }
                 }
             }
-
-            // Clean Close Icon in top-right corner of container (no circle button background)
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 8.dp, end = 8.dp)
-                    .size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Tutup",
-                    tint = Color(0xFF94A3B8),
-                    modifier = Modifier.size(20.dp)
-                )
-            }
         }
     }
-}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
