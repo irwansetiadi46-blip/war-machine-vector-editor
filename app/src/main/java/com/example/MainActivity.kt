@@ -104,6 +104,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import coil.compose.AsyncImage
 import com.example.ui.theme.MyApplicationTheme
 
@@ -118,15 +119,31 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MyApplicationTheme {
+                var showSplashScreen by rememberSaveable { mutableStateOf(true) }
+
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     containerColor = Color(0xFF070E20)
                 ) { innerPadding ->
-                    MainScreen(
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
-                    )
+                    ) {
+                        MainScreen(
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        AnimatedVisibility(
+                            visible = showSplashScreen,
+                            enter = fadeIn(animationSpec = tween(300)),
+                            exit = fadeOut(animationSpec = tween(500))
+                        ) {
+                            SplashScreen(
+                                onDismiss = { showSplashScreen = false }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -425,7 +442,7 @@ fun MainScreen(
                 .onGloballyPositioned { coordinates ->
                     headerHeightPx = coordinates.size.height.toFloat()
                 }
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -510,16 +527,22 @@ fun MainScreen(
 
                 Spacer(modifier = Modifier.width(4.dp))
 
-                Text(
-                    text = "WAR MACHINE HYBRID",
+                Surface(
                     color = Color.White,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 14.sp,
-                    fontFamily = FontFamily.SansSerif,
-                    letterSpacing = 0.5.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                    shape = RoundedCornerShape(7.dp),
+                    border = BorderStroke(1.dp, Color(0x8038BDF8)),
+                    shadowElevation = 3.dp
+                ) {
+                    androidx.compose.foundation.Image(
+                        painter = painterResource(id = R.drawable.ic_war_machine_banner),
+                        contentDescription = "WAR MACHINE HYBRID",
+                        modifier = Modifier
+                            .height(36.dp)
+                            .width(136.dp)
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                }
 
                 Spacer(modifier = Modifier.width(6.dp))
 
@@ -2706,6 +2729,150 @@ fun AutoMetadataSettingsScreen(
 }
 
 @Composable
+fun SplashScreen(onDismiss: () -> Unit) {
+    var animationStarted by remember { mutableStateOf(false) }
+    var currentStatusText by remember { mutableStateOf("Initializing Core...") }
+
+    val scaleAnim by animateFloatAsState(
+        targetValue = if (animationStarted) 1f else 0.88f,
+        animationSpec = tween(700, easing = FastOutSlowInEasing),
+        label = "splashScale"
+    )
+
+    LaunchedEffect(Unit) {
+        animationStarted = true
+        delay(600)
+        currentStatusText = "Loading Vector & Metadata Engine..."
+        delay(700)
+        currentStatusText = "Ready"
+        delay(500)
+        onDismiss()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFF050B17),
+                        Color(0xFF070E20),
+                        Color(0xFF0A1938),
+                        Color(0xFF050B17)
+                    )
+                )
+            )
+            .clickable(onClick = onDismiss), // Tap to skip immediately
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .padding(24.dp)
+                .scale(scaleAnim)
+        ) {
+            // High-tech Glowing Banner Card
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .shadow(16.dp, RoundedCornerShape(20.dp), spotColor = Color(0xFF00A8FF)),
+                shape = RoundedCornerShape(20.dp),
+                color = Color.White,
+                border = BorderStroke(2.dp, Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Color(0xFFF37A40)))),
+                tonalElevation = 8.dp
+            ) {
+                androidx.compose.foundation.Image(
+                    painter = painterResource(id = R.drawable.ic_war_machine_banner),
+                    contentDescription = "WAR MACHINE Official Banner Logo",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(96.dp)
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Subtitle Tag
+            Surface(
+                color = Color(0xFF1E1435),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(
+                    1.dp,
+                    Brush.horizontalGradient(listOf(Color(0xFFC084FC), Color(0xFF38BDF8)))
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .background(Color(0xFF00F2FF), CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "HYBRID VECTOR & METADATA ENGINE",
+                        style = TextStyle(
+                            brush = Brush.horizontalGradient(
+                                listOf(Color(0xFFF3E8FF), Color(0xFFBAE6FD), Color(0xFFFFDDD2))
+                            ),
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 11.5.sp,
+                            letterSpacing = 1.sp
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // Futuristic loading indicator
+            CircularProgressIndicator(
+                modifier = Modifier.size(28.dp),
+                color = Color(0xFF00F2FF),
+                strokeWidth = 2.5.dp,
+                trackColor = Color(0x3300F2FF)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = currentStatusText,
+                color = Color(0xFF94A3B8),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.5.sp
+            )
+        }
+
+        // Bottom version & author info
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Version 2.1.2 Pro",
+                color = Color(0xFF64748B),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Designed & Developed by Irwan Setiadi",
+                color = Color(0xFF475569),
+                fontSize = 11.sp
+            )
+        }
+    }
+}
+
+@Composable
 fun AboutScreen(
     onClose: () -> Unit,
     onOpenPrivacyPolicy: () -> Unit
@@ -2786,13 +2953,33 @@ fun AboutScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.White,
+                            shadowElevation = 6.dp,
+                            border = BorderStroke(1.5.dp, Color(0xFF38BDF8).copy(alpha = 0.6f))
+                        ) {
+                            androidx.compose.foundation.Image(
+                                painter = painterResource(id = R.drawable.ic_war_machine_banner),
+                                contentDescription = "WAR MACHINE Official Banner Logo",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(64.dp)
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+
+                        Surface(
                             color = Color(0xFF1E1435),
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(
                                 1.dp,
                                 Brush.horizontalGradient(listOf(Color(0xFFC084FC), Color(0xFFA855F7)))
                             ),
-                            modifier = Modifier.padding(bottom = 12.dp)
+                            modifier = Modifier.padding(bottom = 8.dp)
                         ) {
                             Text(
                                 text = "Pro Edition",
@@ -2808,14 +2995,7 @@ fun AboutScreen(
                             )
                         }
 
-                        Text(
-                            text = "WAR MACHINE HYBRID",
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            textAlign = TextAlign.Center,
-                            letterSpacing = 1.sp
-                        )
+                        Spacer(modifier = Modifier.height(2.dp))
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "AI-Powered Microstock Metadata & Vector Conversion Engine",
@@ -3420,6 +3600,30 @@ fun PrivacyPolicyScreen(onClose: () -> Unit) {
                                 }
                             }
                         )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth(0.9f)
+                                .padding(vertical = 4.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.White,
+                            shadowElevation = 4.dp,
+                            border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.6f))
+                        ) {
+                            androidx.compose.foundation.Image(
+                                painter = painterResource(id = R.drawable.ic_war_machine_banner),
+                                contentDescription = "WAR MACHINE Official Banner",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(54.dp)
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
 
                         Text(
                             text = "Designed & Developed by Irwan Setiadi",
