@@ -109,14 +109,20 @@ object SvgToEpsConverter {
             // 4. Build EPS PostScript Content
             val psBuilder = StringBuilder()
             psBuilder.append("%!PS-Adobe-3.0 EPSF-3.0\n")
-            psBuilder.append("%%Creator: War-Machine Vector Engine\n")
-            if (title.isNotEmpty()) psBuilder.append("%%Title: $title\n")
-            psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", artboardWidth.toInt(), artboardHeight.toInt()))
-            psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0 0 %.3f %.3f\n", artboardWidth, artboardHeight))
-            psBuilder.append(String.format(Locale.US, "%%%%DocumentMedia: Canvas %.3f %.3f 0 () ()\n", artboardWidth, artboardHeight))
-            psBuilder.append("%%LanguageLevel: 2\n")
-            psBuilder.append("%%DocumentData: Clean7Bit\n")
-            psBuilder.append("%%Pages: 1\n")
+            psBuilder.append("%%Creator: Adobe Illustrator(R) 10.0\n")
+            psBuilder.append("%%AI8_CreatorVersion: 10.0\n")
+            psBuilder.append("%%For: (Contributor)\n")
+            if (title.isNotEmpty()) psBuilder.append("%%Title: ${cleanSingleLine(title)}\n")
+            if (keywords.isNotEmpty()) psBuilder.append("%%Keywords: ${cleanSingleLine(keywords.joinToString(", "))}\n")
+            val intW = ceil(artboardWidth).toInt()
+            val intH = ceil(artboardHeight).toInt()
+            psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", intW, intH))
+            psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0.0000 0.0000 %.4f %.4f\n", artboardWidth, artboardHeight))
+            psBuilder.append(String.format(Locale.US, "%%%%CropBox: 0.0000 0.0000 %.4f %.4f\n", artboardWidth, artboardHeight))
+            psBuilder.append(String.format(Locale.US, "%%%%TemplateBox: 0.0000 0.0000 %.4f %.4f\n", artboardWidth, artboardHeight))
+            psBuilder.append("%%PageOrigin: 0 0\n")
+            psBuilder.append("%%DocumentProcessColors: Cyan Magenta Yellow Black\n")
+            psBuilder.append("%ADO_ContainsXMP: MainFirst\n")
             psBuilder.append("%%EndComments\n\n")
 
             // Global Coordinates Transformation
@@ -326,15 +332,46 @@ object SvgToEpsConverter {
     private fun applyClipPath(clipUrl: String, idMap: Map<String, Element>, sb: StringBuilder) {
         val clipId = clipUrl.substringAfter("url(").substringBefore(")").removePrefix("#").removeSurrounding("'", "\"")
         val clipElem = idMap[clipId] ?: return
-        val paths = clipElem.getElementsByTagName("path")
-        if (paths.length > 0) {
-            sb.append("newpath\n")
-            for (i in 0 until paths.length) {
-                val p = paths.item(i) as Element
-                sb.append(convertPathToPostScript(p.getAttribute("d")))
+        sb.append("newpath\n")
+        var pathAdded = false
+
+        fun processClipNode(node: Node) {
+            val childNodes = node.childNodes
+            for (i in 0 until childNodes.length) {
+                val item = childNodes.item(i)
+                if (item.nodeType == Node.ELEMENT_NODE) {
+                    val elem = item as Element
+                    val tag = elem.tagName.lowercase(Locale.US)
+                    val ps = when (tag) {
+                        "path" -> convertPathToPostScript(elem.getAttribute("d"))
+                        "rect" -> convertRectToPostScript(elem)
+                        "circle" -> convertCircleToPostScript(elem)
+                        "ellipse" -> convertEllipseToPostScript(elem)
+                        "polygon" -> convertPolygonToPostScript(elem, isClosed = true)
+                        "polyline" -> convertPolygonToPostScript(elem, isClosed = false)
+                        "line" -> convertLineToPostScript(elem)
+                        "g" -> {
+                            processClipNode(elem)
+                            ""
+                        }
+                        else -> ""
+                    }
+                    if (ps.isNotBlank()) {
+                        sb.append(ps)
+                        pathAdded = true
+                    }
+                }
             }
+        }
+
+        processClipNode(clipElem)
+        if (pathAdded) {
             sb.append("clip\n")
         }
+    }
+
+    private fun cleanSingleLine(input: String): String {
+        return input.replace(Regex("""[\r\n]+"""), " ").replace(Regex("""\s+"""), " ").trim()
     }
 
     // --- Shape Converters ---
