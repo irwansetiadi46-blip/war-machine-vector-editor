@@ -21,9 +21,10 @@ object XmpInjector {
     /**
      * Membentuk XML XMP Packet sesuai standar Adobe
      */
-    private fun generateXmpPacket(title: String, description: String, keywords: List<String>): String {
+    private fun generateXmpPacket(title: String, description: String, keywords: List<String>, creator: String = ""): String {
         val t = escapeXml(title.trim())
         val d = escapeXml(description.trim())
+        val c = escapeXml(creator.trim())
         val cleanKeywords = keywords.map { escapeXml(it.trim()) }.filter { it.isNotEmpty() }
 
         val kwItems = if (cleanKeywords.isNotEmpty()) {
@@ -36,6 +37,9 @@ object XmpInjector {
         lines.add("""<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">""")
         lines.add("""<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">""")
 
+        if (c.isNotEmpty()) {
+            lines.add("""<dc:creator><rdf:Seq><rdf:li>$c</rdf:li></rdf:Seq></dc:creator>""")
+        }
         if (t.isNotEmpty()) {
             lines.add("""<dc:title><rdf:Alt><rdf:li xml:lang="x-default">$t</rdf:li></rdf:Alt></dc:title>""")
         }
@@ -60,10 +64,10 @@ object XmpInjector {
     }
 
     /**
-     * Membuat PostScript Injection Block (Sesuai fungsi `me` dari Lineva)
+     * Membuat PostScript Injection Block (Sesuai PDFMark standard)
      */
-    private fun buildPostScriptXmpBlock(title: String, description: String, keywords: List<String>): String {
-        val xmpXml = generateXmpPacket(title, description, keywords)
+    private fun buildPostScriptXmpBlock(title: String, description: String, keywords: List<String>, creator: String = ""): String {
+        val xmpXml = generateXmpPacket(title, description, keywords, creator)
         val endMarker = "%  &&end XMP packet marker&&"
 
         return listOf(
@@ -92,26 +96,26 @@ object XmpInjector {
     }
 
     /**
-     * Menyuntikkan Metadata ke File EPS (Sesuai fungsi `we` dari Lineva)
+     * Menyuntikkan Metadata ke File EPS
      */
     fun injectIntoEps(
         originalBytes: ByteArray,
         title: String,
         description: String,
-        keywords: List<String>
+        keywords: List<String>,
+        creator: String = ""
     ): ByteArray {
         try {
             val t = cleanSingleLine(title)
             val d = cleanSingleLine(description)
             val kwList = keywords.map { cleanSingleLine(it) }.filter { it.isNotEmpty() }
 
-            if (t.isEmpty() && d.isEmpty() && kwList.isEmpty()) {
+            if (t.isEmpty() && d.isEmpty() && kwList.isEmpty() && creator.trim().isEmpty()) {
                 return originalBytes
             }
 
             var psStr = String(originalBytes, StandardCharsets.ISO_8859_1)
 
-            // 1. Tambahkan Comments Line di bawah Header EPS
             val commentsHeader = mutableListOf("%ADO_ContainsXMP: MainFirst")
             if (t.isNotEmpty()) commentsHeader.add("%%Title: $t")
             if (kwList.isNotEmpty()) commentsHeader.add("%%Keywords: ${kwList.joinToString(", ")}")
@@ -121,13 +125,11 @@ object XmpInjector {
                 psStr = psStr.replace("\n%%EndComments", "\n$commentsBlock\n%%EndComments")
             }
 
-            // 2. Sisipkan PDFMark Injection Stream persis setelah %%EndComments
-            val pdfMarkInjection = buildPostScriptXmpBlock(t, d, kwList)
+            val pdfMarkInjection = buildPostScriptXmpBlock(t, d, kwList, creator)
             psStr = psStr.replace(Regex("""(%%EndComments\s*)""")) { matchResult ->
                 "${matchResult.value}\n$pdfMarkInjection"
             }
 
-            // 3. Sisipkan PageTrailer di akhir sebelum showpage/EOF (Sesuai `xe` pada Lineva)
             val pageTrailerBlock = listOf(
                 "%ADOBeginClientInjection: PageTrailer Start \"AI11EPS\"",
                 "[/EMC AI11_PDFMark5",
@@ -146,6 +148,50 @@ object XmpInjector {
         } catch (e: Exception) {
             e.printStackTrace()
             return originalBytes
+        }
+    }
+
+    /**
+     * Menyuntikkan Metadata ke String/File SVG (Dibutuhkan oleh MainViewModel)
+     */
+    fun injectIntoSvg(
+        svgContent: String,
+        title: String,
+        description: String,
+        keywords: List<String>,
+        creator: String = ""
+    ): String {
+        try {
+            val t = escapeXml(cleanSingleLine(title))
+            val d = escapeXml(cleanSingleLine(description))
+            val kwList = keywords.map { escapeXml(cleanSingleLine(it)) }.filter { it.isNotEmpty() }
+
+            val metadataXml = StringBuilder().apply {
+                append("\n<metadata>\n")
+                append("  <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"\n")
+                append("           xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n")
+                append("    <rdf:Description>\n")
+                if (creator.isNotEmpty()) append("      <dc:creator>${escapeXml(creator)}</dc:creator>\n")
+                if (t.isNotEmpty()) append("      <dc:title>$t</dc:title>\n")
+                if (d.isNotEmpty()) append("      <dc:description>$d</dc:description>\n")
+                if (kwList.isNotEmpty()) {
+                    append("      <dc:subject>\n        <rdf:Bag>\n")
+                    kwList.forEach { kw -> append("          <rdf:li>$kw</rdf:li>\n") }
+                    append("        </rdf:Bag>\n      </dc:subject>\n")
+                }
+                append("    </rdf:Description>\n")
+                append("  </rdf:RDF>\n")
+                append("</metadata>\n")
+            }.toString()
+
+            return if (svgContent.contains("</svg>")) {
+                svgContent.replace("</svg>", "$metadataXml</svg>")
+            } else {
+                svgContent + metadataXml
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return svgContent
         }
     }
 }
