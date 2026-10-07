@@ -279,7 +279,8 @@ object XmpInjector {
         } else ""
 
         val lines = mutableListOf<String>()
-        lines.add("<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>")
+        // FIX: BUG #2 - Add BOM character (U+FEFF) as required by XMP packet specification
+        lines.add("<?xpacket begin=\"\uFEFF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>")
         lines.add("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">")
         lines.add("<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">")
         lines.add("<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\">")
@@ -408,21 +409,15 @@ object XmpInjector {
             Regex("""%%AI8_CreatorVersion:\s*[\d\.]+"""),
             "%%AI8_CreatorVersion: 10.0")
 
-        // 3. Update/insert %%Title & %%Keywords DSC (di header, sebelum %%EndComments)
+        // 3. Update/insert %%Title DSC (di header, sebelum %%EndComments)
+        // FIX: BUG #4 - Pure AI 10 output only has %%Title in DSC comments; %%Keywords is non-standard for AI 10 header (keywords belong in XMP <dc:subject>)
+        psStr = psStr.replace(Regex("""%%Keywords:[^\r\n]*\r?\n?"""), "")
         if (t.isNotEmpty()) {
             val titleLine = "%%Title: ${cleanSingleLine(t)}"
             if (psStr.contains(Regex("""%%Title:.*"""))) {
                 psStr = psStr.replace(Regex("""%%Title:[^\r\n]*"""), titleLine)
             } else {
                 psStr = psStr.replace("%%EndComments", "$titleLine\n%%EndComments")
-            }
-        }
-        if (kwList.isNotEmpty()) {
-            val kwLine = "%%Keywords: ${cleanSingleLine(kwList.joinToString(", "))}"
-            if (psStr.contains(Regex("""%%Keywords:.*"""))) {
-                psStr = psStr.replace(Regex("""%%Keywords:[^\r\n]*"""), kwLine)
-            } else {
-                psStr = psStr.replace("%%EndComments", "$kwLine\n%%EndComments")
             }
         }
 
@@ -460,6 +455,8 @@ object XmpInjector {
             if (afterEof.isNotEmpty()) {
                 out.write(afterEof.toByteArray(StandardCharsets.ISO_8859_1))
             }
+            // FIX: BUG #1 - Ensure %%EOF is always emitted at the end of the file
+            out.write("%%EOF\n".toByteArray(StandardCharsets.ISO_8859_1))
         } else {
             // Fallback: tidak ada %%EOF
             out.write(psStr.toByteArray(StandardCharsets.ISO_8859_1))

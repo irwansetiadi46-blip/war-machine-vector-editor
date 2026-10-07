@@ -138,6 +138,8 @@ object SvgToEpsConverter {
             psBuilder.append("%%DocumentNeededResources: procset Adobe_level2_AI5 1.2 0\n")
             psBuilder.append("%%+ procset Adobe_Illustrator_10 1.0 0\n")
             psBuilder.append("%%DocumentData: Clean7Bit\n")
+            // FIX: Add %%DocumentMedia before %%LanguageLevel as required by authentic AI 10 EPS
+            psBuilder.append(String.format(Locale.US, "%%%%DocumentMedia: Canvas %d %d 0 () ()\n", bboxW, bboxH))
             psBuilder.append("%%LanguageLevel: 2\n")
             psBuilder.append("%%Pages: 1\n")
             psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", bboxW, bboxH))
