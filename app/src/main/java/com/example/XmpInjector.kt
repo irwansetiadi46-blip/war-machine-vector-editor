@@ -282,7 +282,8 @@ object XmpInjector {
         lines.add("<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>")
         lines.add("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">")
         lines.add("<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">")
-        lines.add("<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">")
+        lines.add("<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\">")
+        lines.add("<xmp:CreatorTool>Adobe Illustrator 10.0</xmp:CreatorTool>")
 
         if (t.isNotEmpty()) {
             lines.add("<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">${escapeXml(t)}</rdf:li></rdf:Alt></dc:title>")
@@ -306,47 +307,8 @@ object XmpInjector {
     }
 
     /**
-     * Builds AI11_PDFMark5 Client Injection PageSetup block matching version 2.0.0 (`me` in JS).
+     * Injects EPS metadata into pure Adobe Illustrator 10 (EPS 10) compatible PostScript structure.
      */
-    private fun buildClientInjectionPageSetup(title: String, description: String, keywords: List<String>): String {
-        val xmpXml = generateXmpPacket(title, description, keywords)
-        val endMarker = "%  &&end XMP packet marker&&"
-
-        val sb = StringBuilder()
-        sb.append("%ADOBeginClientInjection: PageSetup End \"AI11EPS\"\n")
-        sb.append("/currentdistillerparams where\n")
-        sb.append("{pop currentdistillerparams /CoreDistVersion get 5000 lt} {true} ifelse\n")
-        sb.append("{ userdict /AI11_PDFMark5 /cleartomark load put\n")
-        sb.append("userdict /AI11_ReadMetadata_PDFMark5 {flushfile cleartomark } bind put}\n")
-        sb.append("{ userdict /AI11_PDFMark5 /pdfmark load put\n")
-        sb.append("userdict /AI11_ReadMetadata_PDFMark5 {/PUT pdfmark} bind put } ifelse\n")
-        sb.append("[/NamespacePush AI11_PDFMark5\n")
-        sb.append("[/_objdef {vector_design_metadata_stream} /type /stream /OBJ AI11_PDFMark5\n")
-        sb.append("[{vector_design_metadata_stream}\n")
-        sb.append("currentfile 0 ($endMarker)\n")
-        sb.append("/SubFileDecode filter AI11_ReadMetadata_PDFMark5\n")
-        sb.append(xmpXml).append("\n")
-        sb.append(endMarker).append("\n")
-        sb.append("[{vector_design_metadata_stream}\n")
-        sb.append("<</Type /Metadata /Subtype /XML>>\n")
-        sb.append("/PUT AI11_PDFMark5\n")
-        sb.append("[/Document\n")
-        sb.append("1 dict begin /Metadata {vector_design_metadata_stream} def\n")
-        sb.append("currentdict end /BDC AI11_PDFMark5\n")
-        sb.append("%ADOEndClientInjection: PageSetup End \"AI11EPS\"\n")
-
-        return sb.toString()
-    }
-
-    /**
-     * AI11_PDFMark5 Client Injection PageTrailer block matching version 2.0.0 (`xe` in JS).
-     */
-    private const val CLIENT_INJECTION_TRAILER =
-        "%ADOBeginClientInjection: PageTrailer Start \"AI11EPS\"\n" +
-        "[/EMC AI11_PDFMark5\n" +
-        "[/NamespacePop AI11_PDFMark5\n" +
-        "%ADOEndClientInjection: PageTrailer Start \"AI11EPS\"\n"
-
     fun injectIntoEps(
         originalBytes: ByteArray,
         title: String,
@@ -419,7 +381,8 @@ object XmpInjector {
     }
 
     /**
-     * Injects EPS metadata matching version 2.0.0 reference implementation (`we` in JS).
+     * Injects EPS metadata matching official Adobe Illustrator 10.0 (EPS 10) specification.
+     * Removes non-standard/newer AI11 markers that cause rejections on microstock sites like Vecteezy.
      */
     private fun injectIntoPostScriptBytes(
         psBytes: ByteArray,
@@ -433,19 +396,38 @@ object XmpInjector {
 
         var psStr = String(psBytes, StandardCharsets.ISO_8859_1)
 
-        // 1. Remove previous client injection blocks or DSC comments if re-injecting
-        val clientPageSetupRegex = Regex("""%ADOBeginClientInjection:\s*PageSetup\s*End\s*"AI11EPS"[\s\S]*?%ADOEndClientInjection:\s*PageSetup\s*End\s*"AI11EPS"\r?\n?""")
+        // 1. Remove previous client injection blocks or legacy non-EPS10 DSC comments
+        val clientPageSetupRegex = Regex("""%ADOBeginClientInjection:\s*PageSetup\s*End[^\r\n]*[\s\S]*?%ADOEndClientInjection:\s*PageSetup\s*End[^\r\n]*\r?\n?""")
         psStr = psStr.replace(clientPageSetupRegex, "")
 
-        val clientTrailerRegex = Regex("""%ADOBeginClientInjection:\s*PageTrailer\s*Start\s*"AI11EPS"[\s\S]*?%ADOEndClientInjection:\s*PageTrailer\s*Start\s*"AI11EPS"\r?\n?""")
+        val clientTrailerRegex = Regex("""%ADOBeginClientInjection:\s*PageTrailer\s*Start[^\r\n]*[\s\S]*?%ADOEndClientInjection:\s*PageTrailer\s*Start[^\r\n]*\r?\n?""")
         psStr = psStr.replace(clientTrailerRegex, "")
+
+        val oldXmpPacketRegex = Regex("""%ADO_ContainsXMP:\s*MainFirst[\s\S]*?%EndXMPPacket\r?\n?""")
+        psStr = psStr.replace(oldXmpPacketRegex, "")
 
         val oldDscRegex = Regex("""%ADO_ContainsXMP:\s*MainFirst[\s\S]*?(?=%%EndComments|\r?\n)""")
         psStr = psStr.replace(oldDscRegex, "")
 
-        // 2. Build DSC Comments (matches `we` in JS)
+        // 2. Normalize and guarantee standard Illustrator 10.0 EPS headers
+        psStr = psStr.replace(Regex("""%%Creator:\s*Adobe Illustrator\(R\)\s*[\d\.]+"""), "%%Creator: Adobe Illustrator(R) 10.0")
+        psStr = psStr.replace(Regex("""%%AI8_CreatorVersion:\s*[\d\.]+"""), "%%AI8_CreatorVersion: 10.0")
+        if (psStr.contains("%%DocumentNeededResources:") && !psStr.contains("Adobe_Illustrator_10")) {
+            psStr = psStr.replace(
+                Regex("""%%DocumentNeededResources:\s*procset\s*Adobe_Illustrator_AI5\s*1\.0\s*0"""),
+                "%%DocumentProcessColors: Black\n%%DocumentNeededResources: procset Adobe_level2_AI5 1.2 0\n%%+ procset Adobe_Illustrator_10 1.0 0"
+            )
+        }
+
+        // 3. Build Standard Adobe Illustrator 10 (EPS 10) XMP Packet & DSC Comments
+        val xmpXml = generateXmpPacket(t, d, kwList)
+        val xmpPacketBytes = xmpXml.toByteArray(StandardCharsets.UTF_8)
+
         val dscList = mutableListOf<String>()
         dscList.add("%ADO_ContainsXMP: MainFirst")
+        dscList.add("%BeginXMPPacket: ${xmpPacketBytes.size}")
+        dscList.add(xmpXml)
+        dscList.add("%EndXMPPacket")
         if (t.isNotEmpty()) {
             dscList.add("%%Title: ${cleanSingleLine(t)}")
         }
@@ -454,40 +436,21 @@ object XmpInjector {
         }
         val dscCommentBlock = dscList.joinToString("\n")
 
-        // 3. Build PageSetup Client Injection (matches `me` in JS)
-        val pageSetupBlock = buildClientInjectionPageSetup(t, d, kwList)
-
-        // 4. Inject DSC comments right before %%EndComments
-        if (dscCommentBlock.isNotEmpty()) {
-            val endCommentsRegex = Regex("""\r?\n%%EndComments""")
-            if (psStr.contains(endCommentsRegex)) {
-                psStr = psStr.replace(endCommentsRegex) { match ->
-                    "\n" + dscCommentBlock + "\n%%EndComments"
+        // 4. Inject DSC comments & XMP packet right before %%EndComments
+        val endCommentsRegex = Regex("""\r?\n%%EndComments""")
+        if (psStr.contains(endCommentsRegex)) {
+            psStr = psStr.replace(endCommentsRegex) { match ->
+                "\n" + dscCommentBlock + "\n%%EndComments"
+            }
+        } else {
+            val psHeaderRegex = Regex("""%!PS-Adobe-3\.0[^\r\n]*""")
+            if (psStr.contains(psHeaderRegex)) {
+                psStr = psStr.replace(psHeaderRegex) { match ->
+                    match.value + "\n" + dscCommentBlock
                 }
             } else {
-                val psHeaderRegex = Regex("""%!PS-Adobe-3\.0[^\r\n]*""")
-                if (psStr.contains(psHeaderRegex)) {
-                    psStr = psStr.replace(psHeaderRegex) { match ->
-                        match.value + "\n" + dscCommentBlock
-                    }
-                }
+                psStr = dscCommentBlock + "\n" + psStr
             }
-        }
-
-        // 5. Inject PageSetup Client Injection right after %%EndComments
-        val endCommentsPattern = Regex("""(%%EndComments\s*)""")
-        if (psStr.contains(endCommentsPattern)) {
-            psStr = psStr.replace(endCommentsPattern, "$1\n$pageSetupBlock\n")
-        } else {
-            psStr = pageSetupBlock + "\n" + psStr
-        }
-
-        // 6. Inject PageTrailer Client Injection before showpage \n %%EOF
-        val eofRegex = Regex("""\r?\nshowpage\r?\n%%EOF""")
-        if (psStr.contains(eofRegex)) {
-            psStr = psStr.replace(eofRegex, "\n$CLIENT_INJECTION_TRAILER\nshowpage\n%%EOF")
-        } else {
-            psStr += "\n$CLIENT_INJECTION_TRAILER"
         }
 
         return toBinaryPreservingBytes(psStr)

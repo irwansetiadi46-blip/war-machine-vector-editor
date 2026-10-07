@@ -122,12 +122,14 @@ object SvgToEpsConverter {
             }
 
             psBuilder.append("%!PS-Adobe-3.0 EPSF-3.0\n")
-            psBuilder.append("%%Creator: Adobe Illustrator(R) 8.0\n")
-            psBuilder.append("%%AI8_CreatorVersion: 8.0\n")
+            psBuilder.append("%%Creator: Adobe Illustrator(R) 10.0\n")
+            psBuilder.append("%%AI8_CreatorVersion: 10.0\n")
             psBuilder.append("%%Title: ($cleanTitle.eps)\n")
             psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", ceil(artboardWidth.toDouble()).toInt(), ceil(artboardHeight.toDouble()).toInt()))
             psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0 0 %.3f %.3f\n", artboardWidth, artboardHeight))
-            psBuilder.append("%%DocumentNeededResources: procset Adobe_Illustrator_AI5 1.0 0\n")
+            psBuilder.append("%%DocumentProcessColors: Black\n")
+            psBuilder.append("%%DocumentNeededResources: procset Adobe_level2_AI5 1.2 0\n")
+            psBuilder.append("%%+ procset Adobe_Illustrator_10 1.0 0\n")
             psBuilder.append("%%LanguageLevel: 2\n")
             psBuilder.append("%%Pages: 1\n")
             psBuilder.append("%%EndComments\n\n")
