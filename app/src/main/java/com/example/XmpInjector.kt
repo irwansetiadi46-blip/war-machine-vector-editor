@@ -296,67 +296,147 @@ object XmpInjector {
     // --- Packet Generators & Injectors ---
 
     /**
-     * Generates raw XMP Packet string matching standard Adobe implementation.
+     * Generates raw XMP Packet string matching Lineva implementation (Xn).
      */
-    fun generateXmpPacket(title: String, description: String, keywords: List<String>, creator: String = ""): String {
+    fun generateXnXml(title: String, description: String, keywords: List<String>): String {
         val t = title.trim()
         val d = description.trim()
-        val c = creator.trim()
-        val kwList = keywords.map { it.trim() }.filter { it.isNotEmpty() }
+        val cleanKw = keywords.map { it.trim() }.filter { it.isNotEmpty() }
 
-        val kwLines = if (kwList.isNotEmpty()) {
-            kwList.joinToString("\n") { kw -> "     <rdf:li>${escapeXml(kw)}</rdf:li>" }
+        val kwLines = if (cleanKw.isNotEmpty()) {
+            cleanKw.joinToString("\n") { kw -> "    <rdf:li>${escapeXml(kw)}</rdf:li>" }
         } else ""
 
-        val lines = mutableListOf<String>()
-        lines.add("<?xpacket begin=\"\uFEFF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>")
-        lines.add("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" x:xmptk=\"Adobe XMP Core 5.6-c014 79.156797, 2014/08/20-09:53:02        \">")
-        lines.add(" <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">")
-        lines.add("  <rdf:Description rdf:about=\"\"")
-        lines.add("    xmlns:dc=\"http://purl.org/dc/elements/1.1/\"")
-        lines.add("    xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\"")
-        lines.add("    xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"")
-        lines.add("    xmlns:xmpMM=\"http://ns.adobe.com/xap/1.0/mm/\">")
-        lines.add("   <xmp:CreatorTool>Adobe Illustrator 10.0</xmp:CreatorTool>")
+        val parts = mutableListOf<String>()
+        parts.add("<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>")
+        parts.add("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">")
+        parts.add("<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">")
+        parts.add("<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">")
 
         if (t.isNotEmpty()) {
-            lines.add("   <dc:title>")
-            lines.add("    <rdf:Alt>")
-            lines.add("     <rdf:li xml:lang=\"x-default\">${escapeXml(t)}</rdf:li>")
-            lines.add("    </rdf:Alt>")
-            lines.add("   </dc:title>")
-            lines.add("   <photoshop:Headline>${escapeXml(t)}</photoshop:Headline>")
+            parts.add("<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">${escapeXml(t)}</rdf:li></rdf:Alt></dc:title>")
         }
         if (d.isNotEmpty()) {
-            lines.add("   <dc:description>")
-            lines.add("    <rdf:Alt>")
-            lines.add("     <rdf:li xml:lang=\"x-default\">${escapeXml(d)}</rdf:li>")
-            lines.add("    </rdf:Alt>")
-            lines.add("   </dc:description>")
+            parts.add("<dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">${escapeXml(d)}</rdf:li></rdf:Alt></dc:description>")
         }
         if (kwLines.isNotEmpty()) {
-            lines.add("   <dc:subject>")
-            lines.add("    <rdf:Bag>\n$kwLines\n    </rdf:Bag>")
-            lines.add("   </dc:subject>")
+            parts.add("<dc:subject><rdf:Bag>\n$kwLines\n</rdf:Bag></dc:subject>")
         }
-        if (c.isNotEmpty()) {
-            lines.add("   <dc:creator>")
-            lines.add("    <rdf:Seq>")
-            lines.add("     <rdf:li>${escapeXml(c)}</rdf:li>")
-            lines.add("    </rdf:Seq>")
-            lines.add("   </dc:creator>")
+        if (t.isNotEmpty()) {
+            parts.add("<photoshop:Headline>${escapeXml(t)}</photoshop:Headline>")
         }
 
-        lines.add("  </rdf:Description>")
-        lines.add(" </rdf:RDF>")
-        lines.add("</x:xmpmeta>")
-        lines.add("<?xpacket end=\"w\"?>")
+        parts.add("</rdf:Description>")
+        parts.add("</rdf:RDF>")
+        parts.add("</x:xmpmeta>")
+        parts.add("<?xpacket end=\"w\"?>")
 
-        return lines.joinToString("\n")
+        return parts.joinToString("\n")
+    }
+
+    fun generateXmpPacket(title: String, description: String, keywords: List<String>): String =
+        generateXnXml(title, description, keywords)
+
+    /**
+     * Generates PageSetup ClientInjection Block matching Lineva implementation (me).
+     */
+    fun generateMeBlock(title: String, description: String, keywords: List<String>): String {
+        val xnXml = generateXnXml(title, description, keywords)
+        val marker = "%  &&end XMP packet marker&&"
+        return listOf(
+            "%ADOBeginClientInjection: PageSetup End \"AI11EPS\"",
+            "/currentdistillerparams where",
+            "{pop currentdistillerparams /CoreDistVersion get 5000 lt} {true} ifelse",
+            "{ userdict /AI11_PDFMark5 /cleartomark load put",
+            "userdict /AI11_ReadMetadata_PDFMark5 {flushfile cleartomark } bind put}",
+            "{ userdict /AI11_PDFMark5 /pdfmark load put",
+            "userdict /AI11_ReadMetadata_PDFMark5 {/PUT pdfmark} bind put } ifelse",
+            "[/NamespacePush AI11_PDFMark5",
+            "[/_objdef {vector_design_metadata_stream} /type /stream /OBJ AI11_PDFMark5",
+            "[{vector_design_metadata_stream}",
+            "currentfile 0 ($marker)",
+            "/SubFileDecode filter AI11_ReadMetadata_PDFMark5",
+            xnXml,
+            marker,
+            "[{vector_design_metadata_stream}",
+            "<</Type /Metadata /Subtype /XML>>",
+            "/PUT AI11_PDFMark5",
+            "[/Document",
+            "1 dict begin /Metadata {vector_design_metadata_stream} def",
+            "currentdict end /BDC AI11_PDFMark5",
+            "%ADOEndClientInjection: PageSetup End \"AI11EPS\"",
+            ""
+        ).joinToString("\n")
     }
 
     /**
-     * Injects EPS metadata into pure Adobe Illustrator 10 (EPS 10) compatible PostScript structure.
+     * PageTrailer ClientInjection Block matching Lineva implementation (xe).
+     */
+    val XE_BLOCK = listOf(
+        "%ADOBeginClientInjection: PageTrailer Start \"AI11EPS\"",
+        "[/EMC AI11_PDFMark5",
+        "[/NamespacePop AI11_PDFMark5",
+        "%ADOEndClientInjection: PageTrailer Start \"AI11EPS\"",
+        ""
+    ).joinToString("\n")
+
+    /**
+     * Embeds metadata into EPS PostScript text matching Lineva implementation (we).
+     */
+    fun embedEpsMetadata(
+        epsContent: String,
+        title: String,
+        description: String,
+        keywords: List<String>
+    ): String {
+        val t = title.trim()
+        val d = description.trim()
+        val kws = keywords.map { it.trim() }.filter { it.isNotEmpty() }
+
+        if (t.isEmpty() && d.isEmpty() && kws.isEmpty()) {
+            return epsContent
+        }
+
+        val headerLines = mutableListOf<String>()
+        headerLines.add("%ADO_ContainsXMP: MainFirst")
+        if (t.isNotEmpty()) {
+            headerLines.add("%%Title: ${cleanSingleLine(t)}")
+        }
+        if (kws.isNotEmpty()) {
+            headerLines.add("%%Keywords: ${cleanSingleLine(kws.joinToString(", "))}")
+        }
+        val xmpHeader = headerLines.joinToString("\n")
+
+        val meBlock = generateMeBlock(t, d, kws)
+
+        var s = epsContent
+        if (xmpHeader.isNotEmpty()) {
+            if (s.contains("\n%%EndComments")) {
+                s = s.replace("\n%%EndComments", "\n$xmpHeader\n%%EndComments")
+            } else if (s.contains("%%EndComments")) {
+                s = s.replace("%%EndComments", "$xmpHeader\n%%EndComments")
+            }
+        }
+
+        val endCommentsRegex = Regex("""(%%EndComments\s*)""")
+        if (s.contains(endCommentsRegex)) {
+            s = s.replace(endCommentsRegex, "$1\n$meBlock")
+        } else {
+            s = "$meBlock\n$s"
+        }
+
+        val showpageEofRegex = Regex("""\nshowpage\n%%EOF""")
+        if (s.contains(showpageEofRegex)) {
+            s = s.replace(showpageEofRegex, "\n${XE_BLOCK}showpage\n%%EOF")
+        } else if (s.contains("showpage")) {
+            s = s.replace("showpage", "${XE_BLOCK}showpage")
+        }
+
+        return s
+    }
+
+    /**
+     * Injects EPS metadata using exact Lineva PostScript embedding method.
      */
     fun injectIntoEps(
         originalBytes: ByteArray,
@@ -369,176 +449,18 @@ object XmpInjector {
             val metaTitle = title.trim()
             val metaDesc = description.trim()
             val cleanKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() }
-            val metaCreator = creator.trim()
 
-            if (metaTitle.isEmpty() && metaDesc.isEmpty() && cleanKeywords.isEmpty() && metaCreator.isEmpty()) {
+            if (metaTitle.isEmpty() && metaDesc.isEmpty() && cleanKeywords.isEmpty()) {
                 return originalBytes
             }
 
-            val isDosEps = originalBytes.size >= 30 &&
-                    (originalBytes[0].toInt() and 0xFF) == 0xC5 &&
-                    (originalBytes[1].toInt() and 0xFF) == 0xD0 &&
-                    (originalBytes[2].toInt() and 0xFF) == 0xD3 &&
-                    (originalBytes[3].toInt() and 0xFF) == 0xC6
-
-            if (isDosEps) {
-                val psOffset = getUInt32LE(originalBytes, 4)
-                val psLength = getUInt32LE(originalBytes, 8)
-                var wmfOffset = getUInt32LE(originalBytes, 12)
-                val wmfLength = getUInt32LE(originalBytes, 16)
-                var tiffOffset = getUInt32LE(originalBytes, 20)
-                val tiffLength = getUInt32LE(originalBytes, 24)
-
-                if (psOffset in 30..originalBytes.size && psLength > 0 && psOffset + psLength <= originalBytes.size) {
-                    val rawPsBytes = originalBytes.copyOfRange(psOffset, psOffset + psLength)
-                    val injectedPsBytes = injectIntoPostScriptBytes(rawPsBytes, metaTitle, metaDesc, cleanKeywords, metaCreator)
-                    val diff = injectedPsBytes.size - rawPsBytes.size
-
-                    val newHeader = originalBytes.copyOfRange(0, 30)
-                    setUInt32LE(newHeader, 4, psOffset)
-                    setUInt32LE(newHeader, 8, injectedPsBytes.size)
-
-                    if (wmfOffset >= psOffset + psLength) wmfOffset += diff
-                    setUInt32LE(newHeader, 12, wmfOffset)
-                    setUInt32LE(newHeader, 16, wmfLength)
-
-                    if (tiffOffset >= psOffset + psLength) tiffOffset += diff
-                    setUInt32LE(newHeader, 20, tiffOffset)
-                    setUInt32LE(newHeader, 24, tiffLength)
-                    setUInt16LE(newHeader, 28, 0xFFFF)
-
-                    val outputStream = ByteArrayOutputStream(originalBytes.size + diff + 1024)
-                    outputStream.write(newHeader)
-                    if (psOffset > 30) {
-                        outputStream.write(originalBytes, 30, psOffset - 30)
-                    }
-                    outputStream.write(injectedPsBytes)
-                    val trailingStart = psOffset + psLength
-                    if (trailingStart < originalBytes.size) {
-                        outputStream.write(originalBytes, trailingStart, originalBytes.size - trailingStart)
-                    }
-                    return outputStream.toByteArray()
-                }
-            }
-
-            return injectIntoPostScriptBytes(originalBytes, metaTitle, metaDesc, cleanKeywords, metaCreator)
+            val epsString = String(originalBytes, StandardCharsets.UTF_8)
+            val resultEps = embedEpsMetadata(epsString, metaTitle, metaDesc, cleanKeywords)
+            return resultEps.toByteArray(StandardCharsets.UTF_8)
         } catch (e: Exception) {
             e.printStackTrace()
             return originalBytes
         }
-    }
-
-    private fun injectIntoPostScriptBytes(
-        psBytes: ByteArray,
-        metaTitle: String,
-        metaDesc: String,
-        cleanKeywords: List<String>,
-        metaCreator: String = ""
-    ): ByteArray {
-        val t = metaTitle.trim()
-        val d = metaDesc.trim()
-        val c = metaCreator.trim()
-        val kwList = cleanKeywords.map { it.trim() }.filter { it.isNotEmpty() }
-
-        var psStr = String(psBytes, StandardCharsets.ISO_8859_1)
-
-        // Clean any existing XMP packets
-        psStr = psStr.replace(Regex("""%ADO_ContainsXMP:[\s\S]*?%EndXMPPacket\r?\n?"""), "")
-
-        // Ensure Creator is Adobe Illustrator(R) 10.0 for Microstock parser compatibility
-        if (psStr.contains(Regex("""%%Creator:[^\r\n]*"""))) {
-            psStr = psStr.replace(Regex("""%%Creator:[^\r\n]*"""), "%%Creator: Adobe Illustrator(R) 10.0")
-        } else {
-            psStr = psStr.replace("%%EndComments", "%%Creator: Adobe Illustrator(R) 10.0\n%%EndComments")
-        }
-
-        if (psStr.contains(Regex("""%%AI8_CreatorVersion:[^\r\n]*"""))) {
-            psStr = psStr.replace(Regex("""%%AI8_CreatorVersion:[^\r\n]*"""), "%%AI8_CreatorVersion: 10.0")
-        } else {
-            psStr = psStr.replace("%%EndComments", "%%AI8_CreatorVersion: 10.0\n%%EndComments")
-        }
-
-        // Title in Header
-        if (t.isNotEmpty()) {
-            val titleLine = "%%Title: ${cleanSingleLine(t)}"
-            if (psStr.contains(Regex("""%%Title:[^\r\n]*"""))) {
-                psStr = psStr.replace(Regex("""%%Title:[^\r\n]*"""), titleLine)
-            } else {
-                psStr = psStr.replace("%%EndComments", "$titleLine\n%%EndComments")
-            }
-        }
-
-        // Keywords in Header
-        if (kwList.isNotEmpty()) {
-            val kwLine = "%%Keywords: ${cleanSingleLine(kwList.joinToString(", "))}"
-            if (psStr.contains(Regex("""%%Keywords:[^\r\n]*"""))) {
-                psStr = psStr.replace(Regex("""%%Keywords:[^\r\n]*"""), kwLine)
-            } else {
-                psStr = psStr.replace("%%EndComments", "$kwLine\n%%EndComments")
-            }
-        }
-
-        // Ensure %ADO_ContainsXMP: MainFirst is in the top header comments before %%EndComments
-        if (!psStr.contains("%ADO_ContainsXMP: MainFirst")) {
-            psStr = psStr.replace("%%EndComments", "%ADO_ContainsXMP: MainFirst\n%%EndComments")
-        }
-
-        val xmpXml = generateXmpPacket(t, d, kwList, c)
-        val xmpBytes = xmpXml.toByteArray(StandardCharsets.UTF_8)
-
-        val eofRegex = Regex("""%%EOF[^\n]*\n?""")
-        val eofMatch = eofRegex.find(psStr)
-
-        val out = ByteArrayOutputStream(psBytes.size + xmpBytes.size + 512)
-
-        if (eofMatch != null) {
-            val beforeEof = psStr.substring(0, eofMatch.range.first)
-            val afterEof = psStr.substring(eofMatch.range.last + 1)
-
-            out.write(beforeEof.toByteArray(StandardCharsets.ISO_8859_1))
-
-            if (!beforeEof.trimEnd().endsWith("%%Trailer")) {
-                out.write("%%Trailer\n".toByteArray(StandardCharsets.ISO_8859_1))
-            }
-
-            out.write("%ADO_ContainsXMP: MainFirst\n".toByteArray(StandardCharsets.ISO_8859_1))
-            out.write("%BeginXMPPacket: ${xmpBytes.size}\n".toByteArray(StandardCharsets.ISO_8859_1))
-            out.write(xmpBytes)
-            out.write("\n%EndXMPPacket\n".toByteArray(StandardCharsets.ISO_8859_1))
-
-            if (afterEof.isNotEmpty()) {
-                out.write(afterEof.toByteArray(StandardCharsets.ISO_8859_1))
-            }
-            out.write("%%EOF\n".toByteArray(StandardCharsets.ISO_8859_1))
-        } else {
-            out.write(psStr.toByteArray(StandardCharsets.ISO_8859_1))
-            out.write("\n%%Trailer\n".toByteArray(StandardCharsets.ISO_8859_1))
-            out.write("%ADO_ContainsXMP: MainFirst\n".toByteArray(StandardCharsets.ISO_8859_1))
-            out.write("%BeginXMPPacket: ${xmpBytes.size}\n".toByteArray(StandardCharsets.ISO_8859_1))
-            out.write(xmpBytes)
-            out.write("\n%EndXMPPacket\n%%EOF\n".toByteArray(StandardCharsets.ISO_8859_1))
-        }
-
-        return out.toByteArray()
-    }
-
-    private fun getUInt32LE(bytes: ByteArray, offset: Int): Int {
-        return (bytes[offset].toInt() and 0xFF) or
-                ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
-                ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
-                ((bytes[offset + 3].toInt() and 0xFF) shl 24)
-    }
-
-    private fun setUInt32LE(bytes: ByteArray, offset: Int, value: Int) {
-        bytes[offset] = (value and 0xFF).toByte()
-        bytes[offset + 1] = ((value ushr 8) and 0xFF).toByte()
-        bytes[offset + 2] = ((value ushr 16) and 0xFF).toByte()
-        bytes[offset + 3] = ((value ushr 24) and 0xFF).toByte()
-    }
-
-    private fun setUInt16LE(bytes: ByteArray, offset: Int, value: Int) {
-        bytes[offset] = (value and 0xFF).toByte()
-        bytes[offset + 1] = ((value ushr 8) and 0xFF).toByte()
     }
 
     /**
