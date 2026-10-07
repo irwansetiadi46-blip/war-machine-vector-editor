@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 import java.io.ByteArrayOutputStream
+import java.util.Locale
 
 enum class SvgExportFormat {
     SVG,
@@ -90,7 +91,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val context: Context get() = getApplication()
     private val gson = Gson()
-    val offlineKeywordMatcher = OfflineKeywordMatcher(application)
     private var nextId = 1
 
     private val geminiResponseSchema: Map<String, Any> = mapOf(
@@ -232,22 +232,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isGeneratingAi.value = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Keep the delay for premium feels
-                kotlinx.coroutines.delay(600)
+                kotlinx.coroutines.delay(300)
 
-                val resultKeywords = offlineKeywordMatcher.matchKeywords(concept, context)
+                val tokens = concept.split(Regex("[^a-zA-Z0-9]+"))
+                    .map { it.trim().lowercase(Locale.US) }
+                    .filter { it.length > 2 }
+                    .distinct()
 
-                if (resultKeywords.isEmpty()) {
+                if (tokens.isEmpty()) {
                     _toastFlow.value = "Need Details"
                     return@launch
                 }
 
-                // Format as comma-separated string
-                val resultString = resultKeywords.joinToString(",")
+                val resultString = tokens.joinToString(",")
 
                 _keywords.value = resultString
-                _title.value = ""          // Leave empty as required by user in offline mode
-                _description.value = ""    // Leave empty as required by user in offline mode
+                _title.value = ""
+                _description.value = ""
                 _toastFlow.value = "Generated"
 
                 if (_isAutoInjectionEnabled.value) {

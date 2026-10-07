@@ -20,17 +20,4 @@ class ExampleRobolectricTest {
     val appName = context.getString(R.string.app_name)
     assertEquals("War Machine Hybrid", appName)
   }
-
-  @Test
-  fun `test OfflineKeywordMatcher matchKeywords`() = runBlocking {
-    val context = ApplicationProvider.getApplicationContext<Context>()
-    val matcher = OfflineKeywordMatcher(context)
-    matcher.init(context)
-    val result = matcher.matchKeywords("laptop on a desk", context)
-    assertNotNull(result)
-    println("DEBUG TEST RESULT SIZE: ${result.size}")
-    if (result.isNotEmpty()) {
-      println("DEBUG TEST KWS: ${result.take(5)}")
-    }
-  }
 }

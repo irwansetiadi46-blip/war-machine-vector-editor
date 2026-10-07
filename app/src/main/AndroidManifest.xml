@@ -27,11 +27,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity
-            android:name=".OfflineResultActivity"
-            android:exported="false"
-            android:label="WM Keyworder"
-            android:theme="@style/Theme.OfflineResult" />
     </application>
 
 </manifest>
