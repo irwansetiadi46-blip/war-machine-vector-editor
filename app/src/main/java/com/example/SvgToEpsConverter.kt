@@ -112,7 +112,7 @@ object SvgToEpsConverter {
 
             indexElementsAndGradients(root, idMap, gradientMap, fullGradientMap, clipPathMap)
 
-            // 4. Build Standard Adobe Illustrator AI8-Compatible PostScript Header & Prolog
+            // 4. Build Adobe Illustrator 10 (EPS 10) PostScript
             val psBuilder = StringBuilder()
 
             val cleanTitle = if (title.isNotEmpty()) {
@@ -121,86 +121,65 @@ object SvgToEpsConverter {
                 "converted_artwork"
             }
 
+            val now = SimpleDateFormat("M/d/yyyy h:mm a", Locale.US).format(Date())
+            val bboxW = ceil(artboardWidth.toDouble()).toInt()
+            val bboxH = ceil(artboardHeight.toDouble()).toInt()
+
+            // --- Header (Adobe Illustrator 10 DSC order) ---
             psBuilder.append("%!PS-Adobe-3.0 EPSF-3.0\n")
             psBuilder.append("%%Creator: Adobe Illustrator(R) 10.0\n")
             psBuilder.append("%%AI8_CreatorVersion: 10.0\n")
+            psBuilder.append("%%For: (Licensed User)\n")
             psBuilder.append("%%Title: ($cleanTitle.eps)\n")
-            psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", ceil(artboardWidth.toDouble()).toInt(), ceil(artboardHeight.toDouble()).toInt()))
-            psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0 0 %.3f %.3f\n", artboardWidth, artboardHeight))
+            psBuilder.append("%%CreationDate: ($now)\n")
             psBuilder.append("%%DocumentProcessColors: Black\n")
+            psBuilder.append("%%DocumentCustomColors: (none)\n")
+            psBuilder.append("%%DocumentFonts: (none)\n")
             psBuilder.append("%%DocumentNeededResources: procset Adobe_level2_AI5 1.2 0\n")
             psBuilder.append("%%+ procset Adobe_Illustrator_10 1.0 0\n")
+            psBuilder.append("%%DocumentData: Clean7Bit\n")
             psBuilder.append("%%LanguageLevel: 2\n")
             psBuilder.append("%%Pages: 1\n")
+            psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", bboxW, bboxH))
+            psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0 0 %.6f %.6f\n", artboardWidth, artboardHeight))
             psBuilder.append("%%EndComments\n\n")
 
-            // --- PostScript Prolog & Operator Definitions ---
-            psBuilder.append("%%BeginProlog\n")
-            psBuilder.append("/_AI_save /save load def\n")
-            psBuilder.append("/_AI_restore /restore load def\n")
-            psBuilder.append("/q { gsave } bind def\n")
-            psBuilder.append("/Q { grestore } bind def\n")
-            psBuilder.append("/u { count 0 gt { dup type /stringtype eq { pop } if } if } bind def\n")
-            psBuilder.append("/U {} bind def\n")
-            psBuilder.append("/*u { count 0 gt { dup type /stringtype eq { pop } if } if } bind def\n")
-            psBuilder.append("/*U {} bind def\n")
-            psBuilder.append("/m { moveto } bind def\n")
-            psBuilder.append("/l { lineto } bind def\n")
-            psBuilder.append("/c { curveto } bind def\n")
-            psBuilder.append("/v { currentpoint 6 2 roll curveto } bind def\n")
-            psBuilder.append("/y { 2 copy curveto } bind def\n")
-            psBuilder.append("/h { closepath } bind def\n")
-            psBuilder.append("/n { newpath } bind def\n")
-            psBuilder.append("/f { fill } bind def\n")
-            psBuilder.append("/F { fill } bind def\n")
-            psBuilder.append("/f* { eofill } bind def\n")
-            psBuilder.append("/s { stroke } bind def\n")
-            psBuilder.append("/S { stroke } bind def\n")
-            psBuilder.append("/b { gsave fill grestore stroke } bind def\n")
-            psBuilder.append("/B { gsave fill grestore stroke } bind def\n")
-            psBuilder.append("/b* { gsave eofill grestore stroke } bind def\n")
-            psBuilder.append("/B* { gsave eofill grestore stroke } bind def\n")
-            psBuilder.append("/W { clip } bind def\n")
-            psBuilder.append("/W* { eoclip } bind def\n")
-            psBuilder.append("/w { setlinewidth } bind def\n")
-            psBuilder.append("/J { setlinecap } bind def\n")
-            psBuilder.append("/j { setlinejoin } bind def\n")
-            psBuilder.append("/M { setmiterlimit } bind def\n")
-            psBuilder.append("/d { setdash } bind def\n")
-            psBuilder.append("/rg { setrgbcolor } bind def\n")
-            psBuilder.append("/RG { setrgbcolor } bind def\n")
-            psBuilder.append("/k { setcmykcolor } bind def\n")
-            psBuilder.append("/K { setcmykcolor } bind def\n")
-            psBuilder.append("/g { setgray } bind def\n")
-            psBuilder.append("/G { setgray } bind def\n")
-            psBuilder.append("/Lb { cleartomark } bind def\n")
-            psBuilder.append("/Ln { pop } bind def\n")
-            psBuilder.append("/LB {} bind def\n")
-            psBuilder.append("%%EndProlog\n\n")
+            // --- Prolog (procset AI 10 lengkap) ---
+            psBuilder.append(Ai10Prolog.PROLOG)
 
             psBuilder.append("%%BeginSetup\n")
             psBuilder.append("%%EndSetup\n\n")
 
-            // Global SVG-to-PostScript Coordinate Transformation (1:1 top-left mapping)
-            psBuilder.append("q\n")
-            psBuilder.append(String.format(Locale.US, "0 %.3f translate\n", artboardHeight))
+            // --- Global transform SVG → PS (1:1, top-left origin) ---
+            psBuilder.append("_gs\n")
+            psBuilder.append(String.format(Locale.US, "0 %.6f translate\n", artboardHeight))
             psBuilder.append("1 -1 scale\n")
             if (scaleX != 1f || scaleY != 1f) {
                 psBuilder.append(String.format(Locale.US, "%.5f %.5f scale\n", scaleX, scaleY))
             }
             if (minX != 0f || minY != 0f) {
-                psBuilder.append(String.format(Locale.US, "%.3f %.3f translate\n", -minX, -minY))
+                psBuilder.append(String.format(Locale.US, "%.6f %.6f translate\n", -minX, -minY))
             }
             psBuilder.append("\n")
 
-            // Start Adobe Illustrator Layer 1 with mark keyword
+            // --- Layer 1 (AI 10 layer block) ---
             val rawLayerId = root.getAttribute("id").trim()
-            val layerName = if (rawLayerId.isNotEmpty()) rawLayerId.replace("(", "[").replace(")", "]") else "Layer 1"
-            psBuilder.append("%AI5_BeginLayer\n")
-            psBuilder.append("mark 1 1 1 1 0 0 0 79 128 255 Lb\n")
-            psBuilder.append("($layerName) Ln\n")
+            val layerName = if (rawLayerId.isNotEmpty())
+                rawLayerId.replace("(", "[").replace(")", "]")
+            else "Layer 1"
 
-            // Recursive traversal of SVG DOM with AI Group Tracking
+            psBuilder.append("%AI5_BeginLayer\n")
+            psBuilder.append("1 1 1 1 0 0 0 0 79 128 255 0 50 0 Lb\n")
+            psBuilder.append("($layerName) Ln\n")
+            psBuilder.append("%_/ArtDictionary :\n")
+            psBuilder.append("%_/XMLUID : (Layer_1) ; (AI10_ArtUID) ,\n")
+            psBuilder.append("%_;\n")
+            psBuilder.append("%_0 A 1 Xw\n")
+
+            // Common AI 10 drawing state preamble
+            psBuilder.append("0 _J 0 _j 1 _w 4 _M []0 _d\n")
+
+            // --- Traverse SVG DOM ---
             val defaultStyle = StyleContext()
             processChildrenNodes(
                 parent = root,
@@ -214,14 +193,17 @@ object SvgToEpsConverter {
                 depth = 0
             )
 
-            // Close Adobe Illustrator Layer
+            // --- End layer ---
             psBuilder.append("LB\n")
-            psBuilder.append("%AI5_EndLayer\n")
+            psBuilder.append("%AI5_EndLayer--\n")
 
-            psBuilder.append("Q\n")
-            psBuilder.append("showpage\n%%EOF\n")
+            // --- End global state + trailer ---
+            psBuilder.append("_gr\n")
+            psBuilder.append("showpage\n")
+            psBuilder.append("%%Trailer\n")
+            psBuilder.append("%%EOF\n")
 
-            val rawEpsBytes = psBuilder.toString().toByteArray(StandardCharsets.UTF_8)
+            val rawEpsBytes = psBuilder.toString().toByteArray(StandardCharsets.ISO_8859_1)
 
             // 5. Inject Clean Standard XMP Metadata
             return XmpInjector.injectIntoEps(
@@ -303,7 +285,7 @@ object SvgToEpsConverter {
                 val needsStateIsolation = hasTransform || hasClipPath || (tagName == "svg" && element.parentNode != null)
 
                 if (needsStateIsolation) {
-                    sb.append("q\n")
+                    sb.append("_gs\n")
                 }
 
                 // Handle Clip-Path on Group
@@ -353,7 +335,7 @@ object SvgToEpsConverter {
                 sb.append("U\n")
 
                 if (needsStateIsolation) {
-                    sb.append("Q\n")
+                    sb.append("_gr\n")
                 }
             }
 
@@ -363,7 +345,7 @@ object SvgToEpsConverter {
                     val targetId = href.removePrefix("#")
                     val targetElem = idMap[targetId]
                     if (targetElem != null) {
-                        sb.append("q\n")
+                        sb.append("_gs\n")
                         val x = parseLengthToPt(element.getAttribute("x"), 0f)
                         val y = parseLengthToPt(element.getAttribute("y"), 0f)
                         if (x != 0f || y != 0f) {
@@ -385,7 +367,7 @@ object SvgToEpsConverter {
                             depth = depth + 1
                         )
                         sb.append("U\n")
-                        sb.append("Q\n")
+                        sb.append("_gr\n")
                     }
                 }
             }
@@ -406,7 +388,7 @@ object SvgToEpsConverter {
 
                 val needsLocalState = hasTransform || hasClipPath
                 if (needsLocalState) {
-                    sb.append("q\n")
+                    sb.append("_gs\n")
                 }
 
                 if (hasClipPath) {
@@ -434,55 +416,55 @@ object SvgToEpsConverter {
                 val hasStroke = strokeRgb != null && strokeWidth > 0f
 
                 if (gradDef != null && gradDef.stops.isNotEmpty()) {
-                    sb.append("q\n")
-                    sb.append("n\n")
+                    sb.append("_gs\n")
+                    sb.append("_n\n")
                     sb.append(pathCommands)
                     if (nodeStyle.fillRule == "evenodd") {
-                        sb.append("W* n\n")
+                        sb.append("_W* _n\n")
                     } else {
-                        sb.append("W n\n")
+                        sb.append("_W _n\n")
                     }
                     writeGradientShading(sb, gradDef)
-                    sb.append("Q\n")
+                    sb.append("_gr\n")
 
                     if (hasStroke) {
                         emitStrokeState(sb, nodeStyle, strokeRgb!!, strokeWidth)
-                        sb.append("n\n")
+                        sb.append("_n\n")
                         sb.append(pathCommands)
-                        sb.append("s\n")
+                        sb.append("_s\n")
                     }
                 } else {
                     val isEvenOdd = nodeStyle.fillRule == "evenodd"
 
                     if (fillRgb != null && hasStroke) {
-                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f rg\n", fillRgb[0], fillRgb[1], fillRgb[2]))
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f _rg\n", fillRgb[0], fillRgb[1], fillRgb[2]))
                         emitStrokeState(sb, nodeStyle, strokeRgb!!, strokeWidth)
-                        sb.append("n\n")
+                        sb.append("_n\n")
                         sb.append(pathCommands)
-                        sb.append(if (isEvenOdd) "b*\n" else "b\n")
+                        sb.append(if (isEvenOdd) "_b*\n" else "_b\n")
                     } else if (fillRgb != null) {
-                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f rg\n", fillRgb[0], fillRgb[1], fillRgb[2]))
-                        sb.append("n\n")
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f _rg\n", fillRgb[0], fillRgb[1], fillRgb[2]))
+                        sb.append("_n\n")
                         sb.append(pathCommands)
-                        sb.append(if (isEvenOdd) "f*\n" else "f\n")
+                        sb.append(if (isEvenOdd) "_f*\n" else "_f\n")
                     } else if (hasStroke) {
                         emitStrokeState(sb, nodeStyle, strokeRgb!!, strokeWidth)
-                        sb.append("n\n")
+                        sb.append("_n\n")
                         sb.append(pathCommands)
-                        sb.append("s\n")
+                        sb.append("_s\n")
                     }
                 }
 
                 if (needsLocalState) {
-                    sb.append("Q\n")
+                    sb.append("_gr\n")
                 }
             }
         }
     }
 
     private fun emitStrokeState(sb: StringBuilder, nodeStyle: StyleContext, strokeRgb: FloatArray, strokeWidth: Float) {
-        sb.append(String.format(Locale.US, "%.3f %.3f %.3f RG\n", strokeRgb[0], strokeRgb[1], strokeRgb[2]))
-        sb.append(String.format(Locale.US, "%.3f w\n", strokeWidth))
+        sb.append(String.format(Locale.US, "%.3f %.3f %.3f _RG\n", strokeRgb[0], strokeRgb[1], strokeRgb[2]))
+        sb.append(String.format(Locale.US, "%.3f _w\n", strokeWidth))
         val lineCapInt = when (nodeStyle.strokeLineCap) {
             "round" -> 1
             "square" -> 2
@@ -493,7 +475,7 @@ object SvgToEpsConverter {
             "bevel" -> 2
             else -> 0
         }
-        sb.append(String.format(Locale.US, "%d J %d j\n", lineCapInt, lineJoinInt))
+        sb.append(String.format(Locale.US, "%d _J %d _j\n", lineCapInt, lineJoinInt))
     }
 
     private fun emitClipPath(sb: StringBuilder, clipElement: Element) {
@@ -514,12 +496,12 @@ object SvgToEpsConverter {
                 if (pathCmds.isNotBlank()) {
                     val clipRule = elem.getAttribute("clip-rule").ifEmpty { elem.getAttribute("fill-rule") }
                     val isEvenOdd = clipRule.equals("evenodd", ignoreCase = true)
-                    sb.append("n\n")
+                    sb.append("_n\n")
                     sb.append(pathCmds)
                     if (isEvenOdd) {
-                        sb.append("W* n\n")
+                        sb.append("_W* _n\n")
                     } else {
-                        sb.append("W n\n")
+                        sb.append("_W _n\n")
                     }
                 }
             }
@@ -543,7 +525,7 @@ object SvgToEpsConverter {
         if (rx <= 0f || ry <= 0f) {
             return String.format(
                 Locale.US,
-                "%.3f %.3f m %.3f %.3f l %.3f %.3f l %.3f %.3f l h\n",
+                "%.3f %.3f _m %.3f %.3f _l %.3f %.3f _l %.3f %.3f _l _h\n",
                 x, y, x + w, y, x + w, y + h, x, y + h
             )
         }
@@ -551,16 +533,16 @@ object SvgToEpsConverter {
         val kx = rx * 0.55228475f
         val ky = ry * 0.55228475f
         val sb = StringBuilder()
-        sb.append(String.format(Locale.US, "%.3f %.3f m\n", x + rx, y))
-        sb.append(String.format(Locale.US, "%.3f %.3f l\n", x + w - rx, y))
-        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", x + w - rx + kx, y, x + w, y + ry - ky, x + w, y + ry))
-        sb.append(String.format(Locale.US, "%.3f %.3f l\n", x + w, y + h - ry))
-        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", x + w, y + h - ry + ky, x + w - rx + kx, y + h, x + w - rx, y + h))
-        sb.append(String.format(Locale.US, "%.3f %.3f l\n", x + rx, y + h))
-        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", x + rx - kx, y + h, x, y + h - ry + ky, x, y + h - ry))
-        sb.append(String.format(Locale.US, "%.3f %.3f l\n", x, y + ry))
-        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", x, y + ry - ky, x + rx - kx, y, x + rx, y))
-        sb.append("h\n")
+        sb.append(String.format(Locale.US, "%.3f %.3f _m\n", x + rx, y))
+        sb.append(String.format(Locale.US, "%.3f %.3f _l\n", x + w - rx, y))
+        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f _c\n", x + w - rx + kx, y, x + w, y + ry - ky, x + w, y + ry))
+        sb.append(String.format(Locale.US, "%.3f %.3f _l\n", x + w, y + h - ry))
+        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f _c\n", x + w, y + h - ry + ky, x + w - rx + kx, y + h, x + w - rx, y + h))
+        sb.append(String.format(Locale.US, "%.3f %.3f _l\n", x + rx, y + h))
+        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f _c\n", x + rx - kx, y + h, x, y + h - ry + ky, x, y + h - ry))
+        sb.append(String.format(Locale.US, "%.3f %.3f _l\n", x, y + ry))
+        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f _c\n", x, y + ry - ky, x + rx - kx, y, x + rx, y))
+        sb.append("_h\n")
         return sb.toString()
     }
 
@@ -586,7 +568,7 @@ object SvgToEpsConverter {
         val ky = ry * 0.55228475f
         return String.format(
             Locale.US,
-            "%.3f %.3f m %.3f %.3f %.3f %.3f %.3f %.3f c %.3f %.3f %.3f %.3f %.3f %.3f c %.3f %.3f %.3f %.3f %.3f %.3f c %.3f %.3f %.3f %.3f %.3f %.3f c h\n",
+            "%.3f %.3f _m %.3f %.3f %.3f %.3f %.3f %.3f _c %.3f %.3f %.3f %.3f %.3f %.3f _c %.3f %.3f %.3f %.3f %.3f %.3f _c %.3f %.3f %.3f %.3f %.3f %.3f _c _h\n",
             cx + rx, cy,
             cx + rx, cy + ky, cx + kx, cy + ry, cx, cy + ry,
             cx - kx, cy + ry, cx - rx, cy + ky, cx - rx, cy,
@@ -600,7 +582,7 @@ object SvgToEpsConverter {
         val y1 = parseLengthToPt(element.getAttribute("y1"), 0f)
         val x2 = parseLengthToPt(element.getAttribute("x2"), 0f)
         val y2 = parseLengthToPt(element.getAttribute("y2"), 0f)
-        return String.format(Locale.US, "%.3f %.3f m %.3f %.3f l\n", x1, y1, x2, y2)
+        return String.format(Locale.US, "%.3f %.3f _m %.3f %.3f _l\n", x1, y1, x2, y2)
     }
 
     private fun convertPolygonToPostScript(element: Element, isClosed: Boolean): String {
@@ -615,13 +597,13 @@ object SvgToEpsConverter {
             val x = tokens[i]
             val y = tokens[i + 1]
             if (i == 0) {
-                sb.append(String.format(Locale.US, "%.3f %.3f m\n", x, y))
+                sb.append(String.format(Locale.US, "%.3f %.3f _m\n", x, y))
             } else {
-                sb.append(String.format(Locale.US, "%.3f %.3f l\n", x, y))
+                sb.append(String.format(Locale.US, "%.3f %.3f _l\n", x, y))
             }
             i += 2
         }
-        if (isClosed) sb.append("h\n")
+        if (isClosed) sb.append("_h\n")
         return sb.toString()
     }
 
@@ -660,12 +642,12 @@ object SvgToEpsConverter {
                         val finalY = if (isRelative && !isFirstPair) currentY + y else if (isRelative) currentY + y else y
 
                         if (isFirstPair) {
-                            sb.append(String.format(Locale.US, "%.3f %.3f m\n", finalX, finalY))
+                            sb.append(String.format(Locale.US, "%.3f %.3f _m\n", finalX, finalY))
                             startX = finalX
                             startY = finalY
                             isFirstPair = false
                         } else {
-                            sb.append(String.format(Locale.US, "%.3f %.3f l\n", finalX, finalY))
+                            sb.append(String.format(Locale.US, "%.3f %.3f _l\n", finalX, finalY))
                         }
                         currentX = finalX
                         currentY = finalY
@@ -684,7 +666,7 @@ object SvgToEpsConverter {
                         val finalX = if (isRelative) currentX + x else x
                         val finalY = if (isRelative) currentY + y else y
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f l\n", finalX, finalY))
+                        sb.append(String.format(Locale.US, "%.3f %.3f _l\n", finalX, finalY))
                         currentX = finalX
                         currentY = finalY
                         lastControlX = currentX
@@ -700,7 +682,7 @@ object SvgToEpsConverter {
                         val x = tokenizer.nextNumber() ?: break
                         val finalX = if (isRelative) currentX + x else x
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f l\n", finalX, currentY))
+                        sb.append(String.format(Locale.US, "%.3f %.3f _l\n", finalX, currentY))
                         currentX = finalX
                         lastControlX = currentX
                         lastControlY = currentY
@@ -715,7 +697,7 @@ object SvgToEpsConverter {
                         val y = tokenizer.nextNumber() ?: break
                         val finalY = if (isRelative) currentY + y else y
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f l\n", currentX, finalY))
+                        sb.append(String.format(Locale.US, "%.3f %.3f _l\n", currentX, finalY))
                         currentY = finalY
                         lastControlX = currentX
                         lastControlY = currentY
@@ -741,7 +723,7 @@ object SvgToEpsConverter {
                         val fx = if (isRelative) currentX + x else x
                         val fy = if (isRelative) currentY + y else y
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", fx1, fy1, fx2, fy2, fx, fy))
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f _c\n", fx1, fy1, fx2, fy2, fx, fy))
                         lastControlX = fx2
                         lastControlY = fy2
                         currentX = fx
@@ -766,7 +748,7 @@ object SvgToEpsConverter {
                         val fx = if (isRelative) currentX + x else x
                         val fy = if (isRelative) currentY + y else y
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", fx1, fy1, fx2, fy2, fx, fy))
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f _c\n", fx1, fy1, fx2, fy2, fx, fy))
                         lastControlX = fx2
                         lastControlY = fy2
                         currentX = fx
@@ -794,7 +776,7 @@ object SvgToEpsConverter {
                         val cx2 = fx + (2f / 3f) * (qx1 - fx)
                         val cy2 = fy + (2f / 3f) * (qy1 - fy)
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", cx1, cy1, cx2, cy2, fx, fy))
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f _c\n", cx1, cy1, cx2, cy2, fx, fy))
                         lastQuadControlX = qx1
                         lastQuadControlY = qy1
                         currentX = fx
@@ -820,7 +802,7 @@ object SvgToEpsConverter {
                         val cx2 = fx + (2f / 3f) * (qx1 - fx)
                         val cy2 = fy + (2f / 3f) * (qy1 - fy)
 
-                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", cx1, cy1, cx2, cy2, fx, fy))
+                        sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f _c\n", cx1, cy1, cx2, cy2, fx, fy))
                         lastQuadControlX = qx1
                         lastQuadControlY = qy1
                         currentX = fx
@@ -850,7 +832,7 @@ object SvgToEpsConverter {
                         )
 
                         for (b in beziers) {
-                            sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f c\n", b[0], b[1], b[2], b[3], b[4], b[5]))
+                            sb.append(String.format(Locale.US, "%.3f %.3f %.3f %.3f %.3f %.3f _c\n", b[0], b[1], b[2], b[3], b[4], b[5]))
                         }
 
                         currentX = fx
@@ -864,7 +846,7 @@ object SvgToEpsConverter {
                 }
 
                 'Z' -> {
-                    sb.append("h\n")
+                    sb.append("_h\n")
                     currentX = startX
                     currentY = startY
                     lastControlX = currentX
@@ -1285,7 +1267,7 @@ object SvgToEpsConverter {
             sb.append(String.format(Locale.US, "  /Coords [%.3f %.3f 0.0 %.3f %.3f %.3f]\n", fx, fy, cx, cy, r))
             writeFunction(sb, stops)
             sb.append("  /Extend [true true]\n")
-            sb.append(">> shfill\n")
+            sb.append(">> _sh\n")
         } else {
             val x1 = parseCoordinateOrPercent(grad.x1Str, 512f)
             val y1 = parseCoordinateOrPercent(grad.y1Str, 512f)
@@ -1298,7 +1280,7 @@ object SvgToEpsConverter {
             sb.append(String.format(Locale.US, "  /Coords [%.3f %.3f %.3f %.3f]\n", x1, y1, x2, y2))
             writeFunction(sb, stops)
             sb.append("  /Extend [true true]\n")
-            sb.append(">> shfill\n")
+            sb.append(">> _sh\n")
         }
     }
 

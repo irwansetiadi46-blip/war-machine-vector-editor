@@ -396,80 +396,81 @@ object XmpInjector {
 
         var psStr = String(psBytes, StandardCharsets.ISO_8859_1)
 
-        // 1. Remove previous client injection blocks or legacy non-EPS10 DSC comments
-        val clientPageSetupRegex = Regex("""%ADOBeginClientInjection:\s*PageSetup\s*End[^\r\n]*[\s\S]*?%ADOEndClientInjection:\s*PageSetup\s*End[^\r\n]*\r?\n?""")
-        psStr = psStr.replace(clientPageSetupRegex, "")
+        // 1. Hapus blok injeksi lama (kalau re-inject)
+        psStr = psStr.replace(
+            Regex("""%ADO_ContainsXMP:[\s\S]*?%EndXMPPacket\r?\n?"""), "")
 
-        val clientTrailerRegex = Regex("""%ADOBeginClientInjection:\s*PageTrailer\s*Start[^\r\n]*[\s\S]*?%ADOEndClientInjection:\s*PageTrailer\s*Start[^\r\n]*\r?\n?""")
-        psStr = psStr.replace(clientTrailerRegex, "")
+        // 2. Pastikan header AI 10 konsisten
+        psStr = psStr.replace(
+            Regex("""%%Creator:\s*Adobe Illustrator\(R\)\s*[\d\.]+"""),
+            "%%Creator: Adobe Illustrator(R) 10.0")
+        psStr = psStr.replace(
+            Regex("""%%AI8_CreatorVersion:\s*[\d\.]+"""),
+            "%%AI8_CreatorVersion: 10.0")
 
-        val oldXmpPacketRegex = Regex("""%ADO_ContainsXMP:\s*MainFirst[\s\S]*?%EndXMPPacket\r?\n?""")
-        psStr = psStr.replace(oldXmpPacketRegex, "")
-
-        val oldDscRegex = Regex("""%ADO_ContainsXMP:\s*MainFirst[\s\S]*?(?=%%EndComments|\r?\n)""")
-        psStr = psStr.replace(oldDscRegex, "")
-
-        // 2. Normalize and guarantee standard Illustrator 10.0 EPS headers
-        psStr = psStr.replace(Regex("""%%Creator:\s*Adobe Illustrator\(R\)\s*[\d\.]+"""), "%%Creator: Adobe Illustrator(R) 10.0")
-        psStr = psStr.replace(Regex("""%%AI8_CreatorVersion:\s*[\d\.]+"""), "%%AI8_CreatorVersion: 10.0")
-        if (psStr.contains("%%DocumentNeededResources:") && !psStr.contains("Adobe_Illustrator_10")) {
-            psStr = psStr.replace(
-                Regex("""%%DocumentNeededResources:\s*procset\s*Adobe_Illustrator_AI5\s*1\.0\s*0"""),
-                "%%DocumentProcessColors: Black\n%%DocumentNeededResources: procset Adobe_level2_AI5 1.2 0\n%%+ procset Adobe_Illustrator_10 1.0 0"
-            )
-        }
-
-        // 3. Build Standard Adobe Illustrator 10 (EPS 10) XMP Packet & DSC Comments
-        val xmpXml = generateXmpPacket(t, d, kwList)
-        val xmpPacketBytes = xmpXml.toByteArray(StandardCharsets.UTF_8)
-
-        val dscList = mutableListOf<String>()
-        dscList.add("%ADO_ContainsXMP: MainFirst")
-        dscList.add("%BeginXMPPacket: ${xmpPacketBytes.size}")
-        dscList.add(xmpXml)
-        dscList.add("%EndXMPPacket")
+        // 3. Update/insert %%Title & %%Keywords DSC (di header, sebelum %%EndComments)
         if (t.isNotEmpty()) {
-            dscList.add("%%Title: ${cleanSingleLine(t)}")
+            val titleLine = "%%Title: ${cleanSingleLine(t)}"
+            if (psStr.contains(Regex("""%%Title:.*"""))) {
+                psStr = psStr.replace(Regex("""%%Title:[^\r\n]*"""), titleLine)
+            } else {
+                psStr = psStr.replace("%%EndComments", "$titleLine\n%%EndComments")
+            }
         }
         if (kwList.isNotEmpty()) {
-            dscList.add("%%Keywords: ${cleanSingleLine(kwList.joinToString(", "))}")
+            val kwLine = "%%Keywords: ${cleanSingleLine(kwList.joinToString(", "))}"
+            if (psStr.contains(Regex("""%%Keywords:.*"""))) {
+                psStr = psStr.replace(Regex("""%%Keywords:[^\r\n]*"""), kwLine)
+            } else {
+                psStr = psStr.replace("%%EndComments", "$kwLine\n%%EndComments")
+            }
         }
-        val dscCommentBlock = dscList.joinToString("\n")
 
-        // 4. Inject DSC comments & XMP packet right before %%EndComments
-        val endCommentsRegex = Regex("""\r?\n%%EndComments""")
-        if (psStr.contains(endCommentsRegex)) {
-            psStr = psStr.replace(endCommentsRegex) { match ->
-                "\n" + dscCommentBlock + "\n%%EndComments"
+        // 4. Generate XMP
+        val xmpXml = generateXmpPacket(t, d, kwList)
+        val xmpBytes = xmpXml.toByteArray(StandardCharsets.UTF_8)
+
+        // 5. Build output: PS body (ISO-8859-1) + XMP block (UTF-8) di dalam %%Trailer
+        val eofRegex = Regex("""%%EOF[^\n]*\n?""")
+        val eofMatch = eofRegex.find(psStr)
+
+        val out = ByteArrayOutputStream(psBytes.size + xmpBytes.size + 256)
+
+        if (eofMatch != null) {
+            val beforeEof = psStr.substring(0, eofMatch.range.first)
+            val afterEof = psStr.substring(eofMatch.range.last + 1)
+
+            out.write(beforeEof.toByteArray(StandardCharsets.ISO_8859_1))
+
+            // Pastikan ada %%Trailer sebelum XMP
+            if (!beforeEof.trimEnd().endsWith("%%Trailer")) {
+                out.write("%%Trailer\n".toByteArray(StandardCharsets.ISO_8859_1))
+            }
+
+            // XMP header (ASCII)
+            out.write("%ADO_ContainsXMP: MainFirst\n".toByteArray(StandardCharsets.ISO_8859_1))
+            out.write("%BeginXMPPacket: ${xmpBytes.size}\n".toByteArray(StandardCharsets.ISO_8859_1))
+
+            // XMP content (UTF-8, byte-count cocok)
+            out.write(xmpBytes)
+
+            // XMP trailer (ASCII)
+            out.write("\n%EndXMPPacket\n".toByteArray(StandardCharsets.ISO_8859_1))
+
+            if (afterEof.isNotEmpty()) {
+                out.write(afterEof.toByteArray(StandardCharsets.ISO_8859_1))
             }
         } else {
-            val psHeaderRegex = Regex("""%!PS-Adobe-3\.0[^\r\n]*""")
-            if (psStr.contains(psHeaderRegex)) {
-                psStr = psStr.replace(psHeaderRegex) { match ->
-                    match.value + "\n" + dscCommentBlock
-                }
-            } else {
-                psStr = dscCommentBlock + "\n" + psStr
-            }
+            // Fallback: tidak ada %%EOF
+            out.write(psStr.toByteArray(StandardCharsets.ISO_8859_1))
+            out.write("\n%%Trailer\n".toByteArray(StandardCharsets.ISO_8859_1))
+            out.write("%ADO_ContainsXMP: MainFirst\n".toByteArray(StandardCharsets.ISO_8859_1))
+            out.write("%BeginXMPPacket: ${xmpBytes.size}\n".toByteArray(StandardCharsets.ISO_8859_1))
+            out.write(xmpBytes)
+            out.write("\n%EndXMPPacket\n%%EOF\n".toByteArray(StandardCharsets.ISO_8859_1))
         }
 
-        return toBinaryPreservingBytes(psStr)
-    }
-
-    private fun toBinaryPreservingBytes(str: String): ByteArray {
-        val bos = ByteArrayOutputStream(str.length + 512)
-        var i = 0
-        while (i < str.length) {
-            val codePoint = str.codePointAt(i)
-            if (codePoint <= 0xFF) {
-                bos.write(codePoint)
-            } else {
-                val charBytes = String(Character.toChars(codePoint)).toByteArray(StandardCharsets.UTF_8)
-                bos.write(charBytes)
-            }
-            i += Character.charCount(codePoint)
-        }
-        return bos.toByteArray()
+        return out.toByteArray()
     }
 
     private fun getUInt32LE(bytes: ByteArray, offset: Int): Int {

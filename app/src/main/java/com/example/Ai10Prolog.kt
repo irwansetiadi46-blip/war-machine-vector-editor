@@ -1,0 +1,63 @@
+package com.example
+
+object Ai10Prolog {
+    val PROLOG: String = buildString {
+        append("%%BeginProlog\n")
+
+        // === Adobe_level2_AI5 procset (base operators) ===
+        append("%%BeginResource: procset Adobe_level2_AI5 1.2 0\n")
+        append("%%Title: (Adobe Illustrator(R) 10.0)\n")
+        append("%%Copyright: Copyright 1987-2001 Adobe Systems Incorporated, All Rights Reserved\n")
+        append("%%Version: 1.2 0\n")
+        append("userdict /Adobe_level2_AI5 105 dict dup begin\n")
+        append("/Lb { pop pop pop pop pop pop pop pop pop pop pop pop pop pop } bind def\n")
+        append("/Ln { pop } bind def\n")
+        append("/LB { } bind def\n")
+        append("/A { pop } bind def\n")
+        append("/XW { pop } bind def\n")
+        append("/Xw { } bind def\n")
+        append("end readonly def\n")
+        append("%%EndResource\n")
+
+        // === Adobe_Illustrator_10 procset (AI-specific operators) ===
+        append("%%BeginResource: procset Adobe_Illustrator_10 1.0 0\n")
+        append("%%Title: (Adobe Illustrator(R) 10.0)\n")
+        append("%%Copyright: Copyright 1987-2001 Adobe Systems Incorporated, All Rights Reserved\n")
+        append("%%Version: 1.0 0\n")
+        append("userdict /Adobe_Illustrator_10 300 dict dup begin\n")
+        append("/_m { moveto } bind def\n")
+        append("/_l { lineto } bind def\n")
+        append("/_c { curveto } bind def\n")
+        append("/_v { currentpoint 6 2 roll curveto } bind def\n")
+        append("/_y { 2 copy curveto } bind def\n")
+        append("/_h { closepath } bind def\n")
+        append("/_n { newpath } bind def\n")
+        append("/_f { fill } bind def\n")
+        append("/_f* { eofill } bind def\n")
+        append("/_s { stroke } bind def\n")
+        append("/_b { gsave fill grestore stroke } bind def\n")
+        append("/_b* { gsave eofill grestore stroke } bind def\n")
+        append("/_w { setlinewidth } bind def\n")
+        append("/_J { setlinecap } bind def\n")
+        append("/_j { setlinejoin } bind def\n")
+        append("/_M { setmiterlimit } bind def\n")
+        append("/_d { setdash } bind def\n")
+        append("/_rg { setrgbcolor } bind def\n")
+        append("/_RG { setrgbcolor } bind def\n")
+        append("/_k { setcmykcolor } bind def\n")
+        append("/_K { setcmykcolor } bind def\n")
+        append("/_g { setgray } bind def\n")
+        append("/_G { setgray } bind def\n")
+        append("/_gs { gsave } bind def\n")
+        append("/_gr { grestore } bind def\n")
+        append("/_W { clip } bind def\n")
+        append("/_W* { eoclip } bind def\n")
+        append("/_sh { systemdict /shfill known { shfill } { pop pop } ifelse } bind def\n")
+        append("/u { count 0 gt { dup type /stringtype eq { pop } if } if } bind def\n")
+        append("/U {} bind def\n")
+        append("end readonly def\n")
+        append("%%EndResource\n")
+
+        append("%%EndProlog\n\n")
+    }
+}
