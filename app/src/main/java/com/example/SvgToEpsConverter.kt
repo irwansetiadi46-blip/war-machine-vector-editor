@@ -112,7 +112,7 @@ object SvgToEpsConverter {
 
             indexElementsAndGradients(root, idMap, gradientMap, fullGradientMap, clipPathMap)
 
-            // 4. Build Adobe Illustrator 10 (EPS 10) PostScript
+            // 4. Build Standard Clean EPS 3.0 PostScript (Generic Pure Vector)
             val psBuilder = StringBuilder()
 
             val cleanTitle = if (title.isNotEmpty()) {
@@ -125,29 +125,20 @@ object SvgToEpsConverter {
             val bboxW = ceil(artboardWidth.toDouble()).toInt()
             val bboxH = ceil(artboardHeight.toDouble()).toInt()
 
-            // --- Header (Adobe Illustrator 10 DSC order) ---
+            // WM-FIX: [1a] Standard generic EPS 3.0 DSC Header without fake Adobe claims
             psBuilder.append("%!PS-Adobe-3.0 EPSF-3.0\n")
-            psBuilder.append("%%Creator: Adobe Illustrator(R) 10.0\n")
-            psBuilder.append("%%AI8_CreatorVersion: 10.0\n")
-            psBuilder.append("%%For: (Licensed User)\n")
+            psBuilder.append("%%Creator: War Machine\n")
             psBuilder.append("%%Title: ($cleanTitle.eps)\n")
             psBuilder.append("%%CreationDate: ($now)\n")
-            psBuilder.append("%%DocumentProcessColors: Black\n")
-            psBuilder.append("%%DocumentCustomColors: (none)\n")
-            psBuilder.append("%%DocumentFonts: (none)\n")
-            psBuilder.append("%%DocumentNeededResources: procset Adobe_level2_AI5 1.2 0\n")
-            psBuilder.append("%%+ procset Adobe_Illustrator_10 1.0 0\n")
-            psBuilder.append("%%DocumentData: Clean7Bit\n")
-            // FIX: Add %%DocumentMedia before %%LanguageLevel as required by authentic AI 10 EPS
+            psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", bboxW, bboxH))
+            psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0 0 %.6f %.6f\n", artboardWidth, artboardHeight))
             psBuilder.append(String.format(Locale.US, "%%%%DocumentMedia: Canvas %d %d 0 () ()\n", bboxW, bboxH))
             psBuilder.append("%%LanguageLevel: 2\n")
             psBuilder.append("%%Pages: 1\n")
-            psBuilder.append(String.format(Locale.US, "%%%%BoundingBox: 0 0 %d %d\n", bboxW, bboxH))
-            psBuilder.append(String.format(Locale.US, "%%%%HiResBoundingBox: 0 0 %.6f %.6f\n", artboardWidth, artboardHeight))
             psBuilder.append("%%EndComments\n\n")
 
-            // --- Prolog (procset AI 10 lengkap) ---
-            psBuilder.append(Ai10Prolog.PROLOG)
+            // WM-FIX: [1b] Clean generic PostScript prolog
+            psBuilder.append(PsProlog.PROLOG)
 
             psBuilder.append("%%BeginSetup\n")
             psBuilder.append("%%EndSetup\n\n")
@@ -164,22 +155,12 @@ object SvgToEpsConverter {
             }
             psBuilder.append("\n")
 
-            // --- Layer 1 (AI 10 layer block) ---
+            // WM-FIX: [1c] Clean layer comment instead of proprietary AI5_BeginLayer
             val rawLayerId = root.getAttribute("id").trim()
             val layerName = if (rawLayerId.isNotEmpty())
                 rawLayerId.replace("(", "[").replace(")", "]")
             else "Layer 1"
-
-            psBuilder.append("%AI5_BeginLayer\n")
-            psBuilder.append("1 1 1 1 0 0 0 0 79 128 255 0 50 0 Lb\n")
-            psBuilder.append("($layerName) Ln\n")
-            psBuilder.append("%_/ArtDictionary :\n")
-            psBuilder.append("%_/XMLUID : (Layer_1) ; (AI10_ArtUID) ,\n")
-            psBuilder.append("%_;\n")
-            psBuilder.append("%_0 A 1 Xw\n")
-
-            // Common AI 10 drawing state preamble
-            psBuilder.append("0 _J 0 _j 1 _w 4 _M []0 _d\n")
+            psBuilder.append("% Layer: $layerName\n")
 
             // --- Traverse SVG DOM ---
             val defaultStyle = StyleContext()
@@ -195,11 +176,7 @@ object SvgToEpsConverter {
                 depth = 0
             )
 
-            // --- End layer ---
-            psBuilder.append("LB\n")
-            psBuilder.append("%AI5_EndLayer--\n")
-
-            // --- End global state + trailer ---
+            // WM-FIX: [1e] Global state restore & standard EPS trailer with showpage and %%EOF
             psBuilder.append("_gr\n")
             psBuilder.append("showpage\n")
             psBuilder.append("%%Trailer\n")
@@ -273,7 +250,6 @@ object SvgToEpsConverter {
 
         val nodeStyle = resolveElementStyle(element, parentStyle, cssClassMap, gradientMap)
         val transformStr = element.getAttribute("transform").trim()
-        val idAttr = element.getAttribute("id").trim()
         val clipPathAttr = element.getAttribute("clip-path").trim().ifEmpty {
             val styleMap = parseStyleDeclarations(element.getAttribute("style"))
             styleMap["clip-path"] ?: ""
@@ -284,11 +260,8 @@ object SvgToEpsConverter {
 
         when (tagName) {
             "g", "a", "svg" -> {
-                val needsStateIsolation = hasTransform || hasClipPath || (tagName == "svg" && element.parentNode != null)
-
-                if (needsStateIsolation) {
-                    sb.append("_gs\n")
-                }
+                // WM-FIX: [1d] Standard PostScript gsave for group
+                sb.append("_gs\n")
 
                 // Handle Clip-Path on Group
                 if (hasClipPath) {
@@ -312,14 +285,6 @@ object SvgToEpsConverter {
                     }
                 }
 
-                // AI Group Begin Operator: 'u' or '(id) u'
-                if (idAttr.isNotEmpty()) {
-                    val cleanId = idAttr.replace("(", "[").replace(")", "]")
-                    sb.append("($cleanId) u\n")
-                } else {
-                    sb.append("u\n")
-                }
-
                 // Process children inside Group
                 processChildrenNodes(
                     parent = element,
@@ -333,12 +298,8 @@ object SvgToEpsConverter {
                     depth = depth + 1
                 )
 
-                // AI Group End Operator: 'U'
-                sb.append("U\n")
-
-                if (needsStateIsolation) {
-                    sb.append("_gr\n")
-                }
+                // WM-FIX: [1d] Standard PostScript grestore for group
+                sb.append("_gr\n")
             }
 
             "use" -> {
@@ -347,6 +308,7 @@ object SvgToEpsConverter {
                     val targetId = href.removePrefix("#")
                     val targetElem = idMap[targetId]
                     if (targetElem != null) {
+                        // WM-FIX: [1d] Standard PostScript gsave/grestore for use element
                         sb.append("_gs\n")
                         val x = parseLengthToPt(element.getAttribute("x"), 0f)
                         val y = parseLengthToPt(element.getAttribute("y"), 0f)
@@ -356,7 +318,7 @@ object SvgToEpsConverter {
                         if (hasTransform) {
                             sb.append(convertSvgTransformToPostScript(transformStr))
                         }
-                        sb.append("u\n")
+                        sb.append("_gs\n")
                         processNode(
                             element = targetElem,
                             parentStyle = nodeStyle,
@@ -368,7 +330,7 @@ object SvgToEpsConverter {
                             cssClassMap = cssClassMap,
                             depth = depth + 1
                         )
-                        sb.append("U\n")
+                        sb.append("_gr\n")
                         sb.append("_gr\n")
                     }
                 }
@@ -1473,7 +1435,7 @@ object SvgToEpsConverter {
             "maroon" -> floatArrayOf(0.5f, 0f, 0f)
             "navy" -> floatArrayOf(0f, 0f, 0.5f)
             "olive" -> floatArrayOf(0.5f, 0.5f, 0f)
-            "purple" -> floatArrayOf(0.5f, 0f, 0.5f)
+            "purple" -> floatArrayOf(0.5f, 0.5f, 0.5f)
             "teal" -> floatArrayOf(0f, 0.5f, 0.5f)
             "orange" -> floatArrayOf(1f, 0.647f, 0f)
             else -> floatArrayOf(0f, 0f, 0f)

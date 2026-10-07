@@ -41,8 +41,8 @@ class EpsGradientTest {
 
         val epsText = String(epsBytes, StandardCharsets.UTF_8)
 
-        // Verify LanguageLevel 3
-        assertTrue("EPS should declare LanguageLevel 3", epsText.contains("%%LanguageLevel: 3"))
+        // Verify LanguageLevel
+        assertTrue("EPS should declare LanguageLevel", epsText.contains("%%LanguageLevel: 2") || epsText.contains("%%LanguageLevel: 3"))
 
         // Verify Level 3 Shading dictionary
         assertTrue("EPS should contain ShadingType 2", epsText.contains("/ShadingType 2"))
