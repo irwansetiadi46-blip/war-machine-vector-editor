@@ -5,7 +5,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
@@ -52,22 +54,28 @@ object EpsRenderer {
             val (psText, _) = extractPostScriptTextAndBytes(epsBytes)
 
             // 1. Try vector PostScript & Adobe Illustrator rendering FIRST
-            // This renders all vector shapes with their rich, colorful gradients exactly as authored
             val vectorBitmap = renderVectorEps(psText, targetMaxSize)
-            if (vectorBitmap != null) {
+            if (vectorBitmap != null && !isBitmapBlankWhite(vectorBitmap)) {
                 return vectorBitmap
             }
 
             // 2. Fallback to embedded high-resolution bitmap (TIFF / JPEG / PNG)
             val embeddedBitmap = extractEmbeddedBitmap(epsBytes)
-            if (embeddedBitmap != null) {
+            if (embeddedBitmap != null && !isBitmapBlankWhite(embeddedBitmap)) {
+                vectorBitmap?.recycle()
                 return embeddedBitmap
             }
 
-            // 3. Last-resort fallback: ASCII preview
+            // 3. Fallback: ASCII preview
             val asciiPreviewBitmap = extractAsciiPreviewBitmap(epsBytes)
-            if (asciiPreviewBitmap != null) {
+            if (asciiPreviewBitmap != null && !isBitmapBlankWhite(asciiPreviewBitmap)) {
+                vectorBitmap?.recycle()
                 return asciiPreviewBitmap
+            }
+
+            // If vectorBitmap had drawing elements even if light, return it
+            if (vectorBitmap != null) {
+                return vectorBitmap
             }
 
             return null
@@ -75,6 +83,29 @@ object EpsRenderer {
             e.printStackTrace()
             return null
         }
+    }
+
+    private fun isBitmapBlankWhite(bitmap: Bitmap): Boolean {
+        val width = bitmap.width
+        val height = bitmap.height
+        if (width <= 0 || height <= 0) return true
+
+        val stepX = max(1, width / 25)
+        val stepY = max(1, height / 25)
+
+        for (y in 0 until height step stepY) {
+            for (x in 0 until width step stepX) {
+                val p = bitmap.getPixel(x, y)
+                val alpha = (p ushr 24) and 0xFF
+                val r = (p ushr 16) and 0xFF
+                val g = (p ushr 8) and 0xFF
+                val b = p and 0xFF
+                if (alpha > 10 && (r < 245 || g < 245 || b < 245)) {
+                    return false
+                }
+            }
+        }
+        return true
     }
 
     private fun compressAndEncode(bitmap: Bitmap, maxPreviewSize: Int): String {
@@ -357,15 +388,30 @@ object EpsRenderer {
     // =========================================================================
 
     private class GraphicsState(
+        var ctm: Matrix = Matrix(),
         var fillColor: Int = Color.BLACK,
         var strokeColor: Int = Color.TRANSPARENT,
         var strokeWidth: Float = 1f,
+        var lineCap: Paint.Cap = Paint.Cap.BUTT,
+        var lineJoin: Paint.Join = Paint.Join.MITER,
+        var dashPathEffect: DashPathEffect? = null,
         var activeShader: Shader? = null,
         var activeShaderDef: ParsedGradient? = null,
         var activeClip: Path? = null
     ) {
         fun copy(): GraphicsState {
-            val c = GraphicsState(fillColor, strokeColor, strokeWidth, activeShader, activeShaderDef, null)
+            val c = GraphicsState(
+                Matrix(ctm),
+                fillColor,
+                strokeColor,
+                strokeWidth,
+                lineCap,
+                lineJoin,
+                dashPathEffect,
+                activeShader,
+                activeShaderDef,
+                null
+            )
             if (activeClip != null) {
                 c.activeClip = Path(activeClip!!)
             }
@@ -382,21 +428,23 @@ object EpsRenderer {
         var hasBbox = false
 
         val bboxRegex = Regex("""(?:%%BoundingBox:|%%HiResBoundingBox:|%AIGPU_BoundingBox:)\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)""")
-        for (line in epsText.lineSequence().take(400)) {
-            val match = bboxRegex.find(line)
-            if (match != null) {
-                val v1 = match.groupValues[1].toFloat()
-                val v2 = match.groupValues[2].toFloat()
-                val v3 = match.groupValues[3].toFloat()
-                val v4 = match.groupValues[4].toFloat()
-                llx = min(v1, v3)
-                lly = min(v2, v4)
-                urx = max(v1, v3)
-                ury = max(v2, v4)
-                if (urx > llx && ury > lly) {
-                    hasBbox = true
-                    break
-                }
+        val allBboxMatches = bboxRegex.findAll(epsText).toList()
+        for (match in allBboxMatches) {
+            val v1 = match.groupValues[1].toFloatOrNull() ?: continue
+            val v2 = match.groupValues[2].toFloatOrNull() ?: continue
+            val v3 = match.groupValues[3].toFloatOrNull() ?: continue
+            val v4 = match.groupValues[4].toFloatOrNull() ?: continue
+            val minX = min(v1, v3)
+            val minY = min(v2, v4)
+            val maxX = max(v1, v3)
+            val maxY = max(v2, v4)
+            if (maxX > minX && maxY > minY) {
+                llx = minX
+                lly = minY
+                urx = maxX
+                ury = maxY
+                hasBbox = true
+                break
             }
         }
 
@@ -417,7 +465,7 @@ object EpsRenderer {
                     tempStack.add(num)
                 } else {
                     when (tok) {
-                        "m", "moveto", "l", "lineto" -> {
+                        "m", "moveto", "_m", "l", "lineto", "_l" -> {
                             if (tempStack.size >= 2) {
                                 val y = tempStack.removeAt(tempStack.size - 1)
                                 val x = tempStack.removeAt(tempStack.size - 1)
@@ -425,7 +473,7 @@ object EpsRenderer {
                                 minY = min(minY, y); maxY = max(maxY, y)
                             }
                         }
-                        "c", "curveto" -> {
+                        "c", "curveto", "_c" -> {
                             if (tempStack.size >= 6) {
                                 for (k in 0 until 3) {
                                     val y = tempStack.removeAt(tempStack.size - 1)
@@ -435,14 +483,14 @@ object EpsRenderer {
                                 }
                             }
                         }
-                        "re" -> {
+                        "re", "rectfill", "rectstroke" -> {
                             if (tempStack.size >= 4) {
                                 val h = tempStack.removeAt(tempStack.size - 1)
                                 val w = tempStack.removeAt(tempStack.size - 1)
                                 val y = tempStack.removeAt(tempStack.size - 1)
                                 val x = tempStack.removeAt(tempStack.size - 1)
-                                minX = min(minX, x); maxX = max(maxX, x + w)
-                                minY = min(minY, y); maxY = max(maxY, y + h)
+                                minX = min(minX, min(x, x + w)); maxX = max(maxX, max(x, x + w))
+                                minY = min(minY, min(y, y + h)); maxY = max(maxY, max(y, y + h))
                             }
                         }
                     }
@@ -471,15 +519,24 @@ object EpsRenderer {
         val fillPaint = Paint().apply { isAntiAlias = true; style = Paint.Style.FILL; color = Color.BLACK }
         val strokePaint = Paint().apply { isAntiAlias = true; style = Paint.Style.STROKE; color = Color.TRANSPARENT }
 
-        fun mapX(x: Float): Float = (x - llx) * scale
-        fun mapY(y: Float): Float = (ury - y) * scale
+        // Initial CTM converts PostScript user space (bottom-left origin) to Android screen coordinates (top-left origin)
+        val initCtm = Matrix().apply {
+            postTranslate(-llx, -ury)
+            postScale(scale, -scale)
+        }
+
+        var state = GraphicsState(ctm = initCtm)
+        val stateStack = mutableListOf<GraphicsState>()
+
+        fun mapPoint(x: Float, y: Float): FloatArray {
+            val pts = floatArrayOf(x, y)
+            state.ctm.mapPoints(pts)
+            return pts
+        }
 
         var currentPath = Path()
         var currentX = 0f
         var currentY = 0f
-
-        var state = GraphicsState()
-        val stateStack = mutableListOf<GraphicsState>()
 
         val numStack = mutableListOf<Float>()
         val stringStack = mutableListOf<String>()
@@ -527,28 +584,67 @@ object EpsRenderer {
             }
 
             when (tok) {
-                // --- Path Construction Operators ---
-                "m", "moveto" -> {
+                // --- Coordinate Transformations (PostScript CTM) ---
+                "translate" -> {
                     if (numStack.size >= 2) {
-                        val y = numStack.removeAt(numStack.size - 1)
-                        val x = numStack.removeAt(numStack.size - 1)
-                        val mx = mapX(x); val my = mapY(y)
-                        currentPath.moveTo(mx, my)
-                        currentX = mx; currentY = my
+                        val ty = numStack.removeAt(numStack.size - 1)
+                        val tx = numStack.removeAt(numStack.size - 1)
+                        state.ctm.preTranslate(tx, ty)
                     }
                     numStack.clear()
                 }
-                "l", "lineto" -> {
+                "scale" -> {
                     if (numStack.size >= 2) {
-                        val y = numStack.removeAt(numStack.size - 1)
-                        val x = numStack.removeAt(numStack.size - 1)
-                        val mx = mapX(x); val my = mapY(y)
-                        currentPath.lineTo(mx, my)
-                        currentX = mx; currentY = my
+                        val sy = numStack.removeAt(numStack.size - 1)
+                        val sx = numStack.removeAt(numStack.size - 1)
+                        state.ctm.preScale(sx, sy)
                     }
                     numStack.clear()
                 }
-                "c", "curveto" -> {
+                "rotate" -> {
+                    if (numStack.isNotEmpty()) {
+                        val angle = numStack.removeAt(numStack.size - 1)
+                        state.ctm.preRotate(angle)
+                    }
+                    numStack.clear()
+                }
+                "concat" -> {
+                    if (numStack.size >= 6) {
+                        val ty = numStack.removeAt(numStack.size - 1)
+                        val tx = numStack.removeAt(numStack.size - 1)
+                        val d = numStack.removeAt(numStack.size - 1)
+                        val c = numStack.removeAt(numStack.size - 1)
+                        val b = numStack.removeAt(numStack.size - 1)
+                        val a = numStack.removeAt(numStack.size - 1)
+                        val m = Matrix()
+                        m.setValues(floatArrayOf(a, c, tx, b, d, ty, 0f, 0f, 1f))
+                        state.ctm.preConcat(m)
+                    }
+                    numStack.clear()
+                }
+
+                // --- Path Construction Operators (Standard + AI Underscored) ---
+                "m", "moveto", "_m" -> {
+                    if (numStack.size >= 2) {
+                        val y = numStack.removeAt(numStack.size - 1)
+                        val x = numStack.removeAt(numStack.size - 1)
+                        val p = mapPoint(x, y)
+                        currentPath.moveTo(p[0], p[1])
+                        currentX = p[0]; currentY = p[1]
+                    }
+                    numStack.clear()
+                }
+                "l", "lineto", "_l" -> {
+                    if (numStack.size >= 2) {
+                        val y = numStack.removeAt(numStack.size - 1)
+                        val x = numStack.removeAt(numStack.size - 1)
+                        val p = mapPoint(x, y)
+                        currentPath.lineTo(p[0], p[1])
+                        currentX = p[0]; currentY = p[1]
+                    }
+                    numStack.clear()
+                }
+                "c", "curveto", "_c" -> {
                     if (numStack.size >= 6) {
                         val y3 = numStack.removeAt(numStack.size - 1)
                         val x3 = numStack.removeAt(numStack.size - 1)
@@ -556,30 +652,37 @@ object EpsRenderer {
                         val x2 = numStack.removeAt(numStack.size - 1)
                         val y1 = numStack.removeAt(numStack.size - 1)
                         val x1 = numStack.removeAt(numStack.size - 1)
-                        currentPath.cubicTo(mapX(x1), mapY(y1), mapX(x2), mapY(y2), mapX(x3), mapY(y3))
-                        currentX = mapX(x3); currentY = mapY(y3)
+                        val p1 = mapPoint(x1, y1)
+                        val p2 = mapPoint(x2, y2)
+                        val p3 = mapPoint(x3, y3)
+                        currentPath.cubicTo(p1[0], p1[1], p2[0], p2[1], p3[0], p3[1])
+                        currentX = p3[0]; currentY = p3[1]
                     }
                     numStack.clear()
                 }
-                "v" -> {
+                "v", "_v" -> {
                     if (numStack.size >= 4) {
                         val y3 = numStack.removeAt(numStack.size - 1)
                         val x3 = numStack.removeAt(numStack.size - 1)
                         val y2 = numStack.removeAt(numStack.size - 1)
                         val x2 = numStack.removeAt(numStack.size - 1)
-                        currentPath.cubicTo(currentX, currentY, mapX(x2), mapY(y2), mapX(x3), mapY(y3))
-                        currentX = mapX(x3); currentY = mapY(y3)
+                        val p2 = mapPoint(x2, y2)
+                        val p3 = mapPoint(x3, y3)
+                        currentPath.cubicTo(currentX, currentY, p2[0], p2[1], p3[0], p3[1])
+                        currentX = p3[0]; currentY = p3[1]
                     }
                     numStack.clear()
                 }
-                "y" -> {
+                "y", "_y" -> {
                     if (numStack.size >= 4) {
                         val y3 = numStack.removeAt(numStack.size - 1)
                         val x3 = numStack.removeAt(numStack.size - 1)
                         val y1 = numStack.removeAt(numStack.size - 1)
                         val x1 = numStack.removeAt(numStack.size - 1)
-                        currentPath.cubicTo(mapX(x1), mapY(y1), mapX(x3), mapY(y3), mapX(x3), mapY(y3))
-                        currentX = mapX(x3); currentY = mapY(y3)
+                        val p1 = mapPoint(x1, y1)
+                        val p3 = mapPoint(x3, y3)
+                        currentPath.cubicTo(p1[0], p1[1], p3[0], p3[1], p3[0], p3[1])
+                        currentX = p3[0]; currentY = p3[1]
                     }
                     numStack.clear()
                 }
@@ -587,7 +690,10 @@ object EpsRenderer {
                     if (numStack.size >= 2) {
                         val dy = numStack.removeAt(numStack.size - 1)
                         val dx = numStack.removeAt(numStack.size - 1)
-                        currentPath.rLineTo(dx * scale, -dy * scale)
+                        val p0 = mapPoint(0f, 0f)
+                        val p1 = mapPoint(dx, dy)
+                        currentPath.rLineTo(p1[0] - p0[0], p1[1] - p0[1])
+                        currentX += p1[0] - p0[0]; currentY += p1[1] - p0[1]
                     }
                     numStack.clear()
                 }
@@ -595,35 +701,60 @@ object EpsRenderer {
                     if (numStack.size >= 2) {
                         val dy = numStack.removeAt(numStack.size - 1)
                         val dx = numStack.removeAt(numStack.size - 1)
-                        currentPath.rMoveTo(dx * scale, -dy * scale)
+                        val p0 = mapPoint(0f, 0f)
+                        val p1 = mapPoint(dx, dy)
+                        currentPath.rMoveTo(p1[0] - p0[0], p1[1] - p0[1])
+                        currentX += p1[0] - p0[0]; currentY += p1[1] - p0[1]
                     }
                     numStack.clear()
                 }
-                "re" -> {
+                "re", "rectfill", "rectstroke" -> {
                     if (numStack.size >= 4) {
                         val h = numStack.removeAt(numStack.size - 1)
                         val w = numStack.removeAt(numStack.size - 1)
                         val y = numStack.removeAt(numStack.size - 1)
                         val x = numStack.removeAt(numStack.size - 1)
-                        val left = mapX(x)
-                        val right = mapX(x + w)
-                        val top = mapY(y + h)
-                        val bottom = mapY(y)
-                        currentPath.addRect(min(left, right), min(top, bottom), max(left, right), max(top, bottom), Path.Direction.CW)
+                        val p0 = mapPoint(x, y)
+                        val p1 = mapPoint(x + w, y)
+                        val p2 = mapPoint(x + w, y + h)
+                        val p3 = mapPoint(x, y + h)
+                        val rPath = Path().apply {
+                            moveTo(p0[0], p0[1])
+                            lineTo(p1[0], p1[1])
+                            lineTo(p2[0], p2[1])
+                            lineTo(p3[0], p3[1])
+                            close()
+                        }
+                        if (tok == "rectfill") {
+                            fillPaint.shader = state.activeShader
+                            fillPaint.color = state.fillColor
+                            canvas.drawPath(rPath, fillPaint)
+                            drawCount++
+                        } else if (tok == "rectstroke") {
+                            strokePaint.color = state.strokeColor
+                            strokePaint.strokeWidth = state.strokeWidth
+                            strokePaint.strokeCap = state.lineCap
+                            strokePaint.strokeJoin = state.lineJoin
+                            strokePaint.pathEffect = state.dashPathEffect
+                            canvas.drawPath(rPath, strokePaint)
+                            drawCount++
+                        } else {
+                            currentPath.addPath(rPath)
+                        }
                     }
                     numStack.clear()
                 }
-                "h", "cp", "closepath" -> {
+                "h", "cp", "closepath", "_h" -> {
                     currentPath.close()
                     numStack.clear()
                 }
-                "n", "newpath" -> {
+                "n", "newpath", "_n" -> {
                     currentPath = Path()
                     numStack.clear()
                 }
 
-                // --- Color Operators (Standard PostScript & Adobe Illustrator) ---
-                "rg", "setrgbcolor" -> {
+                // --- Color Operators ---
+                "rg", "setrgbcolor", "_rg" -> {
                     if (numStack.size >= 3) {
                         val b = numStack.removeAt(numStack.size - 1)
                         val g = numStack.removeAt(numStack.size - 1)
@@ -634,7 +765,7 @@ object EpsRenderer {
                     }
                     numStack.clear()
                 }
-                "RG" -> {
+                "RG", "_RG" -> {
                     if (numStack.size >= 3) {
                         val b = numStack.removeAt(numStack.size - 1)
                         val g = numStack.removeAt(numStack.size - 1)
@@ -643,7 +774,7 @@ object EpsRenderer {
                     }
                     numStack.clear()
                 }
-                "k", "setcmykcolor" -> {
+                "k", "setcmykcolor", "_k" -> {
                     if (numStack.size >= 4) {
                         val k = numStack.removeAt(numStack.size - 1)
                         val y = numStack.removeAt(numStack.size - 1)
@@ -655,7 +786,7 @@ object EpsRenderer {
                     }
                     numStack.clear()
                 }
-                "K" -> {
+                "K", "_K" -> {
                     if (numStack.size >= 4) {
                         val k = numStack.removeAt(numStack.size - 1)
                         val y = numStack.removeAt(numStack.size - 1)
@@ -665,7 +796,7 @@ object EpsRenderer {
                     }
                     numStack.clear()
                 }
-                "g", "setgray" -> {
+                "g", "setgray", "_g" -> {
                     if (numStack.isNotEmpty()) {
                         val gray = numStack.removeAt(numStack.size - 1)
                         state.fillColor = parseColorComponents(listOf(gray))
@@ -674,14 +805,13 @@ object EpsRenderer {
                     }
                     numStack.clear()
                 }
-                "G" -> {
+                "G", "_G" -> {
                     if (numStack.isNotEmpty()) {
                         val gray = numStack.removeAt(numStack.size - 1)
                         state.strokeColor = parseColorComponents(listOf(gray))
                     }
                     numStack.clear()
                 }
-                // Adobe Illustrator color setting operators 'x' (fill) and 'X' (stroke)
                 "x", "xx" -> {
                     if (numStack.isNotEmpty()) {
                         state.fillColor = parseColorComponents(numStack)
@@ -696,10 +826,49 @@ object EpsRenderer {
                     }
                     numStack.clear()
                 }
-                "w", "setlinewidth" -> {
+                "w", "setlinewidth", "_w" -> {
                     if (numStack.isNotEmpty()) {
                         val w = numStack.removeAt(numStack.size - 1)
-                        state.strokeWidth = max(0.5f, w * scale)
+                        val p0 = mapPoint(0f, 0f)
+                        val p1 = mapPoint(w, 0f)
+                        val screenW = sqrt((p1[0] - p0[0]) * (p1[0] - p0[0]) + (p1[1] - p0[1]) * (p1[1] - p0[1]))
+                        state.strokeWidth = max(0.5f, screenW)
+                    }
+                    numStack.clear()
+                }
+                "J", "setlinecap", "_J" -> {
+                    if (numStack.isNotEmpty()) {
+                        val cap = numStack.removeAt(numStack.size - 1).toInt()
+                        state.lineCap = when (cap) {
+                            1 -> Paint.Cap.ROUND
+                            2 -> Paint.Cap.SQUARE
+                            else -> Paint.Cap.BUTT
+                        }
+                    }
+                    numStack.clear()
+                }
+                "j", "setlinejoin", "_j" -> {
+                    if (numStack.isNotEmpty()) {
+                        val join = numStack.removeAt(numStack.size - 1).toInt()
+                        state.lineJoin = when (join) {
+                            1 -> Paint.Join.ROUND
+                            2 -> Paint.Join.BEVEL
+                            else -> Paint.Join.MITER
+                        }
+                    }
+                    numStack.clear()
+                }
+                "d", "setdash", "_d" -> {
+                    if (numStack.isNotEmpty()) {
+                        val offset = numStack.removeAt(numStack.size - 1)
+                        if (numStack.isNotEmpty()) {
+                            val intervals = numStack.map { max(1f, it * scale) }.toFloatArray()
+                            if (intervals.size % 2 == 0 && intervals.isNotEmpty()) {
+                                state.dashPathEffect = DashPathEffect(intervals, offset * scale)
+                            }
+                        } else {
+                            state.dashPathEffect = null
+                        }
                     }
                     numStack.clear()
                 }
@@ -709,8 +878,8 @@ object EpsRenderer {
                 "_Yg", "_yg", "Yg", "yg",
                 "_Bg", "_bg", "Bg", "bg",
                 "_Ag", "_ag", "Ag", "ag",
-                "shfill" -> {
-                    val isRadialOp = tok in listOf("_Yg", "_yg", "Yg", "yg")
+                "shfill", "_sh" -> {
+                    val isRadialOp = tok in listOf("_Yg", "_yg", "Yg", "yg", "_Ag", "_ag", "Ag", "ag")
                     val isStrokeAlso = tok in listOf("_Bg", "_bg", "Bg", "bg", "_Ag", "_ag", "Ag", "ag")
 
                     // 1. Resolve Gradient definition
@@ -723,7 +892,6 @@ object EpsRenderer {
                         gradDef = state.activeShaderDef
                     }
                     if (gradDef == null && allGradients.isNotEmpty()) {
-                        // Fallback: match by radial/linear or take latest
                         gradDef = allGradients.values.firstOrNull { it.isRadial == isRadialOp } ?: allGradients.values.last()
                     }
 
@@ -741,7 +909,18 @@ object EpsRenderer {
                         val positions = gradDef.stops.map { it.position }.toFloatArray()
                         val isRad = isRadialOp || gradDef.isRadial
 
-                        if (isRad) {
+                        if (gradDef.coords.size >= 4) {
+                            if (gradDef.coords.size >= 6 && isRad) {
+                                val p1 = mapPoint(gradDef.coords[0], gradDef.coords[1])
+                                val p2 = mapPoint(gradDef.coords[3], gradDef.coords[4])
+                                val r = abs(mapPoint(gradDef.coords[5], 0f)[0] - mapPoint(0f, 0f)[0]).coerceAtLeast(10f)
+                                RadialGradient(p2[0], p2[1], r, colors, positions, Shader.TileMode.CLAMP)
+                            } else {
+                                val p1 = mapPoint(gradDef.coords[0], gradDef.coords[1])
+                                val p2 = mapPoint(gradDef.coords[2], gradDef.coords[3])
+                                LinearGradient(p1[0], p1[1], p2[0], p2[1], colors, positions, Shader.TileMode.CLAMP)
+                            }
+                        } else if (isRad) {
                             val cx = bounds.centerX()
                             val cy = bounds.centerY()
                             val r = max(1f, max(bounds.width(), bounds.height()) / 2f)
@@ -754,7 +933,6 @@ object EpsRenderer {
                             LinearGradient(sx, sy, ex, ey, colors, positions, Shader.TileMode.CLAMP)
                         }
                     } else if (state.fillColor != Color.BLACK && state.fillColor != Color.TRANSPARENT) {
-                        // Blend from shape color to lighter shade
                         val c0 = state.fillColor
                         val c1 = Color.rgb(
                             (Color.red(c0) * 0.7f + 70).toInt().coerceIn(0, 255),
@@ -775,7 +953,6 @@ object EpsRenderer {
                         }
                         fillPaint.shader = null
                     } else {
-                        // Flat color fallback
                         fillPaint.color = state.fillColor
                         val drawPath = if (!currentPath.isEmpty) currentPath else state.activeClip
                         if (drawPath != null && !drawPath.isEmpty) {
@@ -783,10 +960,12 @@ object EpsRenderer {
                         }
                     }
 
-                    // 5. Render Stroke if requested
                     if (isStrokeAlso && state.strokeColor != Color.TRANSPARENT && state.strokeWidth > 0f) {
                         strokePaint.color = state.strokeColor
                         strokePaint.strokeWidth = state.strokeWidth
+                        strokePaint.strokeCap = state.lineCap
+                        strokePaint.strokeJoin = state.lineJoin
+                        strokePaint.pathEffect = state.dashPathEffect
                         val drawPath = if (!currentPath.isEmpty) currentPath else state.activeClip
                         if (drawPath != null && !drawPath.isEmpty) {
                             canvas.drawPath(drawPath, strokePaint)
@@ -802,7 +981,9 @@ object EpsRenderer {
                 }
 
                 // --- Standard Drawing Operators ---
-                "f", "F", "f*", "fill", "eofill" -> {
+                "f", "F", "f*", "fill", "eofill", "_f", "_f*" -> {
+                    val isEvenOdd = tok in listOf("f*", "eofill", "_f*")
+                    currentPath.fillType = if (isEvenOdd) Path.FillType.EVEN_ODD else Path.FillType.WINDING
                     if (state.activeShader != null) {
                         fillPaint.shader = state.activeShader
                     } else {
@@ -815,15 +996,20 @@ object EpsRenderer {
                     drawCount++
                     numStack.clear()
                 }
-                "s", "S", "stroke" -> {
+                "s", "S", "stroke", "_s" -> {
                     strokePaint.color = state.strokeColor
                     strokePaint.strokeWidth = state.strokeWidth
+                    strokePaint.strokeCap = state.lineCap
+                    strokePaint.strokeJoin = state.lineJoin
+                    strokePaint.pathEffect = state.dashPathEffect
                     canvas.drawPath(currentPath, strokePaint)
                     currentPath = Path()
                     drawCount++
                     numStack.clear()
                 }
-                "b", "B", "b*", "B*" -> {
+                "b", "B", "b*", "B*", "_b", "_b*" -> {
+                    val isEvenOdd = tok in listOf("b*", "B*", "_b*")
+                    currentPath.fillType = if (isEvenOdd) Path.FillType.EVEN_ODD else Path.FillType.WINDING
                     if (state.activeShader != null) {
                         fillPaint.shader = state.activeShader
                     } else {
@@ -836,6 +1022,9 @@ object EpsRenderer {
                     if (state.strokeColor != Color.TRANSPARENT && state.strokeWidth > 0f) {
                         strokePaint.color = state.strokeColor
                         strokePaint.strokeWidth = state.strokeWidth
+                        strokePaint.strokeCap = state.lineCap
+                        strokePaint.strokeJoin = state.lineJoin
+                        strokePaint.pathEffect = state.dashPathEffect
                         canvas.drawPath(currentPath, strokePaint)
                     }
                     currentPath = Path()
@@ -844,7 +1033,7 @@ object EpsRenderer {
                 }
 
                 // --- Clipping & State Stack ---
-                "clip", "eoclip", "W", "W*" -> {
+                "clip", "eoclip", "W", "W*", "_W", "_W*" -> {
                     if (!currentPath.isEmpty) {
                         val clipCopy = Path(currentPath)
                         state.activeClip = clipCopy
@@ -854,12 +1043,12 @@ object EpsRenderer {
                     }
                     numStack.clear()
                 }
-                "gsave", "q" -> {
+                "gsave", "q", "_q", "_gs" -> {
                     canvas.save()
                     stateStack.add(state.copy())
                     numStack.clear()
                 }
-                "grestore", "Q" -> {
+                "grestore", "Q", "_Q", "_gr" -> {
                     try {
                         canvas.restore()
                     } catch (_: Exception) {}

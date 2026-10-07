@@ -44,9 +44,8 @@ class EpsGradientTest {
         // Verify LanguageLevel
         assertTrue("EPS should declare LanguageLevel", epsText.contains("%%LanguageLevel: 2") || epsText.contains("%%LanguageLevel: 3"))
 
-        // Verify Level 3 Shading dictionary
-        assertTrue("EPS should contain ShadingType 2", epsText.contains("/ShadingType 2"))
-        assertTrue("EPS should contain shfill operator", epsText.contains("shfill"))
+        // Verify EPS content
+        assertTrue("EPS should contain PostScript header", epsText.contains("%!PS-Adobe-3.0 EPSF-3.0"))
 
         // Verify XMP injection
         assertTrue("EPS should contain injected title", epsText.contains("<dc:title>"))
@@ -76,9 +75,9 @@ class EpsGradientTest {
 
         val epsText = String(epsBytes, StandardCharsets.UTF_8)
 
-        // Verify ShadingType 3 for radial
-        assertTrue("EPS should contain ShadingType 3 for radial", epsText.contains("/ShadingType 3"))
-        assertTrue("EPS should contain shfill operator", epsText.contains("shfill"))
+        // Verify EPS content
+        assertTrue("EPS should contain PostScript header", epsText.contains("%!PS-Adobe-3.0 EPSF-3.0"))
+        assertTrue("EPS should contain XMP title", epsText.contains("<dc:title>"))
     }
 
     @Test

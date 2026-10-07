@@ -15,6 +15,8 @@ data class XmpData(
 
 object XmpInjector {
 
+    // --- Helper Formatting & Cleaning ---
+
     private fun escapeXml(input: String): String {
         return input.replace("&", "&amp;")
             .replace("\"", "&quot;")
@@ -38,6 +40,31 @@ object XmpInjector {
             .replace("&apos;", "'")
     }
 
+    // --- Unified Main Dispatcher ---
+
+    /**
+     * Helper universal untuk menyuntikkan metadata ke berbagai format berdasarkan format extension/type.
+     */
+    fun injectMetadata(
+        originalBytes: ByteArray,
+        format: String,
+        title: String,
+        description: String,
+        keywords: List<String>,
+        creator: String = ""
+    ): ByteArray {
+        val ext = format.lowercase().trim().removePrefix(".")
+        return when (ext) {
+            "jpg", "jpeg" -> injectIntoJpeg(originalBytes, title, description, keywords, creator)
+            "png" -> injectIntoPng(originalBytes, title, description, keywords, creator)
+            "svg" -> injectIntoSvg(originalBytes, title, description, keywords)
+            "eps" -> injectIntoEps(originalBytes, title, description, keywords, creator)
+            else -> originalBytes
+        }
+    }
+
+    // --- XMP Extraction & Parsing ---
+
     fun extractXMP(text: String): XmpData {
         val lis = Regex("<rdf:li[^>]*>(.*?)</rdf:li>", RegexOption.DOT_MATCHES_ALL)
             .findAll(text)
@@ -60,7 +87,7 @@ object XmpInjector {
         val titleFallback = findFallbackTag(text, "dc:title")
         val descFallback = findFallbackTag(text, "dc:description")
         val creatorFallback = findFallbackTag(text, "dc:creator")
-        
+
         val subjectMatch = Regex("<dc:subject[^>]*>(.*?)</dc:subject>", RegexOption.DOT_MATCHES_ALL).find(text)
         var keywordsFallback = ""
         if (subjectMatch != null) {
@@ -266,8 +293,10 @@ object XmpInjector {
         }
     }
 
+    // --- Packet Generators & Injectors ---
+
     /**
-     * Generates raw XMP Packet string matching version 2.0.0 reference implementation (`Xn` in JS).
+     * Generates raw XMP Packet string matching standard Adobe implementation.
      */
     fun generateXmpPacket(title: String, description: String, keywords: List<String>): String {
         val t = title.trim()
@@ -279,7 +308,6 @@ object XmpInjector {
         } else ""
 
         val lines = mutableListOf<String>()
-        // FIX: BUG #2 - Add BOM character (U+FEFF) as required by XMP packet specification
         lines.add("<?xpacket begin=\"\uFEFF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>")
         lines.add("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">")
         lines.add("<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">")
@@ -326,7 +354,6 @@ object XmpInjector {
                 return originalBytes
             }
 
-            // Check if DOS EPS binary header is present (Magic: 0xC5D0D3C6)
             val isDosEps = originalBytes.size >= 30 &&
                     (originalBytes[0].toInt() and 0xFF) == 0xC5 &&
                     (originalBytes[1].toInt() and 0xFF) == 0xD0 &&
@@ -373,7 +400,6 @@ object XmpInjector {
                 }
             }
 
-            // Pure PostScript EPS
             return injectIntoPostScriptBytes(originalBytes, metaTitle, metaDesc, cleanKeywords)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -381,10 +407,6 @@ object XmpInjector {
         }
     }
 
-    /**
-     * Injects EPS metadata matching official Adobe Illustrator 10.0 (EPS 10) specification.
-     * Removes non-standard/newer AI11 markers that cause rejections on microstock sites like Vecteezy.
-     */
     private fun injectIntoPostScriptBytes(
         psBytes: ByteArray,
         metaTitle: String,
@@ -397,20 +419,10 @@ object XmpInjector {
 
         var psStr = String(psBytes, StandardCharsets.ISO_8859_1)
 
-        // 1. Hapus blok injeksi lama (kalau re-inject)
-        psStr = psStr.replace(
-            Regex("""%ADO_ContainsXMP:[\s\S]*?%EndXMPPacket\r?\n?"""), "")
+        psStr = psStr.replace(Regex("""%ADO_ContainsXMP:[\s\S]*?%EndXMPPacket\r?\n?"""), "")
+        psStr = psStr.replace(Regex("""%%Creator:\s*Adobe Illustrator\(R\)\s*[\d\.]+"""), "%%Creator: Adobe Illustrator(R) 10.0")
+        psStr = psStr.replace(Regex("""%%AI8_CreatorVersion:\s*[\d\.]+"""), "%%AI8_CreatorVersion: 10.0")
 
-        // 2. Pastikan header AI 10 konsisten
-        psStr = psStr.replace(
-            Regex("""%%Creator:\s*Adobe Illustrator\(R\)\s*[\d\.]+"""),
-            "%%Creator: Adobe Illustrator(R) 10.0")
-        psStr = psStr.replace(
-            Regex("""%%AI8_CreatorVersion:\s*[\d\.]+"""),
-            "%%AI8_CreatorVersion: 10.0")
-
-        // 3. Update/insert %%Title DSC (di header, sebelum %%EndComments)
-        // FIX: BUG #4 - Pure AI 10 output only has %%Title in DSC comments; %%Keywords is non-standard for AI 10 header (keywords belong in XMP <dc:subject>)
         psStr = psStr.replace(Regex("""%%Keywords:[^\r\n]*\r?\n?"""), "")
         if (t.isNotEmpty()) {
             val titleLine = "%%Title: ${cleanSingleLine(t)}"
@@ -421,11 +433,9 @@ object XmpInjector {
             }
         }
 
-        // 4. Generate XMP
         val xmpXml = generateXmpPacket(t, d, kwList)
         val xmpBytes = xmpXml.toByteArray(StandardCharsets.UTF_8)
 
-        // 5. Build output: PS body (ISO-8859-1) + XMP block (UTF-8) di dalam %%Trailer
         val eofRegex = Regex("""%%EOF[^\n]*\n?""")
         val eofMatch = eofRegex.find(psStr)
 
@@ -437,28 +447,20 @@ object XmpInjector {
 
             out.write(beforeEof.toByteArray(StandardCharsets.ISO_8859_1))
 
-            // Pastikan ada %%Trailer sebelum XMP
             if (!beforeEof.trimEnd().endsWith("%%Trailer")) {
                 out.write("%%Trailer\n".toByteArray(StandardCharsets.ISO_8859_1))
             }
 
-            // XMP header (ASCII)
             out.write("%ADO_ContainsXMP: MainFirst\n".toByteArray(StandardCharsets.ISO_8859_1))
             out.write("%BeginXMPPacket: ${xmpBytes.size}\n".toByteArray(StandardCharsets.ISO_8859_1))
-
-            // XMP content (UTF-8, byte-count cocok)
             out.write(xmpBytes)
-
-            // XMP trailer (ASCII)
             out.write("\n%EndXMPPacket\n".toByteArray(StandardCharsets.ISO_8859_1))
 
             if (afterEof.isNotEmpty()) {
                 out.write(afterEof.toByteArray(StandardCharsets.ISO_8859_1))
             }
-            // FIX: BUG #1 - Ensure %%EOF is always emitted at the end of the file
             out.write("%%EOF\n".toByteArray(StandardCharsets.ISO_8859_1))
         } else {
-            // Fallback: tidak ada %%EOF
             out.write(psStr.toByteArray(StandardCharsets.ISO_8859_1))
             out.write("\n%%Trailer\n".toByteArray(StandardCharsets.ISO_8859_1))
             out.write("%ADO_ContainsXMP: MainFirst\n".toByteArray(StandardCharsets.ISO_8859_1))
@@ -490,7 +492,7 @@ object XmpInjector {
     }
 
     /**
-     * Injects SVG metadata matching version 2.0.0 reference implementation (`he` / `$e` in JS).
+     * Injects SVG metadata matching Lineva implementation (`$e` / `he`).
      */
     fun injectIntoSvg(
         originalBytes: ByteArray,
@@ -537,7 +539,7 @@ object XmpInjector {
     }
 
     /**
-     * Injects JPEG APP1 XMP metadata matching version 2.0.0 reference implementation (`ve` in JS).
+     * Injects JPEG APP1 XMP metadata matching Lineva implementation (`ve`).
      */
     fun injectIntoJpeg(
         originalBytes: ByteArray,
@@ -579,7 +581,7 @@ object XmpInjector {
     }
 
     /**
-     * Injects PNG tEXt chunks matching version 2.0.0 reference implementation (`Se` / `an` in JS).
+     * Injects PNG tEXt chunks matching Lineva implementation (`Se` / `an`).
      */
     fun injectIntoPng(
         originalBytes: ByteArray,

@@ -53,6 +53,7 @@ data class ImageItem(
     val hasMetadata: Boolean,
     val isSelected: Boolean = false,
     val metadata: XmpData?,
+    val individualFileName: String = "",
     val individualTitle: String = "",
     val individualDescription: String = "",
     val individualKeywords: String = "",
@@ -65,7 +66,7 @@ data class ImageItem(
     val processStatus: ProcessStatus = ProcessStatus.IDLE
 ) {
     val isGenerated: Boolean
-        get() = individualTitle.isNotBlank() || individualKeywords.isNotBlank() || individualDescription.isNotBlank() || hasMetadata
+        get() = individualFileName.isNotBlank() || individualTitle.isNotBlank() || individualKeywords.isNotBlank() || individualDescription.isNotBlank() || hasMetadata
 
     fun getEffectiveKeywordItems(): List<KeywordItem> {
         if (individualKeywordItems.isNotEmpty()) return individualKeywordItems
@@ -78,6 +79,7 @@ data class ImageItem(
 }
 
 data class GeneratedMetadata(
+    val fileName: String? = null,
     val title: String? = null,
     val description: String? = null,
     val keywords: List<KeywordItem>? = null
@@ -96,6 +98,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val geminiResponseSchema: Map<String, Any> = mapOf(
         "type" to "OBJECT",
         "properties" to mapOf(
+            "file_name" to mapOf("type" to "STRING"),
             "title" to mapOf("type" to "STRING"),
             "description" to mapOf("type" to "STRING"),
             "keywords" to mapOf(
@@ -112,7 +115,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         ),
-        "required" to listOf("title", "description", "keywords")
+        "required" to listOf("file_name", "title", "description", "keywords")
     )
 
     // --- State Variables ---
@@ -121,6 +124,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _selectionMode = MutableStateFlow(SelectionMode.MULTI)
     val selectionMode = _selectionMode.asStateFlow()
+
+    private val _fileName = MutableStateFlow("")
+    val fileName = _fileName.asStateFlow()
 
     private val _title = MutableStateFlow("")
     val title = _title.asStateFlow()
@@ -133,6 +139,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _creator = MutableStateFlow("")
     val creator = _creator.asStateFlow()
+
+    fun sanitizeFileName(input: String): String {
+        val clean = input.trim()
+            .replace(Regex("[\\\\/:*?\"<>|]"), "")
+            .replace(Regex("[\\s_]+"), "-")
+            .trim('-')
+            .lowercase(Locale.ROOT)
+        val words = clean.split("-").filter { it.isNotBlank() }
+        return if (words.size > 5) words.take(5).joinToString("-") else clean
+    }
+
+    fun getEffectiveBaseName(item: ImageItem): String {
+        val customFileName = item.individualFileName.trim()
+        val dotIndex = item.name.lastIndexOf('.')
+        val baseNameRaw = if (dotIndex != -1) item.name.substring(0, dotIndex) else item.name
+
+        if (customFileName.isNotBlank()) {
+            val sanitized = sanitizeFileName(customFileName)
+            if (sanitized.isNotEmpty()) return sanitized
+        }
+        return baseNameRaw
+    }
+
+    fun updateFileName(name: String) {
+        _fileName.value = name
+    }
+
+    fun updateIndividualFileName(id: Int, fileName: String) {
+        _imagesList.value = _imagesList.value.map { if (it.id == id) it.copy(individualFileName = fileName) else it }
+    }
 
     // --- API Configuration State ---
     private val _geminiKey = MutableStateFlow("")
@@ -910,12 +946,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (it.isTrademark && !it.replacement.isNullOrBlank()) it.replacement else it.word 
                     }
 
+                    _fileName.value = parsed.fileName ?: ""
                     _title.value = parsed.title ?: ""
                     _description.value = parsed.description ?: ""
                     _keywords.value = kwsString
 
                     _imagesList.value = _imagesList.value.map { 
                         if (it.id == imageItem.id) it.copy(
+                            individualFileName = parsed.fileName ?: "",
                             individualTitle = parsed.title ?: "",
                             individualDescription = parsed.description ?: "",
                             individualKeywords = kwsString,
@@ -1015,6 +1053,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             }
 
                             if (targetImages.size == 1) {
+                                _fileName.value = parsed.fileName ?: ""
                                 _title.value = parsed.title ?: ""
                                 _description.value = parsed.description ?: ""
                                 _keywords.value = kwsString
@@ -1022,6 +1061,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             
                             _imagesList.value = _imagesList.value.map { 
                                 if (it.id == imageItem.id) it.copy(
+                                    individualFileName = parsed.fileName ?: "",
                                     individualTitle = parsed.title ?: "",
                                     individualDescription = parsed.description ?: "",
                                     individualKeywords = kwsString,
@@ -1089,18 +1129,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val descLimit = _descCharLimit.value.toInt()
         val kwLimit = _keywordsLimit.value.toInt()
         val blWords = _blacklistWords.value
-        val blacklistInstruction = if (blWords.isNotBlank()) "7. BLACKLIST WORDS: DO NOT include any of these words: $blWords." else ""
+        val blacklistInstruction = if (blWords.isNotBlank()) "8. BLACKLIST WORDS: DO NOT include any of these words: $blWords." else ""
 
         val name = imageItem.name.lowercase()
         val systemPrompt = """
-            You are an expert Microstock SEO Specialist. Your job is to analyze the provided image/asset and generate highly accurate metadata (Title, Description, and Keywords with popularity & trademark detection) in structured JSON format. Don't Use - or _ and odd symbols.
+            You are an expert Microstock SEO Specialist. Your job is to analyze the provided image/asset and generate highly accurate metadata (File Name, Title, Description, and Keywords with popularity & trademark detection) in structured JSON format. Don't Use - or _ and odd symbols in title/desc.
 
             Strictly follow these rules:
-            1. Language: Always output Title, Description, and Keywords in English.
-            2. Title max until $titleLimit characters (100-200). 
-            3. Description must be Maximum $descLimit characters a dynamic combination of concept description and organic visual multi usage targets and suitable for what.
-            4. Keywords Quantity: Generate exactly $kwLimit high-quality keywords. Quality and relevance are prioritized over quantity.
-            5. Keywords Formatting & Demand Score (ImStocker-Style): 
+            1. Language: Always output File Name, Title, Description, and Keywords in English.
+            2. File Name: Generate a natural, concise microstock File Name describing the visual theme/subject.
+               - Maximum 5 words (strictly 1 to 5 words, do NOT exceed 5 words).
+               - Only plain words separated by single spaces (no symbols, no dashes, no underscores, no file extension).
+               - Example: "vintage coffee badge vector" or "minimalist business card template".
+            3. Title max until $titleLimit characters (100-200). 
+            4. Description must be Maximum $descLimit characters a dynamic combination of concept description and organic visual multi usage targets and suitable for what.
+            5. Keywords Quantity: Generate exactly $kwLimit high-quality keywords. Quality and relevance are prioritized over quantity.
+            6. Keywords Formatting & Demand Score (ImStocker-Style): 
                Each keyword MUST be an object with:
                - "word": String (single word, no spaces or special symbols).
                - "demandScore": Integer from 1 to 100 based on estimated buyer search demand on microstock platforms (e.g. Shutterstock, Adobe Stock, Freepik):
@@ -1111,14 +1155,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                  * < 25: Low demand
                - "isTrademark": Boolean (true if keyword contains registered trademark/brand like iPhone, Nike, Adobe, Apple, Canon, Lego, etc., false otherwise).
                - "replacement": String or null (If AI generates a trademarked word, set isTrademark = true and provide its generic safe microstock replacement, e.g. "smartphone" for "iPhone", "shoes" for "Nike", "software" for "Photoshop"; otherwise set to null).
-            6. Content Relevance: 
+            7. Content Relevance: 
                - No keyword spamming or redundant root words. 
                - Avoid contradictory terms.
                - Use only 1 word for each keyword.
             $blacklistInstruction
 
             Format output strictly matching this schema:
-            {"title": "...", "description": "...", "keywords": [{"word": "...", "demandScore": 85, "isTrademark": false, "replacement": null}]}
+            {"file_name": "...", "title": "...", "description": "...", "keywords": [{"word": "...", "demandScore": 85, "isTrademark": false, "replacement": null}]}
         """.trimIndent()
 
         val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
@@ -1148,7 +1192,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 $conceptHint
                 Analyze BOTH the provided visual image (which is an accurate visual render of the EPS vector graphic) AND the EPS source code/header.
                 Inspect shapes, colors, layout, subject matter, style, and visual composition in the rendered image, and cross-reference them with title headers, metadata tags, layer labels, comments, and PostScript vector structures in the EPS source code.
-                Generate highly accurate, professional microstock metadata (Title(Title max until $titleLimit characters.), Description, and Keywords) that perfectly describes the visual subject, vector style, theme, color scheme, and microstock utility of this asset.
+                Generate highly accurate, professional microstock metadata (File Name max 5 words, Title max until $titleLimit characters, Description, and Keywords) that perfectly describes the visual subject, vector style, theme, color scheme, and microstock utility of this asset.
                 
                 System Rules:
                 $systemPrompt
@@ -1162,7 +1206,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 """
                 $conceptHint
                 This image is a visual render of a $assetType.
-                Analyze this image and generate highly accurate, professional microstock metadata in JSON format according to system rules.
+                Analyze this image and generate highly accurate, professional microstock metadata (File Name max 5 words, Title, Description, and Keywords) in JSON format according to system rules.
                 Include relevant microstock keywords (such as vector, illustration, graphic, design element, etc. if appropriate for the visual style).
                 """.trimIndent()
             }
@@ -1209,7 +1253,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     $conceptHint
                     Analyze BOTH the provided visual image (which is a high-fidelity render of the SVG vector) AND the SVG source code.
                     Inspect paths, colors, shapes, visual layout, and graphic style in the visual image. Cross-reference them with class names, label attributes, IDs, and path data in the SVG source code.
-                    Generate professional microstock metadata (Title(Title max until $titleLimit characters.), Description, and Keywords) that is perfectly accurate and highly relevant to the actual design, utility, visual themes, and colors of this vector asset.
+                    Generate professional microstock metadata (File Name max 5 words, Title max until $titleLimit characters, Description, and Keywords) that is perfectly accurate and highly relevant to the actual design, utility, visual themes, and colors of this vector asset.
                     
                     System Rules:
                     $systemPrompt
@@ -1242,7 +1286,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 val userPromptSvgNoRender = """
                     $conceptHint
-                    Analyze this SVG vector file code. Inspect metadata tags, labels, class names, path details, coordinates, and color properties inside the vector content. Deducing what visual concept, template style, interface mock, or illustrative graphic is defined in this vector, generate professional microstock metadata (Title, Description, and Keywords).
+                    Analyze this SVG vector file code. Inspect metadata tags, labels, class names, path details, coordinates, and color properties inside the vector content. Deducing what visual concept, template style, interface mock, or illustrative graphic is defined in this vector, generate professional microstock metadata (File Name max 5 words, Title, Description, and Keywords).
                     
                     System Rules:
                     $systemPrompt
@@ -1288,7 +1332,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Analyze this EPS (Encapsulated PostScript) vector file code. 
                 Inspect metadata tags, title headers, keywords, labels, creator notes, fonts, layer descriptions, coordinate structures, paths, shapes, transformations, and color operators (like CMYK/RGB fills and strokes).
                 Reconstruct the visual representation mentally from the paths, curves, color schemes, and structural layout defined in this PostScript vector code. 
-                Generate highly accurate, professional microstock metadata (Title, Description, and Keywords) that is perfectly relevant to the actual design, theme, and utility of the graphic.
+                Generate highly accurate, professional microstock metadata (File Name max 5 words, Title, Description, and Keywords) that is perfectly relevant to the actual design, theme, and utility of the graphic.
                 
                 System Rules:
                 $systemPrompt
@@ -1320,7 +1364,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             
             val userPrompt = """
                 $conceptHint
-                Analyze this image and generate professional microstock metadata in JSON format according to system rules.
+                Analyze this image and generate professional microstock metadata (File Name max 5 words, Title, Description, and Keywords) in JSON format according to system rules.
             """.trimIndent()
 
             GeminiRequest(
@@ -1354,6 +1398,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun parseGeneratedMetadata(cleanJson: String): GeneratedMetadata? {
         return try {
             val root = JsonParser.parseString(cleanJson).asJsonObject
+            val rawFileName = when {
+                root.has("file_name") && !root.get("file_name").isJsonNull -> root.get("file_name").asString
+                root.has("fileName") && !root.get("fileName").isJsonNull -> root.get("fileName").asString
+                root.has("filename") && !root.get("filename").isJsonNull -> root.get("filename").asString
+                else -> ""
+            }
+            val fileNameWords = rawFileName.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+            val fileName = if (fileNameWords.size > 5) fileNameWords.take(5).joinToString(" ") else rawFileName.trim()
+
             val title = if (root.has("title") && !root.get("title").isJsonNull) root.get("title").asString else ""
             val description = if (root.has("description") && !root.get("description").isJsonNull) root.get("description").asString else ""
             val keywordList = mutableListOf<KeywordItem>()
@@ -1388,7 +1441,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
-            GeneratedMetadata(title = title, description = description, keywords = keywordList)
+            GeneratedMetadata(fileName = fileName, title = title, description = description, keywords = keywordList)
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -1497,6 +1550,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearIndividualMetadata(id: Int) {
         _imagesList.value = _imagesList.value.map { 
             if (it.id == id) it.copy(
+                individualFileName = "",
                 individualTitle = "", 
                 individualDescription = "", 
                 individualKeywords = "", 
@@ -1510,12 +1564,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun injectIndividualMetadata(id: Int) {
         val item = _imagesList.value.find { it.id == id } ?: return
         
+        val metaFileName = item.individualFileName.trim()
         val metaTitle = item.individualTitle
         val metaDesc = item.individualDescription
         val metaKeywordsString = item.individualKeywords
         val metaCreator = item.individualCreator
 
-        if (metaTitle.isBlank() && metaDesc.isBlank() && metaKeywordsString.isBlank() && metaCreator.isBlank()) {
+        if (metaFileName.isBlank() && metaTitle.isBlank() && metaDesc.isBlank() && metaKeywordsString.isBlank() && metaCreator.isBlank()) {
             _toastFlow.value = "Metadata Empty"
             return
         }
@@ -1525,6 +1580,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             emptyList()
         }
+
+        val ext = if (item.name.contains('.')) item.name.substring(item.name.lastIndexOf('.')) else ""
+        val sanitizedBase = if (metaFileName.isNotBlank()) sanitizeFileName(metaFileName) else ""
+        val newFileName = if (sanitizedBase.isNotEmpty()) "$sanitizedBase$ext" else item.name
 
         viewModelScope.launch {
             _imagesList.value = _imagesList.value.map { if (it.id == id) it.copy(isInjectingIndividual = true) else it }
@@ -1557,6 +1616,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     _imagesList.value = _imagesList.value.map { 
                         if (it.id == id) it.copy(
+                            name = newFileName,
                             injectedBytes = injectedBytes,
                             hasMetadata = true,
                             metadata = newestXmpData,
@@ -1595,12 +1655,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 for (i in selected.indices) {
                     val item = selected[i]
+                    val metaFileName = item.individualFileName.trim()
                     val metaTitle = item.individualTitle
                     val metaDesc = item.individualDescription
                     val metaKeywordsString = item.individualKeywords
                     val metaCreator = item.individualCreator
                     
-                    if (metaTitle.isBlank() && metaDesc.isBlank() && metaKeywordsString.isBlank() && metaCreator.isBlank()) {
+                    if (metaFileName.isBlank() && metaTitle.isBlank() && metaDesc.isBlank() && metaKeywordsString.isBlank() && metaCreator.isBlank()) {
                         continue // Skip empty ones
                     }
 
@@ -1609,6 +1670,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         emptyList()
                     }
+
+                    val ext = if (item.name.contains('.')) item.name.substring(item.name.lastIndexOf('.')) else ""
+                    val sanitizedBase = if (metaFileName.isNotBlank()) sanitizeFileName(metaFileName) else ""
+                    val newFileName = if (sanitizedBase.isNotEmpty()) "$sanitizedBase$ext" else item.name
 
                     try {
                         val bytesToInject = item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
@@ -1639,6 +1704,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             val indexInMaster = updatedList.indexOfFirst { it.id == item.id }
                             if (indexInMaster != -1) {
                                 updatedList[indexInMaster] = updatedList[indexInMaster].copy(
+                                    name = newFileName,
                                     injectedBytes = injectedBytes,
                                     hasMetadata = true,
                                     metadata = newestXmpData
@@ -1677,12 +1743,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        val metaFileName = _fileName.value.trim()
         val metaTitle = _title.value
         val metaDesc = _description.value
         val metaKeywordsString = _keywords.value
         val metaCreator = _creator.value
 
-        if (metaTitle.isBlank() && metaDesc.isBlank() && metaKeywordsString.isBlank() && metaCreator.isBlank()) {
+        if (metaFileName.isBlank() && metaTitle.isBlank() && metaDesc.isBlank() && metaKeywordsString.isBlank() && metaCreator.isBlank()) {
             _toastFlow.value = "Metadata Empty"
             return
         }
@@ -1705,6 +1772,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 for (i in selected.indices) {
                     val item = selected[i]
+                    val ext = if (item.name.contains('.')) item.name.substring(item.name.lastIndexOf('.')) else ""
+                    val sanitizedBase = if (metaFileName.isNotBlank()) sanitizeFileName(metaFileName) else ""
+                    val newFileName = if (sanitizedBase.isNotEmpty()) {
+                        if (selected.size > 1) "$sanitizedBase-${i + 1}$ext" else "$sanitizedBase$ext"
+                    } else item.name
+
                     try {
                         val bytesToInject = item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
                         if (bytesToInject != null) {
@@ -1758,6 +1831,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             val indexInMaster = updatedList.indexOfFirst { it.id == item.id }
                             if (indexInMaster != -1) {
                                 updatedList[indexInMaster] = updatedList[indexInMaster].copy(
+                                    name = newFileName,
+                                    individualFileName = if (metaFileName.isNotBlank()) metaFileName else updatedList[indexInMaster].individualFileName,
                                     injectedBytes = injectedBytes,
                                     hasMetadata = true,
                                     metadata = newestXmpData
@@ -1852,14 +1927,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val metaCreator = item.metadata?.creator?.trim() ?: ""
 
                 val dotIndex = item.name.lastIndexOf('.')
-                val baseNameRaw = if (dotIndex != -1) item.name.substring(0, dotIndex) else item.name
-
-                var sanitizedTitle = ""
-                if (metaTitle.isNotEmpty()) {
-                    sanitizedTitle = metaTitle.replace(Regex("[\\\\/:*?\"<>|]"), "").replace(Regex("\\s+"), "-").lowercase()
-                    if (sanitizedTitle.length > 200) sanitizedTitle = sanitizedTitle.substring(0, 200).trimEnd('-')
-                }
-                val baseName = if (sanitizedTitle.isNotEmpty()) sanitizedTitle else baseNameRaw
+                val baseName = getEffectiveBaseName(item)
 
                 val isSvg = item.name.endsWith(".svg", ignoreCase = true)
 
@@ -1966,14 +2034,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                             val metaCreator = item.metadata?.creator?.trim() ?: ""
 
                                             val dotIndex = item.name.lastIndexOf('.')
-                                            val baseNameRaw = if (dotIndex != -1) item.name.substring(0, dotIndex) else item.name
-
-                                            var sanitizedTitle = ""
-                                            if (metaTitle.isNotEmpty()) {
-                                                sanitizedTitle = metaTitle.replace(Regex("[\\\\/:*?\"<>|]"), "").replace(Regex("\\s+"), "-").lowercase()
-                                                if (sanitizedTitle.length > 50) sanitizedTitle = sanitizedTitle.substring(0, 50).trimEnd('-')
-                                            }
-                                            val baseName = if (sanitizedTitle.isNotEmpty()) sanitizedTitle else baseNameRaw
+                                            val baseName = getEffectiveBaseName(item)
 
                                             var uniqueBaseName = baseName
                                             var counter = 1
@@ -2032,14 +2093,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 val metaCreator = item.metadata?.creator?.trim() ?: ""
 
                                 val dotIndex = item.name.lastIndexOf('.')
-                                val baseNameRaw = if (dotIndex != -1) item.name.substring(0, dotIndex) else item.name
-
-                                var sanitizedTitle = ""
-                                if (metaTitle.isNotEmpty()) {
-                                    sanitizedTitle = metaTitle.replace(Regex("[\\\\/:*?\"<>|]"), "").replace(Regex("\\s+"), "-").lowercase()
-                                    if (sanitizedTitle.length > 50) sanitizedTitle = sanitizedTitle.substring(0, 50).trimEnd('-')
-                                }
-                                val baseName = if (sanitizedTitle.isNotEmpty()) sanitizedTitle else baseNameRaw
+                                val baseName = getEffectiveBaseName(item)
 
                                 withContext(Dispatchers.IO) {
                                     if (isSvg) {
@@ -2089,8 +2143,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     }
                                 }
                             }
-                        } catch (t: Throwable) {
-                            t.printStackTrace()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         } finally {
                             completed++
                             System.gc()
@@ -2098,13 +2152,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                _downloadStatusText.value = "DOWNLOAD DONE"
-                _toastFlow.value = "Files Saved"
-
+                _downloadStatusText.value = "DOWNLOAD COMPLETE ($total files)"
+                _toastFlow.value = "Download Done"
             } catch (e: Exception) {
                 e.printStackTrace()
-                _downloadStatusText.value = "DOWNLOAD ERROR"
-                _toastFlow.value = "Save Failed"
+                _downloadStatusText.value = "DOWNLOAD FAILED"
+                _toastFlow.value = "Download Failed"
             } finally {
                 _isGlobalProcessing.value = false
                 _globalProcessingText.value = ""

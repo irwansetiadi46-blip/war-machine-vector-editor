@@ -410,19 +410,28 @@ fun MainScreen(
             label = "footer_clearance"
         )
 
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xFF070E20), // Top: Deep dark navy/tech slate
-                            Color(0xFF0C1329), // Upper mid: Midnight slate
-                            Color(0xFF171233), // Lower mid: Deep plum slate
-                            Color(0xFF27174A)  // Bottom: Luxurious brighter purple/violet glow
+                            Color(0xFF030720), // Top 0%
+                            Color(0xFF07113A), // Mid 45%
+                            Color(0xFF10145A), // Mid 72%
+                            Color(0xFF32105C)  // Bottom 100%
                         )
                     )
                 )
+        )
+
+        // Smooth looping neon sparkle background animation (beterbangan dari bawah ke atas)
+        LoopingNeonSparkleBackground(
+            modifier = Modifier.fillMaxSize()
+        )
+
+        Column(
+            modifier = Modifier.fillMaxSize()
         ) {
             // 1. --- FIXED WEBSITE-STYLE HEADER (Always visible, does NOT scroll away) ---
             var showHeaderMenu by remember { mutableStateOf(false) }
@@ -740,32 +749,77 @@ fun MainScreen(
 
                 // Image List Area (Breathes directly on app background)
                 if (imagesList.isEmpty()) {
-                    Box(
+                    Surface(
+                        onClick = { requestAndPickImages() },
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color.Transparent,
+                        border = BorderStroke(
+                            width = 1.5.dp,
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    Color(0xA038BDF8), // Bright cyan glow border
+                                    Color(0x80C084FC), // Violet glow
+                                    Color(0xA038BDF8)
+                                )
+                            )
+                        ),
+                        shadowElevation = 10.dp,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                            .padding(vertical = 160.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(vertical = 12.dp)
+                            .shadow(10.dp, RoundedCornerShape(16.dp), spotColor = Color(0x8038BDF8))
+                            .testTag("empty_add_images_box")
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color(0x4038BDF8), // Luminous frosted azure glass
+                                            Color(0x281E1B4B), // Frosted deep purple
+                                            Color(0x350F172A)
+                                        )
+                                    )
+                                )
+                                .padding(vertical = 110.dp, horizontal = 24.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Collections,
-                                contentDescription = null,
-                                tint = Color(0xFF64748B),
-                                modifier = Modifier.size(36.dp)
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = "Belum ada Preview Gambar.",
-                                color = Color(0xFF94A3B8),
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 13.5.sp,
-                                modifier = Modifier.testTag("empty_placeholder_text"),
-                                fontFamily = FontFamily.Monospace
-                            )
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0x4438BDF8),
+                                    border = BorderStroke(1.dp, Color(0xA038BDF8)),
+                                    modifier = Modifier.size(60.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.AddPhotoAlternate,
+                                            contentDescription = "Add Images",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(32.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = "Add Images",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    modifier = Modifier.testTag("empty_placeholder_text")
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Klik di sini untuk mengunggah berkas gambar",
+                                    color = Color(0xFFE2E8F0),
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 13.sp
+                                )
+                            }
                         }
                     }
                 } else {
@@ -4713,7 +4767,7 @@ fun FullImageCard(
                 }
 
                 // INJECT Button
-                val canInject = item.individualTitle.isNotBlank() || item.individualDescription.isNotBlank() || item.individualKeywords.isNotBlank()
+                val canInject = item.individualFileName.isNotBlank() || item.individualTitle.isNotBlank() || item.individualDescription.isNotBlank() || item.individualKeywords.isNotBlank()
                 Button(
                     onClick = { viewModel.injectIndividualMetadata(item.id) },
                     enabled = canInject && !item.isInjectingIndividual,
@@ -4764,6 +4818,58 @@ fun FullImageCard(
             }
 
             Spacer(modifier = Modifier.height(14.dp))
+
+            // 2. File Name TextField (Above Title)
+            OutlinedTextField(
+                value = item.individualFileName,
+                onValueChange = { viewModel.updateIndividualFileName(item.id, it) },
+                label = { 
+                    val words = item.individualFileName.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+                    val wordCount = words.size
+                    Text(
+                        if (wordCount > 0) "File Name ($wordCount/5 words)" else "File Name (max 5 words)",
+                        fontSize = 11.sp
+                    )
+                },
+                placeholder = { Text("e.g. vintage coffee emblem vector", color = Color(0xFF64748B), fontSize = 12.sp) },
+                singleLine = false,
+                maxLines = Int.MAX_VALUE,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { keyboardController?.hide(); focusManager.clearFocus() }),
+                modifier = Modifier.fillMaxWidth().testTag("file_name_detail_field"),
+                shape = RoundedCornerShape(8.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color(0xFF22C55E),
+                    unfocusedTextColor = Color(0xFF22C55E),
+                    focusedLabelColor = Color(0xFF22C55E),
+                    unfocusedLabelColor = Color(0xFF94A3B8),
+                    focusedBorderColor = Color(0xFF00A8FF),
+                    unfocusedBorderColor = Color(0x40FFFFFF)
+                ),
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                ),
+                trailingIcon = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (item.individualFileName.isNotEmpty()) {
+                            IconButton(onClick = { 
+                                viewModel.updateIndividualFileName(item.id, "")
+                            }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear File Name", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { 
+                                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(item.individualFileName))
+                                viewModel.showToast("Copied")
+                            }) {
+                                Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy File Name", tint = Color(0xFF00A8FF), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // 3. Title TextField
             OutlinedTextField(
