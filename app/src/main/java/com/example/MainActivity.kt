@@ -3909,8 +3909,8 @@ fun SvgExportDialog(
                     ),
                     Triple(
                         SvgExportFormat.ZIP_SVG_EPS_JPG,
-                        "Zip (Svg+Eps+Jpg)",
-                        "Bundel Lengkap Microstock (.svg + .eps + .jpg) dengan Metadata"
+                        "Zip (Eps + Jpg)",
+                        "Bundel Zip Microstock (.eps + .jpg preview) dengan Metadata"
                     )
                 )
 

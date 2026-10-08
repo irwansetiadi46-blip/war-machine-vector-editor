@@ -1948,20 +1948,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 val zipName = "${baseName}_bundle.zip"
                                 FileHelper.saveStreamToDownloads(context, zipName, "application/zip") { outputStream ->
                                     java.util.zip.ZipOutputStream(outputStream.buffered()).use { zos ->
-                                        val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
-                                        zos.putNextEntry(java.util.zip.ZipEntry("$baseName/$baseName.svg"))
-                                        zos.write(svgBytes)
-                                        zos.closeEntry()
-
                                         val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
-                                        zos.putNextEntry(java.util.zip.ZipEntry("$baseName/$baseName.eps"))
+
+                                        // 1. EPS inside "EPS file" folder
+                                        zos.putNextEntry(java.util.zip.ZipEntry("EPS file/$baseName.eps"))
                                         zos.write(epsBytes)
                                         zos.closeEntry()
 
+                                        // 2. EPS directly outside folder
+                                        zos.putNextEntry(java.util.zip.ZipEntry("$baseName.eps"))
+                                        zos.write(epsBytes)
+                                        zos.closeEntry()
+
+                                        // 3. High resolution JPG preview outside folder with injected metadata
                                         val rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
                                         if (rawJpg != null) {
                                             val jpgBytes = XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
-                                            zos.putNextEntry(java.util.zip.ZipEntry("$baseName/$baseName.jpg"))
+                                            zos.putNextEntry(java.util.zip.ZipEntry("$baseName.jpg"))
                                             zos.write(jpgBytes)
                                             zos.closeEntry()
                                         }
@@ -2016,139 +2019,96 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 var completed = 0
                 val usedNames = mutableSetOf<String>()
 
-                if (format == SvgExportFormat.ZIP_SVG_EPS_JPG) {
-                    val masterZipName = "WarMachine_SVG_Bundle_${System.currentTimeMillis()}.zip"
-                    withContext(Dispatchers.IO) {
-                        FileHelper.saveStreamToDownloads(context, masterZipName, "application/zip") { outputStream ->
-                            java.util.zip.ZipOutputStream(outputStream.buffered()).use { zos ->
-                                for (item in selected) {
-                                    try {
-                                        _globalProcessingText.value = "Processing Zip...($completed/$total)"
-                                        val baseBytes = item.injectedBytes ?: item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
-                                        if (baseBytes != null) {
-                                            val isSvg = item.name.endsWith(".svg", ignoreCase = true)
-                                            val metaTitle = item.metadata?.title?.trim() ?: ""
-                                            val metaDesc = item.metadata?.description?.trim() ?: ""
-                                            val metaKeywordsStr = item.metadata?.keywords ?: ""
-                                            val keywordsList = metaKeywordsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                                            val metaCreator = item.metadata?.creator?.trim() ?: ""
+                for (item in selected) {
+                    try {
+                        _globalProcessingText.value = "Processing Download...(${completed + 1}/$total)"
+                        val baseBytes = item.injectedBytes ?: item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
+                        if (baseBytes != null) {
+                            val isSvg = item.name.endsWith(".svg", ignoreCase = true)
+                            val metaTitle = item.metadata?.title?.trim() ?: ""
+                            val metaDesc = item.metadata?.description?.trim() ?: ""
+                            val metaKeywordsStr = item.metadata?.keywords ?: ""
+                            val keywordsList = metaKeywordsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                            val metaCreator = item.metadata?.creator?.trim() ?: ""
 
-                                            val dotIndex = item.name.lastIndexOf('.')
-                                            val baseName = getEffectiveBaseName(item)
+                            val dotIndex = item.name.lastIndexOf('.')
+                            val baseName = getEffectiveBaseName(item)
 
-                                            var uniqueBaseName = baseName
-                                            var counter = 1
-                                            while (usedNames.contains(uniqueBaseName)) {
-                                                uniqueBaseName = "$baseName-$counter"
-                                                counter++
-                                            }
-                                            usedNames.add(uniqueBaseName)
+                            var uniqueBaseName = baseName
+                            var counter = 1
+                            while (usedNames.contains(uniqueBaseName)) {
+                                uniqueBaseName = "$baseName-$counter"
+                                counter++
+                            }
+                            usedNames.add(uniqueBaseName)
 
-                                            if (isSvg) {
-                                                val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
-                                                zos.putNextEntry(java.util.zip.ZipEntry("$uniqueBaseName/$uniqueBaseName.svg"))
-                                                zos.write(svgBytes)
-                                                zos.closeEntry()
-
+                            withContext(Dispatchers.IO) {
+                                if (format == SvgExportFormat.ZIP_SVG_EPS_JPG) {
+                                    if (isSvg) {
+                                        val zipName = "${uniqueBaseName}_bundle.zip"
+                                        FileHelper.saveStreamToDownloads(context, zipName, "application/zip") { outputStream ->
+                                            java.util.zip.ZipOutputStream(outputStream.buffered()).use { zos ->
                                                 val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
-                                                zos.putNextEntry(java.util.zip.ZipEntry("$uniqueBaseName/$uniqueBaseName.eps"))
+
+                                                // 1. EPS inside "EPS file" folder
+                                                zos.putNextEntry(java.util.zip.ZipEntry("EPS file/$uniqueBaseName.eps"))
                                                 zos.write(epsBytes)
                                                 zos.closeEntry()
 
+                                                // 2. EPS directly outside folder
+                                                zos.putNextEntry(java.util.zip.ZipEntry("$uniqueBaseName.eps"))
+                                                zos.write(epsBytes)
+                                                zos.closeEntry()
+
+                                                // 3. High resolution JPG preview outside folder with injected metadata
                                                 val rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
                                                 if (rawJpg != null) {
                                                     val jpgBytes = XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
-                                                    zos.putNextEntry(java.util.zip.ZipEntry("$uniqueBaseName/$uniqueBaseName.jpg"))
+                                                    zos.putNextEntry(java.util.zip.ZipEntry("$uniqueBaseName.jpg"))
                                                     zos.write(jpgBytes)
                                                     zos.closeEntry()
                                                 }
-                                            } else {
-                                                val ext = if (dotIndex != -1) item.name.substring(dotIndex) else ".jpg"
-                                                zos.putNextEntry(java.util.zip.ZipEntry("$uniqueBaseName$ext"))
-                                                zos.write(baseBytes)
-                                                zos.closeEntry()
                                             }
-                                        }
-                                    } catch (t: Throwable) {
-                                        t.printStackTrace()
-                                    } finally {
-                                        completed++
-                                        System.gc()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    for (item in selected) {
-                        try {
-                            _globalProcessingText.value = "Processing Download...($completed/$total)"
-                            val baseBytes = item.injectedBytes ?: item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
-                            if (baseBytes != null) {
-                                val isSvg = item.name.endsWith(".svg", ignoreCase = true)
-                                val metaTitle = item.metadata?.title?.trim() ?: ""
-                                val metaDesc = item.metadata?.description?.trim() ?: ""
-                                val metaKeywordsStr = item.metadata?.keywords ?: ""
-                                val keywordsList = metaKeywordsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                                val metaCreator = item.metadata?.creator?.trim() ?: ""
-
-                                val dotIndex = item.name.lastIndexOf('.')
-                                val baseName = getEffectiveBaseName(item)
-
-                                withContext(Dispatchers.IO) {
-                                    if (isSvg) {
-                                        if (format == SvgExportFormat.EPS) {
-                                            val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
-                                            var uniqueName = "$baseName.eps"
-                                            var counter = 1
-                                            while (usedNames.contains(uniqueName)) {
-                                                uniqueName = "$baseName-$counter.eps"
-                                                counter++
-                                            }
-                                            usedNames.add(uniqueName)
-                                            FileHelper.saveToDownloads(context, uniqueName, "application/postscript", epsBytes)
-                                        } else {
-                                            val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
-                                            var uniqueName = "$baseName.svg"
-                                            var counter = 1
-                                            while (usedNames.contains(uniqueName)) {
-                                                uniqueName = "$baseName-$counter.svg"
-                                                counter++
-                                            }
-                                            usedNames.add(uniqueName)
-                                            FileHelper.saveToDownloads(context, uniqueName, "image/svg+xml", svgBytes)
                                         }
                                     } else {
-                                        val isEps = item.name.endsWith(".eps", ignoreCase = true)
-                                        val ext = if (dotIndex != -1) item.name.substring(dotIndex) else if (isEps) ".eps" else ".jpg"
-                                        var uniqueName = "$baseName$ext"
-                                        var counter = 1
-                                        while (usedNames.contains(uniqueName)) {
-                                            uniqueName = "$baseName-$counter$ext"
-                                            counter++
-                                        }
-                                        usedNames.add(uniqueName)
-
+                                        val ext = if (dotIndex != -1) item.name.substring(dotIndex) else ".jpg"
                                         val mimeType = when {
                                             ext.endsWith(".png", true) -> "image/png"
                                             ext.endsWith(".eps", true) -> "application/postscript"
                                             else -> "image/jpeg"
                                         }
-                                        val finalBytes = if (isEps) {
-                                            item.injectedBytes ?: XmpInjector.injectIntoEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
-                                        } else {
-                                            baseBytes
-                                        }
-                                        FileHelper.saveToDownloads(context, uniqueName, mimeType, finalBytes)
+                                        FileHelper.saveToDownloads(context, "$uniqueBaseName$ext", mimeType, baseBytes)
                                     }
+                                } else if (isSvg) {
+                                    if (format == SvgExportFormat.EPS) {
+                                        val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
+                                        FileHelper.saveToDownloads(context, "$uniqueBaseName.eps", "application/postscript", epsBytes)
+                                    } else {
+                                        val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
+                                        FileHelper.saveToDownloads(context, "$uniqueBaseName.svg", "image/svg+xml", svgBytes)
+                                    }
+                                } else {
+                                    val isEps = item.name.endsWith(".eps", ignoreCase = true)
+                                    val ext = if (dotIndex != -1) item.name.substring(dotIndex) else if (isEps) ".eps" else ".jpg"
+                                    val mimeType = when {
+                                        ext.endsWith(".png", true) -> "image/png"
+                                        ext.endsWith(".eps", true) -> "application/postscript"
+                                        else -> "image/jpeg"
+                                    }
+                                    val finalBytes = if (isEps) {
+                                        item.injectedBytes ?: XmpInjector.injectIntoEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
+                                    } else {
+                                        baseBytes
+                                    }
+                                    FileHelper.saveToDownloads(context, "$uniqueBaseName$ext", mimeType, finalBytes)
                                 }
                             }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        } finally {
-                            completed++
-                            System.gc()
                         }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    } finally {
+                        completed++
+                        System.gc()
                     }
                 }
 

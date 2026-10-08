@@ -298,9 +298,10 @@ object XmpInjector {
     /**
      * Generates raw XMP Packet string matching Lineva implementation (Xn).
      */
-    fun generateXnXml(title: String, description: String, keywords: List<String>): String {
+    fun generateXnXml(title: String, description: String, keywords: List<String>, creator: String = "WarMachineHybrid"): String {
         val t = title.trim()
         val d = description.trim()
+        val c = if (creator.trim().isNotEmpty()) creator.trim() else "WarMachineHybrid"
         val cleanKw = keywords.map { it.trim() }.filter { it.isNotEmpty() }
 
         val kwLines = if (cleanKw.isNotEmpty()) {
@@ -322,6 +323,9 @@ object XmpInjector {
         if (kwLines.isNotEmpty()) {
             parts.add("<dc:subject><rdf:Bag>\n$kwLines\n</rdf:Bag></dc:subject>")
         }
+        if (c.isNotEmpty()) {
+            parts.add("<dc:creator><rdf:Seq><rdf:li>${escapeXml(c)}</rdf:li></rdf:Seq></dc:creator>")
+        }
         if (t.isNotEmpty()) {
             parts.add("<photoshop:Headline>${escapeXml(t)}</photoshop:Headline>")
         }
@@ -334,14 +338,14 @@ object XmpInjector {
         return parts.joinToString("\n")
     }
 
-    fun generateXmpPacket(title: String, description: String, keywords: List<String>): String =
-        generateXnXml(title, description, keywords)
+    fun generateXmpPacket(title: String, description: String, keywords: List<String>, creator: String = "WarMachineHybrid"): String =
+        generateXnXml(title, description, keywords, creator)
 
     /**
      * Generates PageSetup ClientInjection Block matching Lineva implementation (me).
      */
-    fun generateMeBlock(title: String, description: String, keywords: List<String>): String {
-        val xnXml = generateXnXml(title, description, keywords)
+    fun generateMeBlock(title: String, description: String, keywords: List<String>, creator: String = "WarMachineHybrid"): String {
+        val xnXml = generateXnXml(title, description, keywords, creator)
         val marker = "%  &&end XMP packet marker&&"
         return listOf(
             "%ADOBeginClientInjection: PageSetup End \"AI11EPS\"",
@@ -387,13 +391,15 @@ object XmpInjector {
         epsContent: String,
         title: String,
         description: String,
-        keywords: List<String>
+        keywords: List<String>,
+        creator: String = "WarMachineHybrid"
     ): String {
         val t = title.trim()
         val d = description.trim()
+        val c = if (creator.trim().isNotEmpty()) creator.trim() else "WarMachineHybrid"
         val kws = keywords.map { it.trim() }.filter { it.isNotEmpty() }
 
-        if (t.isEmpty() && d.isEmpty() && kws.isEmpty()) {
+        if (t.isEmpty() && d.isEmpty() && kws.isEmpty() && c.isEmpty()) {
             return epsContent
         }
 
@@ -405,9 +411,12 @@ object XmpInjector {
         if (kws.isNotEmpty()) {
             headerLines.add("%%Keywords: ${cleanSingleLine(kws.joinToString(", "))}")
         }
+        if (c.isNotEmpty()) {
+            headerLines.add("%%Creator: ${cleanSingleLine(c)}")
+        }
         val xmpHeader = headerLines.joinToString("\n")
 
-        val meBlock = generateMeBlock(t, d, kws)
+        val meBlock = generateMeBlock(t, d, kws, c)
 
         var s = epsContent
         if (xmpHeader.isNotEmpty()) {
@@ -443,7 +452,7 @@ object XmpInjector {
         title: String,
         description: String,
         keywords: List<String>,
-        creator: String = ""
+        creator: String = "WarMachineHybrid"
     ): ByteArray {
         try {
             val metaTitle = title.trim()
@@ -455,7 +464,7 @@ object XmpInjector {
             }
 
             val epsString = String(originalBytes, StandardCharsets.UTF_8)
-            val resultEps = embedEpsMetadata(epsString, metaTitle, metaDesc, cleanKeywords)
+            val resultEps = embedEpsMetadata(epsString, metaTitle, metaDesc, cleanKeywords, creator)
             return resultEps.toByteArray(StandardCharsets.UTF_8)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -518,13 +527,14 @@ object XmpInjector {
         title: String,
         description: String,
         keywords: List<String>,
-        creator: String = ""
+        creator: String = "WarMachineHybrid"
     ): ByteArray {
         val t = title.trim()
         val d = description.trim()
+        val c = if (creator.trim().isNotEmpty()) creator.trim() else "WarMachineHybrid"
         val kwList = keywords.map { it.trim() }.filter { it.isNotEmpty() }
 
-        if (t.isEmpty() && d.isEmpty() && kwList.isEmpty()) {
+        if (t.isEmpty() && d.isEmpty() && kwList.isEmpty() && c.isEmpty()) {
             return originalBytes
         }
 
@@ -532,7 +542,7 @@ object XmpInjector {
             return originalBytes
         }
 
-        val xmpXml = generateXmpPacket(t, d, kwList)
+        val xmpXml = generateXmpPacket(t, d, kwList, c)
         val xmpHeader = "http://ns.adobe.com/xap/1.0/\u0000"
         val payload = (xmpHeader + xmpXml).toByteArray(StandardCharsets.UTF_8)
 
