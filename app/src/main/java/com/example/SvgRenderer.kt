@@ -15,7 +15,9 @@ import kotlin.math.roundToInt
 
 object SvgRenderer {
 
-    fun getSvgAspectRatio(svgBytes: ByteArray): Float {
+    data class SvgDimension(val width: Float, val height: Float)
+
+    fun getSvgDimensions(svgBytes: ByteArray): SvgDimension {
         try {
             val factory = DocumentBuilderFactory.newInstance()
             factory.isNamespaceAware = false
@@ -26,28 +28,73 @@ object SvgRenderer {
             val doc = factory.newDocumentBuilder().parse(ByteArrayInputStream(svgBytes))
             val root = doc.documentElement
 
+            // 1. Try explicit width and height attributes
+            val wAttr = root.getAttribute("width").trim()
+            val hAttr = root.getAttribute("height").trim()
+
+            var w: Float? = if (!wAttr.endsWith("%")) {
+                wAttr.replace(Regex("[^0-9.]"), "").toFloatOrNull()
+            } else null
+
+            var h: Float? = if (!hAttr.endsWith("%")) {
+                hAttr.replace(Regex("[^0-9.]"), "").toFloatOrNull()
+            } else null
+
+            // 2. Try viewBox if width or height missing or 0
             val viewBox = root.getAttribute("viewBox").trim()
             if (viewBox.isNotEmpty()) {
                 val tokens = viewBox.split(Regex("""[\s,]+""")).mapNotNull { it.toFloatOrNull() }
                 if (tokens.size >= 4 && tokens[2] > 0f && tokens[3] > 0f) {
-                    return tokens[2] / tokens[3]
+                    val vbWidth = tokens[2]
+                    val vbHeight = tokens[3]
+                    if (w == null || w <= 0f) w = vbWidth
+                    if (h == null || h <= 0f) h = vbHeight
                 }
             }
-            val wStr = root.getAttribute("width").trim().replace(Regex("[^0-9.]"), "").toFloatOrNull()
-            val hStr = root.getAttribute("height").trim().replace(Regex("[^0-9.]"), "").toFloatOrNull()
-            if (wStr != null && hStr != null && wStr > 0f && hStr > 0f) {
-                return wStr / hStr
+
+            if (w != null && h != null && w > 0f && h > 0f) {
+                return SvgDimension(w, h)
             }
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+
+        // Fallback using AndroidSVG parser
+        try {
+            val svg = try {
+                SVG.getFromInputStream(ByteArrayInputStream(svgBytes))
+            } catch (_: Exception) {
+                SVG.getFromString(String(svgBytes, Charsets.UTF_8))
+            }
+            var docWidth = svg.documentWidth
+            var docHeight = svg.documentHeight
+            val viewBox = svg.documentViewBox
+            if ((docWidth <= 0f || docHeight <= 0f) && viewBox != null && viewBox.width() > 0f && viewBox.height() > 0f) {
+                docWidth = viewBox.width()
+                docHeight = viewBox.height()
+            }
+            if (docWidth > 0f && docHeight > 0f) {
+                return SvgDimension(docWidth, docHeight)
+            }
+        } catch (_: Exception) {}
+
+        return SvgDimension(4000f, 4000f)
+    }
+
+    fun getSvgAspectRatio(svgBytes: ByteArray): Float {
+        val dim = getSvgDimensions(svgBytes)
+        if (dim.height > 0f) {
+            return dim.width / dim.height
         }
         return 1.0f
     }
 
     /**
      * Converts SVG bytes to high-resolution JPEG bytes using AndroidSVG native vector rendering.
-     * Dimensions are proportional to the SVG file (high resolution Microstock preview standard),
-     * rendered on a clean white background with exact vector accuracy.
+     * Dimensions match the EXACT artboard size of the SVG file (e.g. 4000x4000 -> 4000x4000 JPG).
+     * If the SVG artboard is very small (e.g. 100x100 icons), it scales up proportionally to high-resolution
+     * standard (at least 2000px up to 4000px) so the preview JPG is never blurry or low quality.
+     * Rendered on a clean pure white background with exact vector sharpness and highest JPEG quality.
      */
     suspend fun renderSvgToHighResJpgBytes(
         context: Context,
@@ -62,47 +109,38 @@ object SvgRenderer {
                     SVG.getFromString(String(svgBytes, Charsets.UTF_8))
                 }
 
-                var docWidth = svg.documentWidth
-                var docHeight = svg.documentHeight
-                val viewBox = svg.documentViewBox
+                val exactDim = getSvgDimensions(svgBytes)
+                var docWidth = exactDim.width
+                var docHeight = exactDim.height
 
-                if ((docWidth <= 0f || docHeight <= 0f) && viewBox != null && viewBox.width() > 0f && viewBox.height() > 0f) {
-                    docWidth = viewBox.width()
-                    docHeight = viewBox.height()
-                }
+                val aspectRatio = if (docHeight > 0f) docWidth / docHeight else 1.0f
 
-                if (docWidth <= 0f || docHeight <= 0f) {
-                    val ratio = getSvgAspectRatio(svgBytes)
-                    docWidth = 3000f
-                    docHeight = (3000f / ratio).coerceAtLeast(100f)
-                }
-
-                val aspectRatio = if (docWidth > 0f && docHeight > 0f) {
-                    docWidth / docHeight
-                } else {
-                    getSvgAspectRatio(svgBytes)
-                }
-
-                // If native dimensions are high resolution (between 2000 and 5000), use native dimensions.
-                // If native dimensions are small (< 2000), scale up to high-res preview standard.
-                // If native dimensions are huge (> 5000), scale down to prevent OOM.
+                // Determine target dimensions:
+                // If SVG has explicit artboard size >= 1000px (e.g. 4000x4000, 3000x2000, 5000x5000),
+                // use EXACT dimensions so JPG matches SVG artboard 100% accurately.
+                // If SVG artboard is tiny (e.g. 24x24, 100x100, 500x500), upscale proportionally
+                // to targetLongEdge (4000px) so preview JPEG is crisp and suitable for Microstock.
                 val maxNativeDim = maxOf(docWidth, docHeight)
-                val effectiveLongEdge = when {
-                    maxNativeDim in 2000f..5000f -> maxNativeDim.toInt()
-                    maxNativeDim > 5000f -> 5000
-                    else -> targetLongEdge.coerceIn(2500, 4500)
-                }
-
-                val (targetWidth, targetHeight) = if (aspectRatio >= 1.0f) {
-                    Pair(effectiveLongEdge, (effectiveLongEdge / aspectRatio).roundToInt().coerceAtLeast(100))
+                val (targetWidth, targetHeight) = if (maxNativeDim >= 1000f) {
+                    // Exact native artboard size
+                    val w = docWidth.roundToInt().coerceAtLeast(100)
+                    val h = docHeight.roundToInt().coerceAtLeast(100)
+                    Pair(w, h)
                 } else {
-                    Pair((effectiveLongEdge * aspectRatio).roundToInt().coerceAtLeast(100), effectiveLongEdge)
+                    // Small artboard: scale up proportionally to targetLongEdge
+                    val longEdge = targetLongEdge.coerceIn(2000, 4000)
+                    if (aspectRatio >= 1.0f) {
+                        Pair(longEdge, (longEdge / aspectRatio).roundToInt().coerceAtLeast(100))
+                    } else {
+                        Pair((longEdge * aspectRatio).roundToInt().coerceAtLeast(100), longEdge)
+                    }
                 }
 
                 var bitmap: Bitmap? = try {
                     Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
                 } catch (oom: OutOfMemoryError) {
                     System.gc()
+                    // If device is extremely low on memory, fallback to a safe scale
                     val fallbackEdge = 2500
                     val (fw, fh) = if (aspectRatio >= 1.0f) {
                         Pair(fallbackEdge, (fallbackEdge / aspectRatio).roundToInt().coerceAtLeast(100))
@@ -115,10 +153,10 @@ object SvgRenderer {
                 if (bitmap == null) return@withContext null
 
                 val canvas = Canvas(bitmap)
-                // Fill clean white background (Microstock standard for JPEG preview)
+                // Fill clean pure white background (Microstock standard for JPEG preview)
                 canvas.drawColor(Color.WHITE)
 
-                // Ensure SVG scales to fit the canvas viewport
+                // Ensure SVG scales to fit the canvas viewport accurately
                 if (svg.documentViewBox == null) {
                     svg.setDocumentViewBox(0f, 0f, docWidth, docHeight)
                 }
@@ -130,7 +168,8 @@ object SvgRenderer {
                 svg.renderToCanvas(canvas, renderOptions)
 
                 val outputStream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, outputStream)
+                // Maximum 100% quality for perfect fidelity and sharpness
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
                 val rawJpgBytes = outputStream.toByteArray()
 
                 bitmap.recycle()
