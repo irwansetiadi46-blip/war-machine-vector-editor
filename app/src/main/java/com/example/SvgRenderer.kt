@@ -154,18 +154,33 @@ object SvgRenderer {
                     }
                 }
 
+                // Allocate bitmap safely with progressive fallback if device memory is constrained
                 var bitmap: Bitmap? = try {
                     Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
                 } catch (oom: OutOfMemoryError) {
                     System.gc()
-                    // If device is extremely low on memory, scale safely to 3000px
-                    val fallbackEdge = 3000
-                    val (fw, fh) = if (aspectRatio >= 1.0f) {
-                        Pair(fallbackEdge, (fallbackEdge / aspectRatio).roundToInt().coerceAtLeast(100))
-                    } else {
-                        Pair((fallbackEdge * aspectRatio).roundToInt().coerceAtLeast(100), fallbackEdge)
+                    try {
+                        // Try RGB_565 (uses 50% less RAM, perfect for opaque JPEG preview)
+                        Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.RGB_565)
+                    } catch (oom2: OutOfMemoryError) {
+                        System.gc()
+                        val fallbackEdge = 3000
+                        val (fw, fh) = if (aspectRatio >= 1.0f) {
+                            Pair(fallbackEdge, (fallbackEdge / aspectRatio).roundToInt().coerceAtLeast(100))
+                        } else {
+                            Pair((fallbackEdge * aspectRatio).roundToInt().coerceAtLeast(100), fallbackEdge)
+                        }
+                        try {
+                            Bitmap.createBitmap(fw, fh, Bitmap.Config.ARGB_8888)
+                        } catch (oom3: OutOfMemoryError) {
+                            System.gc()
+                            try {
+                                Bitmap.createBitmap(fw, fh, Bitmap.Config.RGB_565)
+                            } catch (_: Throwable) {
+                                null
+                            }
+                        }
                     }
-                    Bitmap.createBitmap(fw, fh, Bitmap.Config.ARGB_8888)
                 }
 
                 if (bitmap == null) return@withContext null

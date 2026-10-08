@@ -1581,7 +1581,7 @@ fun InAppToastNotification(
                     width = 1.dp,
                     color = when {
                         message.contains("Error", ignoreCase = true) || message.contains("Failed", ignoreCase = true) -> Color(0xFFEF4444)
-                        message.contains("Saved", ignoreCase = true) || message.contains("Injected", ignoreCase = true) || message.contains("Copied", ignoreCase = true) || message.contains("Generated", ignoreCase = true) || message.contains("Cleared", ignoreCase = true) -> Color(0xFF10B981)
+                        message.contains("Success", ignoreCase = true) || message.contains("Done", ignoreCase = true) || message.contains("Saved", ignoreCase = true) || message.contains("Injected", ignoreCase = true) || message.contains("Copied", ignoreCase = true) || message.contains("Generated", ignoreCase = true) || message.contains("Cleared", ignoreCase = true) -> Color(0xFF10B981)
                         else -> Color(0xFFF25C05)
                     }.copy(alpha = 0.8f)
                 ),
@@ -1593,7 +1593,7 @@ fun InAppToastNotification(
                     horizontalArrangement = Arrangement.Center
                 ) {
                     val isError = message.contains("Error", ignoreCase = true) || message.contains("Failed", ignoreCase = true)
-                    val isSuccess = message.contains("Saved", ignoreCase = true) || message.contains("Injected", ignoreCase = true) || message.contains("Copied", ignoreCase = true) || message.contains("Generated", ignoreCase = true) || message.contains("Cleared", ignoreCase = true)
+                    val isSuccess = message.contains("Success", ignoreCase = true) || message.contains("Done", ignoreCase = true) || message.contains("Saved", ignoreCase = true) || message.contains("Injected", ignoreCase = true) || message.contains("Copied", ignoreCase = true) || message.contains("Generated", ignoreCase = true) || message.contains("Cleared", ignoreCase = true)
                     
                     val iconColor = when {
                         isError -> Color(0xFFEF4444)

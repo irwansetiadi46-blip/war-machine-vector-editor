@@ -2021,6 +2021,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                             zos.putNextEntry(java.util.zip.ZipEntry("$baseName.jpg"))
                                             zos.write(jpgBytes)
                                             zos.closeEntry()
+                                        } else {
+                                            android.util.Log.e("MainViewModel", "Failed to render high-res JPG for $baseName")
                                         }
                                     }
                                 }
@@ -2044,7 +2046,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                _toastFlow.value = "File Saved"
+                _toastFlow.value = "Download Success"
             } catch (e: Exception) {
                 e.printStackTrace()
                 _toastFlow.value = "Save Failed"
@@ -2130,6 +2132,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                                     zos.putNextEntry(java.util.zip.ZipEntry("$uniqueBaseName.jpg"))
                                                     zos.write(jpgBytes)
                                                     zos.closeEntry()
+                                                } else {
+                                                    android.util.Log.e("MainViewModel", "Failed to render high-res JPG for $uniqueBaseName")
                                                 }
                                             }
                                         }
@@ -2176,7 +2180,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 _downloadStatusText.value = "DOWNLOAD COMPLETE ($total files)"
-                _toastFlow.value = "Download Done"
+                _toastFlow.value = "Download Success"
             } catch (e: Exception) {
                 e.printStackTrace()
                 _downloadStatusText.value = "DOWNLOAD FAILED"
