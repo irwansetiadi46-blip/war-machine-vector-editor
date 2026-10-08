@@ -28,9 +28,13 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.animation.*
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -650,12 +654,16 @@ fun MainScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val importBtnInteractionSource = remember { MutableInteractionSource() }
                     Button(
                         onClick = { requestAndPickImages() },
+                        interactionSource = importBtnInteractionSource,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF25C05)),
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                        modifier = Modifier.testTag("import_image_btn")
+                        modifier = Modifier
+                            .popUpBounce(importBtnInteractionSource, scaleUp = 1.08f, scaleDown = 0.93f)
+                            .testTag("import_image_btn")
                     ) {
                         Icon(
                             imageVector = Icons.Default.AddPhotoAlternate,
@@ -750,8 +758,10 @@ fun MainScreen(
 
                 // Image List Area (Breathes directly on app background)
                 if (imagesList.isEmpty()) {
+                    val addImagesBoxInteractionSource = remember { MutableInteractionSource() }
                     Surface(
                         onClick = { requestAndPickImages() },
+                        interactionSource = addImagesBoxInteractionSource,
                         shape = RoundedCornerShape(16.dp),
                         color = Color.Transparent,
                         border = BorderStroke(
@@ -768,6 +778,7 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 12.dp)
+                            .popUpBounce(addImagesBoxInteractionSource, scaleUp = 1.04f, scaleDown = 0.96f)
                             .shadow(10.dp, RoundedCornerShape(16.dp), spotColor = Color(0x8038BDF8))
                             .testTag("empty_add_images_box")
                     ) {
@@ -1056,6 +1067,7 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // 1. GENERATE BATCH BUTTON (Top, Center, Largest Size - Glowing Glassmorphism)
+                val generateBtnInteractionSource = remember { MutableInteractionSource() }
                 val generateShape = RoundedCornerShape(14.dp)
                 Surface(
                     shape = generateShape,
@@ -1074,6 +1086,7 @@ fun MainScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(46.dp)
+                        .popUpBounce(generateBtnInteractionSource, scaleUp = 1.06f, scaleDown = 0.94f)
                         .clip(generateShape)
                         .testTag("floating_generate_btn")
                 ) {
@@ -1089,7 +1102,10 @@ fun MainScreen(
                                     }
                                 )
                             )
-                            .clickable {
+                            .clickable(
+                                interactionSource = generateBtnInteractionSource,
+                                indication = null
+                            ) {
                                 if (isGeneratingAi) {
                                     viewModel.cancelGlobalGeneration()
                                 } else {
@@ -1171,6 +1187,7 @@ fun MainScreen(
                     val subBtnShape = RoundedCornerShape(12.dp)
 
                     // Button 1: Inject All (Frosted Emerald Glass)
+                    val injectAllBtnInteractionSource = remember { MutableInteractionSource() }
                     Surface(
                         shape = subBtnShape,
                         shadowElevation = 4.dp,
@@ -1184,6 +1201,7 @@ fun MainScreen(
                         modifier = Modifier
                             .weight(1f)
                             .height(40.dp)
+                            .popUpBounce(injectAllBtnInteractionSource, scaleUp = 1.08f, scaleDown = 0.93f)
                             .clip(subBtnShape)
                             .testTag("floating_inject_all_btn")
                     ) {
@@ -1195,7 +1213,11 @@ fun MainScreen(
                                         listOf(Color(0xE6059669), Color(0xCC047857))
                                     )
                                 )
-                                .clickable(enabled = !isInjecting) {
+                                .clickable(
+                                    enabled = !isInjecting,
+                                    interactionSource = injectAllBtnInteractionSource,
+                                    indication = null
+                                ) {
                                     if (imagesList.isEmpty()) {
                                         viewModel.showToast("No Images")
                                     } else {
@@ -1241,6 +1263,7 @@ fun MainScreen(
                     }
 
                     // Button 2: Download All (Frosted Azure Glass)
+                    val downloadAllBtnInteractionSource = remember { MutableInteractionSource() }
                     Surface(
                         shape = subBtnShape,
                         shadowElevation = 4.dp,
@@ -1254,6 +1277,7 @@ fun MainScreen(
                         modifier = Modifier
                             .weight(1f)
                             .height(40.dp)
+                            .popUpBounce(downloadAllBtnInteractionSource, scaleUp = 1.08f, scaleDown = 0.93f)
                             .clip(subBtnShape)
                             .testTag("floating_download_all_btn")
                     ) {
@@ -1265,7 +1289,11 @@ fun MainScreen(
                                         listOf(Color(0xE60284C7), Color(0xCC0369A1))
                                     )
                                 )
-                                .clickable(enabled = !isDownloading) {
+                                .clickable(
+                                    enabled = !isDownloading,
+                                    interactionSource = downloadAllBtnInteractionSource,
+                                    indication = null
+                                ) {
                                     if (imagesList.isEmpty()) {
                                         viewModel.showToast("No Injected")
                                     } else {
@@ -1311,6 +1339,7 @@ fun MainScreen(
                     }
 
                     // Button 3: Clear All (Frosted Crimson Glass)
+                    val clearAllBtnInteractionSource = remember { MutableInteractionSource() }
                     Surface(
                         shape = subBtnShape,
                         shadowElevation = 4.dp,
@@ -1324,6 +1353,7 @@ fun MainScreen(
                         modifier = Modifier
                             .weight(1f)
                             .height(40.dp)
+                            .popUpBounce(clearAllBtnInteractionSource, scaleUp = 1.08f, scaleDown = 0.93f)
                             .clip(subBtnShape)
                             .testTag("floating_clear_all_btn")
                     ) {
@@ -1335,7 +1365,10 @@ fun MainScreen(
                                         listOf(Color(0xE6DC2626), Color(0xCCB91C1C))
                                     )
                                 )
-                                .clickable {
+                                .clickable(
+                                    interactionSource = clearAllBtnInteractionSource,
+                                    indication = null
+                                ) {
                                     if (imagesList.isEmpty()) {
                                         viewModel.showToast("No Images")
                                     } else {
@@ -4317,6 +4350,53 @@ fun CompactGridImageCard(
     }
 }
 
+/**
+ * Animasi pop-up bounce saat ditekan:
+ * Membesar saat ditekan, mengecil saat dilepas, lalu kembali ke ukuran semula dengan pegas halus (spring).
+ */
+@Composable
+fun Modifier.popUpBounce(
+    interactionSource: MutableInteractionSource,
+    scaleUp: Float = 1.08f,
+    scaleDown: Float = 0.93f
+): Modifier {
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scaleAnim = remember { Animatable(1f) }
+    var hasBeenPressed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isPressed) {
+        if (isPressed) {
+            hasBeenPressed = true
+            scaleAnim.animateTo(
+                targetValue = scaleUp,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
+        } else if (hasBeenPressed) {
+            // Mengecil sesaat saat dilepas
+            scaleAnim.animateTo(
+                targetValue = scaleDown,
+                animationSpec = tween(durationMillis = 85, easing = FastOutSlowInEasing)
+            )
+            // Membal kembali ke ukuran semula (1.0f)
+            scaleAnim.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
+        }
+    }
+
+    return this.graphicsLayer {
+        scaleX = scaleAnim.value
+        scaleY = scaleAnim.value
+    }
+}
+
 @Composable
 fun AdaptiveArtboardPreviewCard(
     item: ImageItem,
@@ -4725,6 +4805,7 @@ fun FullImageCard(
                 // GENERATE Button
                 val isProcessingThis = item.isGeneratingMetadata || item.processStatus == ProcessStatus.PROCESSING
                 val isWaitingThis = item.processStatus == ProcessStatus.WAITING
+                val singleGenInteraction = remember { MutableInteractionSource() }
                 Button(
                     onClick = {
                         if (isProcessingThis || isWaitingThis) {
@@ -4733,6 +4814,7 @@ fun FullImageCard(
                             viewModel.generateMetadataForSingleImage(item.id)
                         }
                     },
+                    interactionSource = singleGenInteraction,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = when {
                             isProcessingThis -> Color(0xFFEF4444)
@@ -4744,7 +4826,8 @@ fun FullImageCard(
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                         .weight(1f)
-                        .height(36.dp),
+                        .height(36.dp)
+                        .popUpBounce(singleGenInteraction, scaleUp = 1.07f, scaleDown = 0.93f),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                 ) {
                     if (isProcessingThis) {
@@ -4776,9 +4859,11 @@ fun FullImageCard(
 
                 // INJECT Button
                 val canInject = item.individualFileName.isNotBlank() || item.individualTitle.isNotBlank() || item.individualDescription.isNotBlank() || item.individualKeywords.isNotBlank()
+                val singleInjectInteraction = remember { MutableInteractionSource() }
                 Button(
                     onClick = { viewModel.injectIndividualMetadata(item.id) },
                     enabled = canInject && !item.isInjectingIndividual,
+                    interactionSource = singleInjectInteraction,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (canInject) Color(0xFF22C55E) else Color(0xFF475569),
                         disabledContainerColor = Color(0xFF334155),
@@ -4787,7 +4872,8 @@ fun FullImageCard(
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                         .weight(1f)
-                        .height(36.dp),
+                        .height(36.dp)
+                        .popUpBounce(singleInjectInteraction, scaleUp = 1.07f, scaleDown = 0.93f),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                 ) {
                     if (item.isInjectingIndividual) {
@@ -4800,9 +4886,11 @@ fun FullImageCard(
                 }
 
                 // Download Button
+                val singleDownloadInteraction = remember { MutableInteractionSource() }
                 Box(
                     modifier = Modifier
                         .size(36.dp)
+                        .popUpBounce(singleDownloadInteraction, scaleUp = 1.10f, scaleDown = 0.92f)
                         .background(
                             if (item.hasMetadata) Color(0xFF00A8FF).copy(alpha = 0.15f) else Color.Transparent,
                             RoundedCornerShape(8.dp)
@@ -4813,7 +4901,11 @@ fun FullImageCard(
                             RoundedCornerShape(8.dp)
                         )
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable(enabled = item.hasMetadata) { viewModel.downloadIndividualFile(item.id) },
+                        .clickable(
+                            enabled = item.hasMetadata,
+                            interactionSource = singleDownloadInteraction,
+                            indication = null
+                        ) { viewModel.downloadIndividualFile(item.id) },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
