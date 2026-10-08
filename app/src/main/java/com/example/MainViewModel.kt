@@ -1965,11 +1965,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                val metaTitle = item.metadata?.title?.trim() ?: ""
-                val metaDesc = item.metadata?.description?.trim() ?: ""
-                val metaKeywordsStr = item.metadata?.keywords ?: ""
-                val keywordsList = metaKeywordsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                val metaCreator = item.metadata?.creator?.trim() ?: ""
+                val metaTitle = item.individualTitle.ifBlank { item.metadata?.title?.trim() ?: "" }
+                val metaDesc = item.individualDescription.ifBlank { item.metadata?.description?.trim() ?: "" }
+                val metaKeywordsStr = item.individualKeywords.ifBlank { item.metadata?.keywords ?: "" }
+                val keywordsList = if (item.individualKeywordItems.isNotEmpty()) {
+                    item.individualKeywordItems.map { it.word.trim() }.filter { it.isNotEmpty() }
+                } else {
+                    metaKeywordsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                }
+                val metaCreator = item.individualCreator.ifBlank { item.metadata?.creator?.trim() ?: "WarMachineHybrid" }
 
                 val dotIndex = item.name.lastIndexOf('.')
                 val baseName = getEffectiveBaseName(item)
@@ -2005,8 +2009,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                         zos.write(epsBytes)
                                         zos.closeEntry()
 
-                                        // 3. High resolution JPG preview outside folder with injected metadata
-                                        val rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
+                                        // 3. High resolution JPG preview outside folder with injected metadata and accurate artboard sizing
+                                        var rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
+                                        if (rawJpg == null) {
+                                            // Fallback attempt at 2000px if memory was tight
+                                            rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 2000)
+                                        }
+                                        if (rawJpg == null && item.previewBytes != null) {
+                                            // Fallback to high-quality decoded preview bytes converted to JPEG
+                                            try {
+                                                val bmp = android.graphics.BitmapFactory.decodeByteArray(item.previewBytes, 0, item.previewBytes.size)
+                                                if (bmp != null) {
+                                                    val baos = java.io.ByteArrayOutputStream()
+                                                    val whiteBmp = android.graphics.Bitmap.createBitmap(bmp.width, bmp.height, android.graphics.Bitmap.Config.ARGB_8888)
+                                                    val c = android.graphics.Canvas(whiteBmp)
+                                                    c.drawColor(android.graphics.Color.WHITE)
+                                                    c.drawBitmap(bmp, 0f, 0f, null)
+                                                    whiteBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, baos)
+                                                    rawJpg = baos.toByteArray()
+                                                    whiteBmp.recycle()
+                                                    bmp.recycle()
+                                                }
+                                            } catch (_: Throwable) {}
+                                        }
+
                                         if (rawJpg != null) {
                                             val jpgBytes = XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
                                             zos.putNextEntry(java.util.zip.ZipEntry("$baseName.jpg"))
@@ -2070,11 +2096,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val baseBytes = item.injectedBytes ?: item.originalBytes ?: FileHelper.readBytesFromUri(context, item.uri)
                         if (baseBytes != null) {
                             val isSvg = item.name.endsWith(".svg", ignoreCase = true)
-                            val metaTitle = item.metadata?.title?.trim() ?: ""
-                            val metaDesc = item.metadata?.description?.trim() ?: ""
-                            val metaKeywordsStr = item.metadata?.keywords ?: ""
-                            val keywordsList = metaKeywordsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                            val metaCreator = item.metadata?.creator?.trim() ?: ""
+                            val metaTitle = item.individualTitle.ifBlank { item.metadata?.title?.trim() ?: "" }
+                            val metaDesc = item.individualDescription.ifBlank { item.metadata?.description?.trim() ?: "" }
+                            val metaKeywordsStr = item.individualKeywords.ifBlank { item.metadata?.keywords ?: "" }
+                            val keywordsList = if (item.individualKeywordItems.isNotEmpty()) {
+                                item.individualKeywordItems.map { it.word.trim() }.filter { it.isNotEmpty() }
+                            } else {
+                                metaKeywordsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                            }
+                            val metaCreator = item.individualCreator.ifBlank { item.metadata?.creator?.trim() ?: "WarMachineHybrid" }
 
                             val dotIndex = item.name.lastIndexOf('.')
                             val baseName = getEffectiveBaseName(item)
@@ -2105,8 +2135,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                                 zos.write(epsBytes)
                                                 zos.closeEntry()
 
-                                                // 3. High resolution JPG preview outside folder with injected metadata
-                                                val rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
+                                                // 3. High resolution JPG preview outside folder with injected metadata and accurate artboard sizing
+                                                var rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
+                                                if (rawJpg == null) {
+                                                    // Fallback attempt at 2000px if memory was tight
+                                                    rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 2000)
+                                                }
+                                                if (rawJpg == null && item.previewBytes != null) {
+                                                    // Fallback to high-quality decoded preview bytes converted to JPEG
+                                                    try {
+                                                        val bmp = android.graphics.BitmapFactory.decodeByteArray(item.previewBytes, 0, item.previewBytes.size)
+                                                        if (bmp != null) {
+                                                            val baos = java.io.ByteArrayOutputStream()
+                                                            val whiteBmp = android.graphics.Bitmap.createBitmap(bmp.width, bmp.height, android.graphics.Bitmap.Config.ARGB_8888)
+                                                            val c = android.graphics.Canvas(whiteBmp)
+                                                            c.drawColor(android.graphics.Color.WHITE)
+                                                            c.drawBitmap(bmp, 0f, 0f, null)
+                                                            whiteBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, baos)
+                                                            rawJpg = baos.toByteArray()
+                                                            whiteBmp.recycle()
+                                                            bmp.recycle()
+                                                        }
+                                                    } catch (_: Throwable) {}
+                                                }
+
                                                 if (rawJpg != null) {
                                                     val jpgBytes = XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
                                                     zos.putNextEntry(java.util.zip.ZipEntry("$uniqueBaseName.jpg"))
