@@ -133,19 +133,17 @@ object SvgRenderer {
 
                 val aspectRatio = if (docHeight > 0f) docWidth / docHeight else 1.0f
 
-                // Determine target dimensions:
+                // Target Dimensions matching the SVG artboard dimensions & aspect ratio:
                 // 1. If SVG has explicit artboard size >= 1000px (e.g. 4000x4000, 3000x2000, 5000x5000),
-                //    use the EXACT native artboard dimensions so the JPG matches the SVG 1:1.
-                // 2. If SVG artboard is smaller than 1000px (e.g. 24x24 icon or 500x500), scale up
-                //    proportionally to targetLongEdge (4000px) so the resulting JPG is high resolution.
+                //    use the EXACT native artboard dimensions so the JPG matches the SVG 1:1 in width & height.
+                // 2. If SVG artboard is smaller than 1000px (e.g. small icon 100x100 or viewBox 500x500),
+                //    scale up proportionally to targetLongEdge while strictly maintaining the EXACT aspect ratio.
                 val maxNativeDim = maxOf(docWidth, docHeight)
                 val (targetWidth, targetHeight) = if (maxNativeDim >= 1000f) {
-                    // Exact native artboard size
                     val w = docWidth.roundToInt().coerceAtLeast(100)
                     val h = docHeight.roundToInt().coerceAtLeast(100)
                     Pair(w, h)
                 } else {
-                    // Small artboard: scale up proportionally to targetLongEdge
                     val longEdge = targetLongEdge.coerceIn(2000, 4000)
                     if (aspectRatio >= 1.0f) {
                         Pair(longEdge, (longEdge / aspectRatio).roundToInt().coerceAtLeast(100))

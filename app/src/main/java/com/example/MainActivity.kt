@@ -2262,6 +2262,7 @@ fun AutoMetadataSettingsScreen(
     val geminiKey by viewModel.geminiKey.collectAsStateWithLifecycle()
     val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
     val isOfflineMode by viewModel.isOfflineMode.collectAsStateWithLifecycle()
+    val selectedMicrostockTemplate by viewModel.selectedMicrostockTemplate.collectAsStateWithLifecycle()
     val titleCharLimit by viewModel.titleCharLimit.collectAsStateWithLifecycle()
     val descCharLimit by viewModel.descCharLimit.collectAsStateWithLifecycle()
     val keywordsLimit by viewModel.keywordsLimit.collectAsStateWithLifecycle()
@@ -2547,6 +2548,84 @@ fun AutoMetadataSettingsScreen(
                             modifier = Modifier.fillMaxWidth().height(38.dp).testTag("api_save_btn")
                         ) {
                             Text(apiBtnText, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(18.dp))
+
+                        // Template Microstock Configuration Grid (3 Columns)
+                        Text(
+                            text = "Sellect Microstock",
+                            color = Color(0xFFE2E8F0),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        val microstockTemplates = listOf(
+                            MainViewModel.MicrostockTemplate.ADOBESTOCK,
+                            MainViewModel.MicrostockTemplate.SHUTTERSTOCK,
+                            MainViewModel.MicrostockTemplate.VECTEEZY,
+                            MainViewModel.MicrostockTemplate.MIRI_CANVAS,
+                            MainViewModel.MicrostockTemplate.ICONSCOUT,
+                            MainViewModel.MicrostockTemplate.GENERAL
+                        )
+
+                        // 3-column grid format without extra captions
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            microstockTemplates.chunked(3).forEach { rowTemplates ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    rowTemplates.forEach { template ->
+                                        val isSelected = selectedMicrostockTemplate == template
+                                        val cardBg = if (isSelected) Color(0xFF10B981) else Color(0xFF0F1E36)
+                                        val cardBorder = if (isSelected) Color(0xFF34D399) else Color(0x30FFFFFF)
+                                        val textColor = if (isSelected) Color.White else Color(0xFFCBD5E1)
+
+                                        Card(
+                                            onClick = {
+                                                viewModel.selectMicrostockTemplate(template)
+                                                // Sync local input values with newly selected template values
+                                                keywordsInput = template.keywordsLimit.toInt().toString()
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = CardDefaults.cardColors(containerColor = cardBg),
+                                            border = BorderStroke(1.dp, cardBorder),
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(44.dp)
+                                                .testTag("microstock_${template.name.lowercase()}")
+                                        ) {
+                                            Box(
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = template.displayName,
+                                                    color = textColor,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                                    textAlign = TextAlign.Center,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    // If row has less than 3 items, add spacers for balance
+                                    if (rowTemplates.size < 3) {
+                                        repeat(3 - rowTemplates.size) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(18.dp))
@@ -3932,6 +4011,11 @@ fun SvgExportDialog(
                 // Options List
                 val options = listOf(
                     Triple(
+                        SvgExportFormat.JPG_HIGH_RES,
+                        "Jpg (High Resolution)",
+                        "File Jpg high resolution akurat dengan aspek rasio & ukuran file SVG yang diupload"
+                    ),
+                    Triple(
                         SvgExportFormat.SVG,
                         "Svg",
                         "File Vector SVG (.svg) dengan Metadata XMP"
@@ -3944,7 +4028,7 @@ fun SvgExportDialog(
                     Triple(
                         SvgExportFormat.ZIP_SVG_EPS_JPG,
                         "Zip (Eps + Jpg)",
-                        "Bundel Zip Microstock (.eps + .jpg preview) dengan Metadata"
+                        "Bundel Zip Microstock (folder EPS/.eps + file .eps & .jpg preview) dengan Metadata"
                     )
                 )
 

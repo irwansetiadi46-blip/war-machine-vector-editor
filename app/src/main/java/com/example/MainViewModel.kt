@@ -18,6 +18,7 @@ import java.io.ByteArrayOutputStream
 import java.util.Locale
 
 enum class SvgExportFormat {
+    JPG_HIGH_RES,
     SVG,
     EPS,
     ZIP_SVG_EPS_JPG
@@ -193,6 +194,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _descCharLimit = MutableStateFlow(150f)
     val descCharLimit = _descCharLimit.asStateFlow()
 
+    enum class MicrostockTemplate(
+        val displayName: String,
+        val keywordsLimit: Float,
+        val defaultBlacklist: String?
+    ) {
+        ADOBESTOCK("Adobestock", 49f, null),
+        SHUTTERSTOCK("Shutterstock", 50f, null),
+        VECTEEZY("Vecteezy", 49f, "vector, white, background, Ecommerce, e-commerce"),
+        MIRI_CANVAS("Miri Canvas", 25f, null),
+        ICONSCOUT("iconscout", 20f, null),
+        GENERAL("General", 49f, "vector, white, background, Ecommerce, e-commerce");
+
+        companion object {
+            fun fromDisplayName(name: String): MicrostockTemplate {
+                return entries.firstOrNull { it.displayName.equals(name, ignoreCase = true) } ?: GENERAL
+            }
+        }
+    }
+
+    private val _selectedMicrostockTemplate = MutableStateFlow(MicrostockTemplate.GENERAL)
+    val selectedMicrostockTemplate = _selectedMicrostockTemplate.asStateFlow()
+
     private val _keywordsLimit = MutableStateFlow(49f)
     val keywordsLimit = _keywordsLimit.asStateFlow()
 
@@ -316,14 +339,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _creator.value = prefs.getString("saved_creator", "") ?: ""
         _isOfflineMode.value = prefs.getBoolean("is_offline_mode", false)
 
+        // Auto-load Microstock Template (Default General)
+        val savedTemplateName = prefs.getString("selected_microstock_template", MicrostockTemplate.GENERAL.name) ?: MicrostockTemplate.GENERAL.name
+        val template = try {
+            MicrostockTemplate.valueOf(savedTemplateName)
+        } catch (e: Exception) {
+            MicrostockTemplate.GENERAL
+        }
+        _selectedMicrostockTemplate.value = template
+
         // Auto-load persistent slider limits
         _titleCharLimit.value = prefs.getFloat("saved_title_limit", 100f)
         _descCharLimit.value = prefs.getFloat("saved_desc_limit", 150f)
-        _keywordsLimit.value = prefs.getFloat("saved_keywords_limit", 49f)
+        _keywordsLimit.value = prefs.getFloat("saved_keywords_limit", template.keywordsLimit)
 
         // Auto-load saved Kata Kunci Inti & Blacklist Words
         val savedConcept = prefs.getString("saved_prompt_concept", "") ?: ""
-        val savedBlacklist = prefs.getString("saved_blacklist_words", "") ?: ""
+        val savedBlacklist = if (template.defaultBlacklist != null) {
+            prefs.getString("saved_blacklist_words", template.defaultBlacklist) ?: template.defaultBlacklist
+        } else {
+            ""
+        }
         _promptConcept.value = savedConcept
         _savedPromptConcept.value = savedConcept
         _blacklistWords.value = savedBlacklist
@@ -443,6 +479,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _keywordsLimit.value = value
         val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
         prefs.edit().putFloat("saved_keywords_limit", value).apply()
+    }
+
+    fun selectMicrostockTemplate(template: MicrostockTemplate) {
+        _selectedMicrostockTemplate.value = template
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("selected_microstock_template", template.name).apply()
+
+        // Set keywords limit according to template
+        setKeywordsLimit(template.keywordsLimit)
+
+        // Blacklist Words is only populated if the selected template is Vecteezy or General; otherwise cleared
+        if (template.defaultBlacklist != null) {
+            _blacklistWords.value = template.defaultBlacklist
+            prefs.edit().putString("saved_blacklist_words", template.defaultBlacklist).apply()
+            _savedBlacklistWords.value = template.defaultBlacklist
+        } else {
+            _blacklistWords.value = ""
+            prefs.edit().remove("saved_blacklist_words").apply()
+            _savedBlacklistWords.value = ""
+        }
     }
 
     fun setTitle(value: String) {
@@ -1983,6 +2039,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.IO) {
                     if (isSvg) {
                         when (format) {
+                            SvgExportFormat.JPG_HIGH_RES -> {
+                                var rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
+                                if (rawJpg == null) {
+                                    rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 3000)
+                                }
+                                if (rawJpg != null) {
+                                    val jpgBytes = XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
+                                    val fileName = "$baseName.jpg"
+                                    FileHelper.saveToDownloads(context, fileName, "image/jpeg", jpgBytes)
+                                } else {
+                                    android.util.Log.e("MainViewModel", "Failed to render high-res JPG for $baseName")
+                                    _toastFlow.value = "Render Failed"
+                                }
+                            }
                             SvgExportFormat.SVG -> {
                                 val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
                                 val fileName = "$baseName.svg"
@@ -1999,8 +2069,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     java.util.zip.ZipOutputStream(outputStream.buffered()).use { zos ->
                                         val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
 
-                                        // 1. EPS inside "EPS file" folder
-                                        zos.putNextEntry(java.util.zip.ZipEntry("EPS file/$baseName.eps"))
+                                        // 1. EPS inside "EPS" folder
+                                        zos.putNextEntry(java.util.zip.ZipEntry("EPS/$baseName.eps"))
                                         zos.write(epsBytes)
                                         zos.closeEntry()
 
@@ -2110,8 +2180,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                             java.util.zip.ZipOutputStream(outputStream.buffered()).use { zos ->
                                                 val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
 
-                                                // 1. EPS inside "EPS file" folder
-                                                zos.putNextEntry(java.util.zip.ZipEntry("EPS file/$uniqueBaseName.eps"))
+                                                // 1. EPS inside "EPS" folder
+                                                zos.putNextEntry(java.util.zip.ZipEntry("EPS/$uniqueBaseName.eps"))
                                                 zos.write(epsBytes)
                                                 zos.closeEntry()
 
@@ -2147,12 +2217,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                         FileHelper.saveToDownloads(context, "$uniqueBaseName$ext", mimeType, baseBytes)
                                     }
                                 } else if (isSvg) {
-                                    if (format == SvgExportFormat.EPS) {
-                                        val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
-                                        FileHelper.saveToDownloads(context, "$uniqueBaseName.eps", "application/postscript", epsBytes)
-                                    } else {
-                                        val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
-                                        FileHelper.saveToDownloads(context, "$uniqueBaseName.svg", "image/svg+xml", svgBytes)
+                                    when (format) {
+                                        SvgExportFormat.JPG_HIGH_RES -> {
+                                            var rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
+                                            if (rawJpg == null) {
+                                                rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 3000)
+                                            }
+                                            if (rawJpg != null) {
+                                                val jpgBytes = XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
+                                                FileHelper.saveToDownloads(context, "$uniqueBaseName.jpg", "image/jpeg", jpgBytes)
+                                            } else {
+                                                android.util.Log.e("MainViewModel", "Failed to render high-res JPG for $uniqueBaseName")
+                                            }
+                                        }
+                                        SvgExportFormat.EPS -> {
+                                            val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
+                                            FileHelper.saveToDownloads(context, "$uniqueBaseName.eps", "application/postscript", epsBytes)
+                                        }
+                                        else -> {
+                                            val svgBytes = XmpInjector.injectIntoSvg(baseBytes, metaTitle, metaDesc, keywordsList)
+                                            FileHelper.saveToDownloads(context, "$uniqueBaseName.svg", "image/svg+xml", svgBytes)
+                                        }
                                     }
                                 } else {
                                     val isEps = item.name.endsWith(".eps", ignoreCase = true)
