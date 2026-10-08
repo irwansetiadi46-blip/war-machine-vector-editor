@@ -17,6 +17,28 @@ object SvgRenderer {
 
     data class SvgDimension(val width: Float, val height: Float)
 
+    /**
+     * Parses standard SVG length values (e.g. "4000", "4000px", "4000pt", "100mm", "10in") into pixels.
+     * 1 inch = 96 px, 1 pt = 96/72 px = 1.3333 px, 1 mm = 96/25.4 px = 3.7795 px, 1 cm = 37.795 px.
+     */
+    private fun parseSvgLengthToPixels(raw: String): Float? {
+        val s = raw.trim().lowercase(java.util.Locale.ROOT)
+        if (s.isEmpty() || s.endsWith("%")) return null
+        return try {
+            when {
+                s.endsWith("px") -> s.removeSuffix("px").trim().toFloatOrNull()
+                s.endsWith("pt") -> s.removeSuffix("pt").trim().toFloatOrNull()?.let { it * (96f / 72f) }
+                s.endsWith("in") -> s.removeSuffix("in").trim().toFloatOrNull()?.let { it * 96f }
+                s.endsWith("mm") -> s.removeSuffix("mm").trim().toFloatOrNull()?.let { it * (96f / 25.4f) }
+                s.endsWith("cm") -> s.removeSuffix("cm").trim().toFloatOrNull()?.let { it * (96f / 2.54f) }
+                s.endsWith("pc") -> s.removeSuffix("pc").trim().toFloatOrNull()?.let { it * 16f }
+                else -> s.replace(Regex("[^0-9.]"), "").toFloatOrNull()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun getSvgDimensions(svgBytes: ByteArray): SvgDimension {
         try {
             val factory = DocumentBuilderFactory.newInstance()
@@ -28,25 +50,21 @@ object SvgRenderer {
             val doc = factory.newDocumentBuilder().parse(ByteArrayInputStream(svgBytes))
             val root = doc.documentElement
 
-            // 1. Try explicit width and height attributes
+            // 1. Try explicit width and height attributes (supports px, pt, mm, in, etc.)
             val wAttr = root.getAttribute("width").trim()
             val hAttr = root.getAttribute("height").trim()
 
-            var w: Float? = if (!wAttr.endsWith("%")) {
-                wAttr.replace(Regex("[^0-9.]"), "").toFloatOrNull()
-            } else null
+            var w: Float? = parseSvgLengthToPixels(wAttr)
+            var h: Float? = parseSvgLengthToPixels(hAttr)
 
-            var h: Float? = if (!hAttr.endsWith("%")) {
-                hAttr.replace(Regex("[^0-9.]"), "").toFloatOrNull()
-            } else null
-
-            // 2. Try viewBox if width or height missing or 0
+            // 2. Try viewBox if width or height missing or <= 0
             val viewBox = root.getAttribute("viewBox").trim()
             if (viewBox.isNotEmpty()) {
                 val tokens = viewBox.split(Regex("""[\s,]+""")).mapNotNull { it.toFloatOrNull() }
                 if (tokens.size >= 4 && tokens[2] > 0f && tokens[3] > 0f) {
                     val vbWidth = tokens[2]
                     val vbHeight = tokens[3]
+                    // If width/height were not specified or 100%, viewBox represents the true SVG artboard coordinate system
                     if (w == null || w <= 0f) w = vbWidth
                     if (h == null || h <= 0f) h = vbHeight
                 }
@@ -59,7 +77,7 @@ object SvgRenderer {
             e.printStackTrace()
         }
 
-        // Fallback using AndroidSVG parser
+        // Fallback using AndroidSVG native document bounds
         try {
             val svg = try {
                 SVG.getFromInputStream(ByteArrayInputStream(svgBytes))
@@ -116,10 +134,10 @@ object SvgRenderer {
                 val aspectRatio = if (docHeight > 0f) docWidth / docHeight else 1.0f
 
                 // Determine target dimensions:
-                // If SVG has explicit artboard size >= 1000px (e.g. 4000x4000, 3000x2000, 5000x5000),
-                // use EXACT dimensions so JPG matches SVG artboard 100% accurately.
-                // If SVG artboard is tiny (e.g. 24x24, 100x100, 500x500), upscale proportionally
-                // to targetLongEdge (4000px) so preview JPEG is crisp and suitable for Microstock.
+                // 1. If SVG has explicit artboard size >= 1000px (e.g. 4000x4000, 3000x2000, 5000x5000),
+                //    use the EXACT native artboard dimensions so the JPG matches the SVG 1:1.
+                // 2. If SVG artboard is smaller than 1000px (e.g. 24x24 icon or 500x500), scale up
+                //    proportionally to targetLongEdge (4000px) so the resulting JPG is high resolution.
                 val maxNativeDim = maxOf(docWidth, docHeight)
                 val (targetWidth, targetHeight) = if (maxNativeDim >= 1000f) {
                     // Exact native artboard size
@@ -140,8 +158,8 @@ object SvgRenderer {
                     Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
                 } catch (oom: OutOfMemoryError) {
                     System.gc()
-                    // If device is extremely low on memory, fallback to a safe scale
-                    val fallbackEdge = 2500
+                    // If device is extremely low on memory, scale safely to 3000px
+                    val fallbackEdge = 3000
                     val (fw, fh) = if (aspectRatio >= 1.0f) {
                         Pair(fallbackEdge, (fallbackEdge / aspectRatio).roundToInt().coerceAtLeast(100))
                     } else {
@@ -156,7 +174,7 @@ object SvgRenderer {
                 // Fill clean pure white background (Microstock standard for JPEG preview)
                 canvas.drawColor(Color.WHITE)
 
-                // Ensure SVG scales to fit the canvas viewport accurately
+                // Ensure SVG document viewbox covers the artboard
                 if (svg.documentViewBox == null) {
                     svg.setDocumentViewBox(0f, 0f, docWidth, docHeight)
                 }
@@ -168,7 +186,7 @@ object SvgRenderer {
                 svg.renderToCanvas(canvas, renderOptions)
 
                 val outputStream = ByteArrayOutputStream()
-                // Maximum 100% quality for perfect fidelity and sharpness
+                // 100% maximum quality for perfect clarity and sharpness
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
                 val rawJpgBytes = outputStream.toByteArray()
 

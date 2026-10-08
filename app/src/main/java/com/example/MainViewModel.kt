@@ -2012,25 +2012,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                         // 3. High resolution JPG preview outside folder with injected metadata and accurate artboard sizing
                                         var rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
                                         if (rawJpg == null) {
-                                            // Fallback attempt at 2000px if memory was tight
-                                            rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 2000)
-                                        }
-                                        if (rawJpg == null && item.previewBytes != null) {
-                                            // Fallback to high-quality decoded preview bytes converted to JPEG
-                                            try {
-                                                val bmp = android.graphics.BitmapFactory.decodeByteArray(item.previewBytes, 0, item.previewBytes.size)
-                                                if (bmp != null) {
-                                                    val baos = java.io.ByteArrayOutputStream()
-                                                    val whiteBmp = android.graphics.Bitmap.createBitmap(bmp.width, bmp.height, android.graphics.Bitmap.Config.ARGB_8888)
-                                                    val c = android.graphics.Canvas(whiteBmp)
-                                                    c.drawColor(android.graphics.Color.WHITE)
-                                                    c.drawBitmap(bmp, 0f, 0f, null)
-                                                    whiteBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, baos)
-                                                    rawJpg = baos.toByteArray()
-                                                    whiteBmp.recycle()
-                                                    bmp.recycle()
-                                                }
-                                            } catch (_: Throwable) {}
+                                            // Fallback attempt with safe 3000px if device was low on memory
+                                            rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 3000)
                                         }
 
                                         if (rawJpg != null) {
@@ -2138,25 +2121,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                                 // 3. High resolution JPG preview outside folder with injected metadata and accurate artboard sizing
                                                 var rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
                                                 if (rawJpg == null) {
-                                                    // Fallback attempt at 2000px if memory was tight
-                                                    rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 2000)
-                                                }
-                                                if (rawJpg == null && item.previewBytes != null) {
-                                                    // Fallback to high-quality decoded preview bytes converted to JPEG
-                                                    try {
-                                                        val bmp = android.graphics.BitmapFactory.decodeByteArray(item.previewBytes, 0, item.previewBytes.size)
-                                                        if (bmp != null) {
-                                                            val baos = java.io.ByteArrayOutputStream()
-                                                            val whiteBmp = android.graphics.Bitmap.createBitmap(bmp.width, bmp.height, android.graphics.Bitmap.Config.ARGB_8888)
-                                                            val c = android.graphics.Canvas(whiteBmp)
-                                                            c.drawColor(android.graphics.Color.WHITE)
-                                                            c.drawBitmap(bmp, 0f, 0f, null)
-                                                            whiteBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, baos)
-                                                            rawJpg = baos.toByteArray()
-                                                            whiteBmp.recycle()
-                                                            bmp.recycle()
-                                                        }
-                                                    } catch (_: Throwable) {}
+                                                    // Fallback attempt with safe 3000px if device was low on memory
+                                                    rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 3000)
                                                 }
 
                                                 if (rawJpg != null) {
