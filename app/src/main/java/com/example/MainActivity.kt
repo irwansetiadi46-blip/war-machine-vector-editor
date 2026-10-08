@@ -4684,7 +4684,8 @@ fun CompactVerticalImageCard(
 fun FullImageCard(
     item: ImageItem,
     viewModel: MainViewModel,
-    clipboardManager: androidx.compose.ui.platform.ClipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    clipboardManager: androidx.compose.ui.platform.ClipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current,
+    onDeleteImage: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -4775,28 +4776,34 @@ fun FullImageCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Action Buttons Row: Delete metadata, GENERATE / CANCEL, INJECT, DOWNLOAD (Positioned under Image, above Title)
+            // Action Buttons Row: Delete image, GENERATE / CANCEL, INJECT, DOWNLOAD (Positioned under Image, above Title)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Hapus Metadata Individu
+                // Hapus File Gambar Individu
+                val singleDeleteInteraction = remember { MutableInteractionSource() }
                 Box(
                     modifier = Modifier
                         .size(36.dp)
+                        .popUpBounce(singleDeleteInteraction, scaleUp = 1.10f, scaleDown = 0.92f)
                         .background(Color(0xFFEF4444).copy(alpha = 0.15f), RoundedCornerShape(8.dp))
                         .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable {
-                            viewModel.clearIndividualMetadata(item.id)
-                            viewModel.showToast("Cleared")
-                        },
+                        .clickable(
+                            interactionSource = singleDeleteInteraction,
+                            indication = null
+                        ) {
+                            viewModel.removeIndividualImage(item.id)
+                            onDeleteImage?.invoke()
+                        }
+                        .testTag("delete_individual_image_${item.id}"),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Delete,
-                        contentDescription = "Hapus Metadata Individu",
+                        contentDescription = "Hapus Gambar",
                         tint = Color(0xFFEF4444),
                         modifier = Modifier.size(18.dp)
                     )
@@ -5349,7 +5356,8 @@ fun ImageDetailScreen(
                 FullImageCard(
                     item = item,
                     viewModel = viewModel,
-                    clipboardManager = clipboardManager
+                    clipboardManager = clipboardManager,
+                    onDeleteImage = onClose
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))

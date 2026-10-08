@@ -668,6 +668,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun removeIndividualImage(id: Int) {
+        // Cancel ongoing individual generation job if any
+        individualGenerationJobs[id]?.cancel()
+        individualGenerationJobs.remove(id)
+
         val itemToRemove = _imagesList.value.find { it.id == id }
         val remaining = _imagesList.value.filter { it.id != id }
         _imagesList.value = remaining
@@ -684,7 +688,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (_: Exception) {}
             }
         }
-        _toastFlow.value = "Removed"
+        _toastFlow.value = "Gambar dihapus"
     }
 
     fun clearAllImages() {
