@@ -63,7 +63,8 @@ data class ImageItem(
     val isInjectingIndividual: Boolean = false,
     val previewUri: Uri? = null,
     val previewBytes: ByteArray? = null,
-    val processStatus: ProcessStatus = ProcessStatus.IDLE
+    val processStatus: ProcessStatus = ProcessStatus.IDLE,
+    val aspectRatio: Float = 1.0f
 ) {
     val isGenerated: Boolean
         get() = individualFileName.isNotBlank() || individualTitle.isNotBlank() || individualKeywords.isNotBlank() || individualDescription.isNotBlank() || hasMetadata
@@ -492,6 +493,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                         var previewUri: Uri? = null
                         var previewBytes: ByteArray? = null
+                        var itemAspectRatio = 1.0f
 
                         if (originalBytes != null) {
                             val isPng = nameLower.endsWith(".png")
@@ -503,6 +505,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             }
 
                             if (isSvg) {
+                                val ratio = SvgRenderer.getSvgAspectRatio(originalBytes)
+                                if (ratio > 0.05f) {
+                                    itemAspectRatio = ratio
+                                }
                                 val base64Png = SvgRenderer.renderSvgToPngBase64(context, originalBytes)
                                 if (base64Png != null) {
                                     try {
@@ -516,6 +522,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     }
                                 }
                             } else if (isEps) {
+                                try {
+                                    val bboxRegex = Regex("""(?:%%BoundingBox:|%%HiResBoundingBox:|%AIGPU_BoundingBox:)\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)""")
+                                    val textSample = String(originalBytes.take(4096).toByteArray(), Charsets.UTF_8)
+                                    val match = bboxRegex.find(textSample)
+                                    if (match != null) {
+                                        val x1 = match.groupValues[1].toFloat()
+                                        val y1 = match.groupValues[2].toFloat()
+                                        val x2 = match.groupValues[3].toFloat()
+                                        val y2 = match.groupValues[4].toFloat()
+                                        val w = kotlin.math.abs(x2 - x1)
+                                        val h = kotlin.math.abs(y2 - y1)
+                                        if (w > 0f && h > 0f) {
+                                            itemAspectRatio = w / h
+                                        }
+                                    }
+                                } catch (_: Exception) {}
+
                                 val base64Jpg = EpsRenderer.renderEpsToJpegBase64(context, originalBytes)
                                 if (base64Jpg != null) {
                                     try {
@@ -531,6 +554,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             } else if (isPng || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg")) {
                                 previewUri = uri
                                 previewBytes = originalBytes
+                                try {
+                                    val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                    android.graphics.BitmapFactory.decodeByteArray(originalBytes, 0, originalBytes.size, opts)
+                                    if (opts.outWidth > 0 && opts.outHeight > 0) {
+                                        itemAspectRatio = opts.outWidth.toFloat() / opts.outHeight.toFloat()
+                                    }
+                                } catch (_: Exception) {}
+                            }
+
+                            if (itemAspectRatio <= 0.05f && previewBytes != null) {
+                                try {
+                                    val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                    android.graphics.BitmapFactory.decodeByteArray(previewBytes, 0, previewBytes.size, opts)
+                                    if (opts.outWidth > 0 && opts.outHeight > 0) {
+                                        itemAspectRatio = opts.outWidth.toFloat() / opts.outHeight.toFloat()
+                                    }
+                                } catch (_: Exception) {}
                             }
                         }
 
@@ -545,7 +585,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 isSelected = isAllMode,
                                 metadata = meta,
                                 previewUri = previewUri,
-                                previewBytes = previewBytes
+                                previewBytes = previewBytes,
+                                aspectRatio = itemAspectRatio
                             )
                         )
                     }

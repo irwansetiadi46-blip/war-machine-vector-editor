@@ -95,6 +95,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -4317,6 +4318,176 @@ fun CompactGridImageCard(
 }
 
 @Composable
+fun AdaptiveArtboardPreviewCard(
+    item: ImageItem,
+    modifier: Modifier = Modifier,
+    maxCardHeight: Dp = 340.dp,
+    showArtboardBadge: Boolean = true
+) {
+    val isEps = item.name.endsWith(".eps", ignoreCase = true)
+    val isSvg = item.name.endsWith(".svg", ignoreCase = true)
+
+    var detectedRatio by remember(item.id, item.aspectRatio) {
+        mutableStateOf(if (item.aspectRatio > 0.05f) item.aspectRatio else 1.0f)
+    }
+
+    val ratio = detectedRatio.coerceIn(0.25f, 4.0f)
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val availableWidth = maxWidth
+        val (targetWidth, targetHeight) = remember(ratio, availableWidth, maxCardHeight) {
+            val naturalHeight = availableWidth / ratio
+            if (naturalHeight <= maxCardHeight) {
+                Pair(availableWidth, naturalHeight.coerceAtLeast(100.dp))
+            } else {
+                val clampedH = maxCardHeight
+                val calculatedW = (clampedH * ratio).coerceIn(100.dp, availableWidth)
+                Pair(calculatedW, clampedH)
+            }
+        }
+
+        val animWidth by animateDpAsState(
+            targetValue = targetWidth,
+            animationSpec = tween(durationMillis = 250),
+            label = "artboard_width"
+        )
+        val animHeight by animateDpAsState(
+            targetValue = targetHeight,
+            animationSpec = tween(durationMillis = 250),
+            label = "artboard_height"
+        )
+
+        Box(
+            modifier = Modifier
+                .width(animWidth)
+                .height(animHeight)
+                .background(Color(0xFF0A1024), RoundedCornerShape(12.dp))
+                .border(
+                    width = 1.dp,
+                    color = when {
+                        item.processStatus == ProcessStatus.FAILED -> Color(0xFFEF4444)
+                        item.processStatus == ProcessStatus.PROCESSING || item.isGeneratingMetadata -> Color(0xFF00A8FF)
+                        item.hasMetadata || item.processStatus == ProcessStatus.SUCCESS -> Color(0xFF22C55E).copy(alpha = 0.7f)
+                        else -> Color(0x3338BDF8)
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                )
+                .clip(RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (item.previewUri != null) {
+                AsyncImage(
+                    model = item.previewUri,
+                    contentDescription = item.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                    onSuccess = { successResult ->
+                        val w = successResult.result.drawable.intrinsicWidth
+                        val h = successResult.result.drawable.intrinsicHeight
+                        if (w > 0 && h > 0) {
+                            val computed = w.toFloat() / h.toFloat()
+                            if (kotlin.math.abs(computed - detectedRatio) > 0.05f) {
+                                detectedRatio = computed
+                            }
+                        }
+                    }
+                )
+            } else if (isEps || isSvg) {
+                val badgeText = if (isEps) "EPS VECTOR" else "SVG VECTOR"
+                val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
+                val iconTint = if (isEps) Color(0xFF818CF8) else Color(0xFF14B8A6)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = badgeText,
+                        tint = iconTint,
+                        modifier = Modifier.size(44.dp)
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Surface(color = badgeColor, shape = RoundedCornerShape(4.dp)) {
+                        Text(
+                            text = badgeText,
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+            } else {
+                AsyncImage(
+                    model = item.uri,
+                    contentDescription = item.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                    onSuccess = { successResult ->
+                        val w = successResult.result.drawable.intrinsicWidth
+                        val h = successResult.result.drawable.intrinsicHeight
+                        if (w > 0 && h > 0) {
+                            val computed = w.toFloat() / h.toFloat()
+                            if (kotlin.math.abs(computed - detectedRatio) > 0.05f) {
+                                detectedRatio = computed
+                            }
+                        }
+                    }
+                )
+            }
+
+            // Top-End Artboard Aspect Ratio Badge (e.g., 16:9, 1:1, 9:16, 4:3, etc.)
+            if (showArtboardBadge && ratio > 0.05f) {
+                val ratioText = when {
+                    kotlin.math.abs(ratio - 1.0f) < 0.04f -> "1:1 Artboard"
+                    kotlin.math.abs(ratio - (16f / 9f)) < 0.06f -> "16:9 Artboard"
+                    kotlin.math.abs(ratio - (9f / 16f)) < 0.04f -> "9:16 Artboard"
+                    kotlin.math.abs(ratio - (4f / 3f)) < 0.05f -> "4:3 Artboard"
+                    kotlin.math.abs(ratio - (3f / 4f)) < 0.04f -> "3:4 Artboard"
+                    kotlin.math.abs(ratio - (3f / 2f)) < 0.05f -> "3:2 Artboard"
+                    kotlin.math.abs(ratio - (2f / 3f)) < 0.04f -> "2:3 Artboard"
+                    kotlin.math.abs(ratio - 2.0f) < 0.06f -> "2:1 Banner"
+                    ratio > 1.05f -> String.format(java.util.Locale.US, "%.1f:1 Artboard", ratio)
+                    ratio < 0.95f -> String.format(java.util.Locale.US, "1:%.1f Artboard", 1f / ratio)
+                    else -> "Artboard"
+                }
+                Surface(
+                    shape = RoundedCornerShape(bottomStart = 8.dp, topEnd = 11.dp),
+                    color = Color(0xD9030712),
+                    border = BorderStroke(0.5.dp, Color(0x4038BDF8)),
+                    modifier = Modifier.align(Alignment.TopEnd)
+                ) {
+                    Text(
+                        text = ratioText,
+                        color = Color(0xFFBAE6FD),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            // Bottom-Left Process Status Badge (Processing…, Waiting…, Success, Failed)
+            if (item.processStatus != ProcessStatus.IDLE || item.isGeneratingMetadata) {
+                ImageProcessStatusBadge(
+                    status = item.processStatus,
+                    isGenerating = item.isGeneratingMetadata,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(8.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun CompactVerticalImageCard(
     item: ImageItem,
     modifier: Modifier = Modifier,
@@ -4406,92 +4577,12 @@ fun CompactVerticalImageCard(
                 )
             }
 
-            // Image Preview only
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .wrapContentSize()
-                        .heightIn(min = 160.dp, max = 220.dp)
-                        .widthIn(min = 160.dp, max = 340.dp)
-                        .background(Color(0xFF0F172A), RoundedCornerShape(10.dp))
-                        .border(
-                            1.dp,
-                            when {
-                                item.processStatus == ProcessStatus.FAILED -> Color(0xFFEF4444)
-                                item.processStatus == ProcessStatus.PROCESSING || item.isGeneratingMetadata -> Color(0xFF00A8FF)
-                                item.hasMetadata || item.processStatus == ProcessStatus.SUCCESS -> Color(0xFF22C55E).copy(alpha = 0.6f)
-                                else -> Color(0x33FFFFFF)
-                            },
-                            RoundedCornerShape(10.dp)
-                        )
-                        .clip(RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (item.previewUri != null) {
-                        AsyncImage(
-                            model = item.previewUri,
-                            contentDescription = item.name,
-                            modifier = Modifier
-                                .wrapContentSize()
-                                .heightIn(min = 160.dp, max = 220.dp),
-                            contentScale = ContentScale.Fit
-                        )
-                    } else if (isEps || isSvg) {
-                        val badgeText = if (isEps) "EPS VECTOR" else "SVG VECTOR"
-                        val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
-                        val iconTint = if (isEps) Color(0xFF818CF8) else Color(0xFF14B8A6)
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                            modifier = Modifier
-                                .padding(24.dp)
-                                .heightIn(min = 130.dp, max = 170.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Description,
-                                contentDescription = badgeText,
-                                tint = iconTint,
-                                modifier = Modifier.size(44.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Surface(color = badgeColor, shape = RoundedCornerShape(4.dp)) {
-                                Text(
-                                    text = badgeText,
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    } else {
-                        AsyncImage(
-                            model = item.uri,
-                            contentDescription = item.name,
-                            modifier = Modifier
-                                .wrapContentSize()
-                                .heightIn(min = 160.dp, max = 220.dp),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
-
-                    // Bottom-Left Process Status Badge (Processing…, Waiting…, Success, Failed)
-                    if (item.processStatus != ProcessStatus.IDLE || item.isGeneratingMetadata) {
-                        ImageProcessStatusBadge(
-                            status = item.processStatus,
-                            isGenerating = item.isGeneratingMetadata,
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(8.dp)
-                        )
-                    }
-                }
-            }
+            // Image Preview fitting SVG artboard dimensions
+            AdaptiveArtboardPreviewCard(
+                item = item,
+                maxCardHeight = 320.dp,
+                showArtboardBadge = true
+            )
 
             // Click hint
             Text(
@@ -4595,95 +4686,12 @@ fun FullImageCard(
                 }
             }
 
-            // 2. Centered & Large Image Preview
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .wrapContentSize()
-                        .heightIn(min = 180.dp, max = 220.dp)
-                        .widthIn(min = 160.dp, max = 340.dp)
-                        .background(Color(0xFF0F172A), RoundedCornerShape(10.dp))
-                        .border(
-                            1.dp,
-                            when {
-                                item.processStatus == ProcessStatus.FAILED -> Color(0xFFEF4444)
-                                item.processStatus == ProcessStatus.PROCESSING || item.isGeneratingMetadata -> Color(0xFF00A8FF)
-                                item.hasMetadata || item.processStatus == ProcessStatus.SUCCESS -> Color(0xFF22C55E).copy(alpha = 0.6f)
-                                else -> Color(0x33FFFFFF)
-                            },
-                            RoundedCornerShape(10.dp)
-                        )
-                        .clip(RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (item.previewUri != null) {
-                        AsyncImage(
-                            model = item.previewUri,
-                            contentDescription = item.name,
-                            modifier = Modifier
-                                .wrapContentSize()
-                                .heightIn(min = 180.dp, max = 220.dp),
-                            contentScale = ContentScale.Fit
-                        )
-                    } else if (isEps || isSvg) {
-                        val badgeText = if (isEps) "EPS VECTOR" else "SVG VECTOR"
-                        val badgeColor = if (isEps) Color(0xFF4F46E5) else Color(0xFF0F766E)
-                        val iconTint = if (isEps) Color(0xFF818CF8) else Color(0xFF14B8A6)
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                            modifier = Modifier
-                                .padding(24.dp)
-                                .heightIn(min = 140.dp, max = 180.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Description,
-                                contentDescription = badgeText,
-                                tint = iconTint,
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Surface(
-                                color = badgeColor,
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = badgeText,
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    } else {
-                        AsyncImage(
-                            model = item.uri,
-                            contentDescription = item.name,
-                            modifier = Modifier
-                                .wrapContentSize()
-                                .heightIn(min = 160.dp, max = 220.dp),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
-
-                    // Bottom-Left Process Status Badge (Processing…, Waiting…, Success, Failed)
-                    if (item.processStatus != ProcessStatus.IDLE || item.isGeneratingMetadata) {
-                        ImageProcessStatusBadge(
-                            status = item.processStatus,
-                            isGenerating = item.isGeneratingMetadata,
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(8.dp)
-                        )
-                    }
-                }
-            }
+            // 2. Centered & Large Image Preview fitting SVG artboard dimensions
+            AdaptiveArtboardPreviewCard(
+                item = item,
+                maxCardHeight = 360.dp,
+                showArtboardBadge = true
+            )
 
             Spacer(modifier = Modifier.height(10.dp))
 

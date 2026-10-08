@@ -163,13 +163,20 @@ object SvgRenderer {
                     docHeight = viewBox.height()
                 }
 
-                if (docWidth <= 0f || docHeight <= 0f) {
-                    docWidth = 512f
-                    docHeight = 512f
+                val ratio = if (docWidth > 0f && docHeight > 0f) {
+                    docWidth / docHeight
+                } else {
+                    getSvgAspectRatio(svgBytes)
                 }
 
-                val size = 512
-                val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                val targetLongEdge = 800
+                val (targetW, targetH) = if (ratio >= 1.0f) {
+                    Pair(targetLongEdge, (targetLongEdge / ratio).roundToInt().coerceIn(64, targetLongEdge))
+                } else {
+                    Pair((targetLongEdge * ratio).roundToInt().coerceIn(64, targetLongEdge), targetLongEdge)
+                }
+
+                val bitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(bitmap)
 
                 if (svg.documentViewBox == null) {
@@ -179,7 +186,7 @@ object SvgRenderer {
                 svg.setDocumentHeight("100%")
 
                 val renderOptions = RenderOptions.create()
-                renderOptions.viewPort(0f, 0f, size.toFloat(), size.toFloat())
+                renderOptions.viewPort(0f, 0f, targetW.toFloat(), targetH.toFloat())
                 svg.renderToCanvas(canvas, renderOptions)
 
                 val outputStream = ByteArrayOutputStream()
