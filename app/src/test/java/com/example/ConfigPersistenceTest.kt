@@ -69,4 +69,41 @@ class ConfigPersistenceTest {
         assertEquals("", vm2.promptConcept.value)
         assertEquals(null, prefs.getString("saved_prompt_concept", null))
     }
+
+    @Test
+    fun testApiListInitiallyEmptyOnFreshInstall() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val prefs = app.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+
+        val vm = MainViewModel(app)
+        // Verify empty on fresh install
+        assertEquals(emptyList<String>(), vm.apiKeysList.value)
+        assertEquals(-1, vm.activeApiKeyIndex.value)
+        assertEquals("", vm.geminiKey.value)
+
+        // User manually inputs key in Api Database
+        vm.addApiKey("AIzaSyTestKey123")
+        assertEquals(listOf("AIzaSyTestKey123"), vm.apiKeysList.value)
+        assertEquals(0, vm.activeApiKeyIndex.value)
+        assertEquals("AIzaSyTestKey123", vm.geminiKey.value)
+
+        // Adding a second key
+        vm.addApiKey("AIzaSySecondKey456")
+        assertEquals(listOf("AIzaSyTestKey123", "AIzaSySecondKey456"), vm.apiKeysList.value)
+        assertEquals(1, vm.activeApiKeyIndex.value)
+        assertEquals("AIzaSySecondKey456", vm.geminiKey.value)
+
+        // Verify restored on new ViewModel instance
+        val vmRestored = MainViewModel(app)
+        assertEquals(listOf("AIzaSyTestKey123", "AIzaSySecondKey456"), vmRestored.apiKeysList.value)
+        assertEquals(1, vmRestored.activeApiKeyIndex.value)
+        assertEquals("AIzaSySecondKey456", vmRestored.geminiKey.value)
+
+        // Clear list
+        vmRestored.clearApiKeysList()
+        assertEquals(emptyList<String>(), vmRestored.apiKeysList.value)
+        assertEquals(-1, vmRestored.activeApiKeyIndex.value)
+        assertEquals("", vmRestored.geminiKey.value)
+    }
 }

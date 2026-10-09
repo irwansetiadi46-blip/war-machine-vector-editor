@@ -194,6 +194,7 @@ fun MainScreen(
     val isTouchEffectEnabled by viewModel.isTouchEffectEnabled.collectAsStateWithLifecycle()
     val selectedTouchEffect by viewModel.selectedTouchEffect.collectAsStateWithLifecycle()
     var showSettingsScreen by remember { mutableStateOf(false) }
+    var showApiDatabaseScreen by remember { mutableStateOf(false) }
     var showPrivacyPolicy by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var showTouchEffectDialog by remember { mutableStateOf(false) }
@@ -235,7 +236,7 @@ fun MainScreen(
     var apiInputsInitialized by remember { mutableStateOf(false) }
 
     val activity = context as? ComponentActivity
-    BackHandler(enabled = !showSettingsScreen && !showPrivacyPolicy && !showAbout && !showTouchEffectDialog && selectedDetailImageId == null) {
+    BackHandler(enabled = !showSettingsScreen && !showApiDatabaseScreen && !showPrivacyPolicy && !showAbout && !showTouchEffectDialog && selectedDetailImageId == null) {
         activity?.moveTaskToBack(true)
     }
 
@@ -484,6 +485,16 @@ fun MainScreen(
                         expanded = showHeaderMenu,
                         onDismissRequest = { showHeaderMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Api Database", fontSize = 13.sp, fontWeight = FontWeight.Bold) },
+                            leadingIcon = {
+                                Icon(Icons.Default.VpnKey, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFFA855F7))
+                            },
+                            onClick = {
+                                showHeaderMenu = false
+                                showApiDatabaseScreen = true
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Settings", fontSize = 13.sp, fontWeight = FontWeight.Bold) },
                             leadingIcon = {
@@ -1489,10 +1500,22 @@ fun MainScreen(
         }
     }
 
+    // --- Api Database Full-screen Overlay ---
+    if (showApiDatabaseScreen) {
+        ApiDatabaseScreen(
+            onClose = { showApiDatabaseScreen = false },
+            viewModel = viewModel
+        )
+    }
+
     // --- Auto Metadata AI Settings Full-screen Overlay ---
     if (showSettingsScreen) {
         AutoMetadataSettingsScreen(
             onClose = { showSettingsScreen = false },
+            onOpenApiDatabase = {
+                showSettingsScreen = false
+                showApiDatabaseScreen = true
+            },
             viewModel = viewModel
         )
     }
@@ -2254,6 +2277,7 @@ fun TouchEffectScreen(
 @Composable
 fun AutoMetadataSettingsScreen(
     onClose: () -> Unit,
+    onOpenApiDatabase: () -> Unit = {},
     viewModel: MainViewModel
 ) {
     BackHandler { onClose() }
@@ -2548,6 +2572,31 @@ fun AutoMetadataSettingsScreen(
                             modifier = Modifier.fillMaxWidth().height(38.dp).testTag("api_save_btn")
                         ) {
                             Text(apiBtnText, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onOpenApiDatabase() }
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.VpnKey,
+                                contentDescription = null,
+                                tint = Color(0xFFA855F7),
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Kelola Multi API di Api Database",
+                                color = Color(0xFFC084FC),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
 
                         Spacer(modifier = Modifier.height(18.dp))

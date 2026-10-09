@@ -176,6 +176,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _geminiKey = MutableStateFlow("")
     val geminiKey = _geminiKey.asStateFlow()
 
+    private val _isMultiApiEnabled = MutableStateFlow(false)
+    val isMultiApiEnabled = _isMultiApiEnabled.asStateFlow()
+
+    private val _apiKeysList = MutableStateFlow<List<String>>(emptyList())
+    val apiKeysList = _apiKeysList.asStateFlow()
+
+    private val _activeApiKeyIndex = MutableStateFlow(-1)
+    val activeApiKeyIndex = _activeApiKeyIndex.asStateFlow()
+
     private val _selectedProvider = MutableStateFlow("Gemini")
     val selectedProvider = _selectedProvider.asStateFlow()
 
@@ -333,11 +342,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- SharedPreferences Management ---
     private fun loadApiKeys() {
         val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
-        _geminiKey.value = prefs.getString("gemini_key", "") ?: ""
+        val savedKey = prefs.getString("gemini_key", "") ?: ""
+        // Do not pre-populate with default or env keys: on fresh install, list and key must be empty
+        // so user can input their API key manually in the API database.
+        _geminiKey.value = savedKey
         _selectedProvider.value = "Gemini"
         _selectedModel.value = prefs.getString("selected_model", "gemini-3.5-flash-lite") ?: "gemini-3.5-flash-lite"
         _creator.value = prefs.getString("saved_creator", "") ?: ""
         _isOfflineMode.value = prefs.getBoolean("is_offline_mode", false)
+
+        // Multi API preferences
+        _isMultiApiEnabled.value = prefs.getBoolean("is_multi_api_enabled", false)
+        val apiListJson = prefs.getString("api_keys_list", null)
+        val loadedList: List<String> = if (!apiListJson.isNullOrBlank()) {
+            try {
+                val type = object : com.google.gson.reflect.TypeToken<List<String>>() {}.type
+                gson.fromJson<List<String>>(apiListJson, type) ?: emptyList()
+            } catch (_: Exception) {
+                emptyList()
+            }
+        } else {
+            emptyList()
+        }
+
+        val effectiveList = loadedList.toMutableList()
+        // If api_keys_list was not previously saved as JSON, but user had previously saved a single gemini_key:
+        if (effectiveList.isEmpty() && savedKey.isNotBlank()) {
+            effectiveList.add(savedKey)
+        }
+        _apiKeysList.value = effectiveList
+
+        val savedActiveIndex = prefs.getInt("active_api_index", -1)
+        val activeIndex = when {
+            effectiveList.isEmpty() -> -1
+            savedActiveIndex in effectiveList.indices -> savedActiveIndex
+            savedKey.isNotBlank() && effectiveList.contains(savedKey) -> effectiveList.indexOf(savedKey)
+            else -> 0
+        }
+        _activeApiKeyIndex.value = activeIndex
+
+        if (activeIndex in effectiveList.indices) {
+            _geminiKey.value = effectiveList[activeIndex]
+        } else {
+            _geminiKey.value = if (effectiveList.isEmpty()) "" else effectiveList[0]
+        }
 
         // Auto-load Microstock Template (Default General)
         val savedTemplateName = prefs.getString("selected_microstock_template", MicrostockTemplate.GENERAL.name) ?: MicrostockTemplate.GENERAL.name
@@ -373,6 +421,113 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedTouchEffect.value = prefs.getString("selected_touch_effect", "Glowing Ring") ?: "Glowing Ring"
     }
 
+    fun setMultiApiEnabled(enabled: Boolean) {
+        _isMultiApiEnabled.value = enabled
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("is_multi_api_enabled", enabled).apply()
+    }
+
+    fun addApiKey(newKey: String) {
+        val cleanKey = newKey.trim()
+        if (cleanKey.isBlank()) {
+            _toastFlow.value = "API Key Kosong"
+            return
+        }
+        val currentList = _apiKeysList.value.toMutableList()
+        val existingIndex = currentList.indexOf(cleanKey)
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+
+        if (existingIndex != -1) {
+            _activeApiKeyIndex.value = existingIndex
+            _geminiKey.value = cleanKey
+            prefs.edit().putString("gemini_key", cleanKey).putInt("active_api_index", existingIndex).apply()
+            _toastFlow.value = "API Key Terpilih"
+            return
+        }
+
+        currentList.add(cleanKey)
+        _apiKeysList.value = currentList
+        val newIndex = currentList.lastIndex
+        _activeApiKeyIndex.value = newIndex
+        _geminiKey.value = cleanKey
+
+        prefs.edit().apply {
+            putString("gemini_key", cleanKey)
+            putInt("active_api_index", newIndex)
+            putString("api_keys_list", gson.toJson(currentList))
+            apply()
+        }
+        _toastFlow.value = "API Ditambahkan"
+    }
+
+    fun selectActiveApiKey(index: Int) {
+        val list = _apiKeysList.value
+        if (index in list.indices) {
+            val key = list[index]
+            _activeApiKeyIndex.value = index
+            _geminiKey.value = key
+            val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+            prefs.edit().putString("gemini_key", key).putInt("active_api_index", index).apply()
+            _toastFlow.value = "API Aktif #${index + 1}"
+        }
+    }
+
+    fun removeApiKey(index: Int) {
+        val currentList = _apiKeysList.value.toMutableList()
+        if (index in currentList.indices) {
+            val wasActive = (_activeApiKeyIndex.value == index)
+            currentList.removeAt(index)
+            _apiKeysList.value = currentList
+
+            val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+            if (currentList.isEmpty()) {
+                _activeApiKeyIndex.value = -1
+                _geminiKey.value = ""
+                prefs.edit().putString("gemini_key", "").putInt("active_api_index", -1).putString("api_keys_list", gson.toJson(currentList)).apply()
+            } else {
+                val newActiveIndex = when {
+                    wasActive -> if (index >= currentList.size) currentList.size - 1 else index
+                    _activeApiKeyIndex.value > index -> _activeApiKeyIndex.value - 1
+                    else -> _activeApiKeyIndex.value
+                }
+                _activeApiKeyIndex.value = newActiveIndex
+                val newActiveKey = currentList[newActiveIndex]
+                _geminiKey.value = newActiveKey
+                prefs.edit().putString("gemini_key", newActiveKey).putInt("active_api_index", newActiveIndex).putString("api_keys_list", gson.toJson(currentList)).apply()
+            }
+            _toastFlow.value = "API Dihapus"
+        }
+    }
+
+    fun clearApiKeysList() {
+        _apiKeysList.value = emptyList()
+        _activeApiKeyIndex.value = -1
+        _geminiKey.value = ""
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().remove("api_keys_list").putInt("active_api_index", -1).putString("gemini_key", "").apply()
+        _toastFlow.value = "List API Dikosongkan"
+    }
+
+    fun switchToNextApiKey(): Boolean {
+        if (!_isMultiApiEnabled.value || _apiKeysList.value.size <= 1) {
+            return false
+        }
+        val list = _apiKeysList.value
+        val currentIdx = if (_activeApiKeyIndex.value in list.indices) _activeApiKeyIndex.value else 0
+        val nextIdx = (currentIdx + 1) % list.size
+        _activeApiKeyIndex.value = nextIdx
+        val nextKey = list[nextIdx]
+        _geminiKey.value = nextKey
+
+        val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("gemini_key", nextKey).putInt("active_api_index", nextIdx).apply()
+        _toastFlow.value = "Api Switch"
+        viewModelScope.launch(Dispatchers.Main) {
+            android.widget.Toast.makeText(context, "Api Switch", android.widget.Toast.LENGTH_SHORT).show()
+        }
+        return true
+    }
+
     fun setTouchEffectEnabled(enabled: Boolean) {
         _isTouchEffectEnabled.value = enabled
         val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
@@ -386,14 +541,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveApiKey(gemini: String) {
+        val cleanKey = gemini.trim()
         val prefs = context.getSharedPreferences("WarMachinePrefs", Context.MODE_PRIVATE)
         prefs.edit().apply {
-            putString("gemini_key", gemini)
+            putString("gemini_key", cleanKey)
             putString("selected_provider", "Gemini")
             apply()
         }
-        _geminiKey.value = gemini
+        _geminiKey.value = cleanKey
         _selectedProvider.value = "Gemini"
+
+        if (cleanKey.isNotBlank()) {
+            val currentList = _apiKeysList.value.toMutableList()
+            val existingIndex = currentList.indexOf(cleanKey)
+            if (existingIndex == -1) {
+                currentList.add(cleanKey)
+                _apiKeysList.value = currentList
+                _activeApiKeyIndex.value = currentList.lastIndex
+                prefs.edit().putString("api_keys_list", gson.toJson(currentList)).putInt("active_api_index", currentList.lastIndex).apply()
+            } else {
+                _activeApiKeyIndex.value = existingIndex
+                prefs.edit().putInt("active_api_index", existingIndex).apply()
+            }
+        }
+
         _toastFlow.value = "API Saved"
     }
 
@@ -931,95 +1102,115 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         globalGenerationJob = viewModelScope.launch {
             _isGeneratingAi.value = true
-            try {
-                val titleLimit = _titleCharLimit.value.toInt()
-                val descLimit = _descCharLimit.value.toInt()
-                val kwLimit = _keywordsLimit.value.toInt()
-                val blWords = _blacklistWords.value
-                val blacklistInstruction = if (blWords.isNotBlank()) "7. BLACKLIST WORDS: DO NOT include any of these words: $blWords." else ""
+            val maxAttempts = if (_isMultiApiEnabled.value && _apiKeysList.value.size > 1) _apiKeysList.value.size else 1
+            var attempt = 0
+            var success = false
 
-                val systemPrompt = """
-                    You are an expert Microstock SEO Specialist. Your job is to generate highly accurate metadata (Title, Description, and Keywords with popularity & trademark detection) based on the user's input in structured JSON format. Don't Use - or _ and odd symbols.
-
-                    Strictly follow these rules:
-                    1. Language: Always output the Title, Description, and Keywords in English.
-                    2. Title max until $titleLimit characters. 
-                    3. Description must be Maximum $descLimit characters a dynamic combination of concept description and organic visual multi usage targets. and suitable for what.
-                    4. Keywords Quantity: Generate exactly $kwLimit high-quality keywords. Quality and relevance are prioritized over quantity.
-                    5. Keywords Formatting & Demand Score (ImStocker-Style): 
-                       Each keyword MUST be an object with:
-                       - "word": String (single word, no spaces or special symbols).
-                       - "demandScore": Integer from 1 to 100 based on estimated buyer search demand on microstock platforms (e.g. Shutterstock, Adobe Stock, Freepik).
-                         * >= 90: Very High search volume
-                         * 75-89: High demand
-                         * 50-74: Medium-High demand
-                         * 25-49: Medium-Low demand
-                         * < 25: Low demand
-                       - "isTrademark": Boolean (true if keyword contains registered trademark/brand like iPhone, Nike, Adobe, Apple, etc., false otherwise).
-                       - "replacement": String or null (If isTrademark is true, provide the generic safe microstock replacement, e.g. "smartphone" for "iPhone"; otherwise null).
-                    6. Content Relevance: 
-                       - No keyword spamming or redundant root words. 
-                       - Avoid contradictory terms.
-                       - Use only 1 word for each keyword.
-                    $blacklistInstruction
-
-                    Format output strictly matching this schema:
-                    {"title": "...", "description": "...", "keywords": [{"word": "...", "demandScore": 80, "isTrademark": false, "replacement": null}]}
-                """.trimIndent()
-
-                val userPrompt = """
-                    Analyze this microstock concept: "$concept". Generate professional metadata for Shutterstock, Adobe Stock, Vecteezy, and Freepik in JSON format based on this description according to the system rules.
-                """.trimIndent()
-
-                val modelName = _selectedModel.value
-                val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
-                
-                val req = GeminiRequest(
-                    contents = listOf(
-                        GeminiContent(
-                            parts = listOf(
-                                GeminiPart(text = "$systemPrompt\n\n$userPrompt")
-                            )
-                        )
-                    ),
-                    generationConfig = GeminiGenerationConfig(
-                        responseMimeType = "application/json",
-                        responseSchema = geminiResponseSchema
-                    )
-                )
-                val resp = NetworkClient.apiService.getGeminiContent(url, req)
-                val resultText = resp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
-
-                val cleanJson = extractJson(resultText)
-                val parsed = parseGeneratedMetadata(cleanJson)
-                if (parsed != null) {
-                    val kwsList = parsed.keywords ?: emptyList()
-                    val kwsString = kwsList.joinToString(",") { 
-                        if (it.isTrademark && !it.replacement.isNullOrBlank()) it.replacement else it.word 
-                    }
-                    _title.value = parsed.title ?: ""
-                    _description.value = parsed.description ?: ""
-                    _keywords.value = kwsString
-                    _toastFlow.value = "Generated"
-
-                    if (_isAutoInjectionEnabled.value) {
-                        val hasSelected = _imagesList.value.any { it.isSelected }
-                        if (hasSelected) {
-                            injectMetadata()
-                        } else if (_imagesList.value.isNotEmpty()) {
-                            selectAllImages(true)
-                            injectMetadata()
-                        }
-                    }
-                } else {
-                    _toastFlow.value = "Invalid AI"
+            while (!success && attempt < maxAttempts) {
+                val apiKey = _geminiKey.value
+                if (apiKey.isBlank()) {
+                    _toastFlow.value = "Need API Key"
+                    break
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _toastFlow.value = "AI Error"
-            } finally {
-                _isGeneratingAi.value = false
+                try {
+                    val titleLimit = _titleCharLimit.value.toInt()
+                    val descLimit = _descCharLimit.value.toInt()
+                    val kwLimit = _keywordsLimit.value.toInt()
+                    val blWords = _blacklistWords.value
+                    val blacklistInstruction = if (blWords.isNotBlank()) "7. BLACKLIST WORDS: DO NOT include any of these words: $blWords." else ""
+
+                    val systemPrompt = """
+                        You are an expert Microstock SEO Specialist. Your job is to generate highly accurate metadata (Title, Description, and Keywords with popularity & trademark detection) based on the user's input in structured JSON format. Don't Use - or _ and odd symbols.
+
+                        Strictly follow these rules:
+                        1. Language: Always output the Title, Description, and Keywords in English.
+                        2. Title max until $titleLimit characters. 
+                        3. Description must be Maximum $descLimit characters a dynamic combination of concept description and organic visual multi usage targets. and suitable for what.
+                        4. Keywords Quantity: Generate exactly $kwLimit high-quality keywords. Quality and relevance are prioritized over quantity.
+                        5. Keywords Formatting & Demand Score (ImStocker-Style): 
+                           Each keyword MUST be an object with:
+                           - "word": String (single word, no spaces or special symbols).
+                           - "demandScore": Integer from 1 to 100 based on estimated buyer search demand on microstock platforms (e.g. Shutterstock, Adobe Stock, Freepik).
+                             * >= 90: Very High search volume
+                             * 75-89: High demand
+                             * 50-74: Medium-High demand
+                             * 25-49: Medium-Low demand
+                             * < 25: Low demand
+                           - "isTrademark": Boolean (true if keyword contains registered trademark/brand like iPhone, Nike, Adobe, Apple, etc., false otherwise).
+                           - "replacement": String or null (If isTrademark is true, provide the generic safe microstock replacement, e.g. "smartphone" for "iPhone"; otherwise null).
+                        6. Content Relevance: 
+                           - No keyword spamming or redundant root words. 
+                           - Avoid contradictory terms.
+                           - Use only 1 word for each keyword.
+                        $blacklistInstruction
+
+                        Format output strictly matching this schema:
+                        {"title": "...", "description": "...", "keywords": [{"word": "...", "demandScore": 80, "isTrademark": false, "replacement": null}]}
+                    """.trimIndent()
+
+                    val userPrompt = """
+                        Analyze this microstock concept: "$concept". Generate professional metadata for Shutterstock, Adobe Stock, Vecteezy, and Freepik in JSON format based on this description according to the system rules.
+                    """.trimIndent()
+
+                    val modelName = _selectedModel.value
+                    val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
+                    
+                    val req = GeminiRequest(
+                        contents = listOf(
+                            GeminiContent(
+                                parts = listOf(
+                                    GeminiPart(text = "$systemPrompt\n\n$userPrompt")
+                                )
+                            )
+                        ),
+                        generationConfig = GeminiGenerationConfig(
+                            responseMimeType = "application/json",
+                            responseSchema = geminiResponseSchema
+                        )
+                    )
+                    val resp = NetworkClient.apiService.getGeminiContent(url, req)
+                    val resultText = resp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
+
+                    val cleanJson = extractJson(resultText)
+                    val parsed = parseGeneratedMetadata(cleanJson)
+                    if (parsed != null) {
+                        val kwsList = parsed.keywords ?: emptyList()
+                        val kwsString = kwsList.joinToString(",") { 
+                            if (it.isTrademark && !it.replacement.isNullOrBlank()) it.replacement else it.word 
+                        }
+                        _title.value = parsed.title ?: ""
+                        _description.value = parsed.description ?: ""
+                        _keywords.value = kwsString
+                        _toastFlow.value = "Generated"
+                        success = true
+
+                        if (_isAutoInjectionEnabled.value) {
+                            withContext(Dispatchers.Main) {
+                                val hasSelected = _imagesList.value.any { it.isSelected }
+                                if (hasSelected) {
+                                    injectMetadata()
+                                } else if (_imagesList.value.isNotEmpty()) {
+                                    selectAllImages(true)
+                                    injectMetadata()
+                                }
+                            }
+                        }
+                    } else {
+                        throw Exception("Invalid AI response")
+                    }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    attempt++
+                    if (_isMultiApiEnabled.value && attempt < maxAttempts && switchToNextApiKey()) {
+                        kotlinx.coroutines.delay(600)
+                    } else {
+                        e.printStackTrace()
+                        _toastFlow.value = "AI Error"
+                        break
+                    }
+                }
             }
+            _isGeneratingAi.value = false
         }
     }
 
@@ -1039,55 +1230,73 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _imagesList.value = _imagesList.value.map { 
                 if (it.id == imageItem.id) it.copy(isGeneratingMetadata = true, processStatus = ProcessStatus.PROCESSING) else it 
             }
-            try {
-                val parsed = performGeminiAnalysis(imageItem, apiKey, _selectedModel.value)
-                if (parsed != null) {
-                    val kwsList = parsed.keywords ?: emptyList()
-                    val kwsString = kwsList.joinToString(",") { 
-                        if (it.isTrademark && !it.replacement.isNullOrBlank()) it.replacement else it.word 
-                    }
 
-                    _fileName.value = parsed.fileName ?: ""
-                    _title.value = parsed.title ?: ""
-                    _description.value = parsed.description ?: ""
-                    _keywords.value = kwsString
+            val maxAttempts = if (_isMultiApiEnabled.value && _apiKeysList.value.size > 1) _apiKeysList.value.size else 1
+            var attempt = 0
+            var success = false
 
-                    _imagesList.value = _imagesList.value.map { 
-                        if (it.id == imageItem.id) it.copy(
-                            individualFileName = parsed.fileName ?: "",
-                            individualTitle = parsed.title ?: "",
-                            individualDescription = parsed.description ?: "",
-                            individualKeywords = kwsString,
-                            individualKeywordItems = kwsList,
-                            isGeneratingMetadata = false,
-                            processStatus = ProcessStatus.SUCCESS
-                        ) else it
-                    }
-                    _toastFlow.value = "Generated"
-                    if (_isAutoInjectionEnabled.value) {
-                        injectIndividualMetadata(imageItem.id)
-                    }
-                } else {
+            while (!success && attempt < maxAttempts) {
+                val currentKey = _geminiKey.value
+                if (currentKey.isBlank()) {
+                    _toastFlow.value = "Need API Key"
                     _imagesList.value = _imagesList.value.map { 
                         if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
                     }
-                    _toastFlow.value = "Invalid AI"
+                    break
                 }
-            } catch (e: Exception) {
-                if (e !is kotlinx.coroutines.CancellationException) {
-                    e.printStackTrace()
-                    _imagesList.value = _imagesList.value.map { 
-                        if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                try {
+                    val parsed = performGeminiAnalysis(imageItem, currentKey, _selectedModel.value)
+                    if (parsed != null) {
+                        val kwsList = parsed.keywords ?: emptyList()
+                        val kwsString = kwsList.joinToString(",") { 
+                            if (it.isTrademark && !it.replacement.isNullOrBlank()) it.replacement else it.word 
+                        }
+
+                        _fileName.value = parsed.fileName ?: ""
+                        _title.value = parsed.title ?: ""
+                        _description.value = parsed.description ?: ""
+                        _keywords.value = kwsString
+
+                        _imagesList.value = _imagesList.value.map { 
+                            if (it.id == imageItem.id) it.copy(
+                                individualFileName = parsed.fileName ?: "",
+                                individualTitle = parsed.title ?: "",
+                                individualDescription = parsed.description ?: "",
+                                individualKeywords = kwsString,
+                                individualKeywordItems = kwsList,
+                                isGeneratingMetadata = false,
+                                processStatus = ProcessStatus.SUCCESS
+                            ) else it
+                        }
+                        _toastFlow.value = "Generated"
+                        if (_isAutoInjectionEnabled.value) {
+                            injectIndividualMetadata(imageItem.id)
+                        }
+                        success = true
+                    } else {
+                        throw Exception("Invalid AI response")
                     }
-                    _toastFlow.value = "AI Error"
-                } else {
-                    _imagesList.value = _imagesList.value.map { 
-                        if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) {
+                        _imagesList.value = _imagesList.value.map { 
+                            if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                        }
+                        break
+                    }
+                    attempt++
+                    if (_isMultiApiEnabled.value && attempt < maxAttempts && switchToNextApiKey()) {
+                        kotlinx.coroutines.delay(600)
+                    } else {
+                        e.printStackTrace()
+                        _imagesList.value = _imagesList.value.map { 
+                            if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                        }
+                        _toastFlow.value = "AI Error"
+                        break
                     }
                 }
-            } finally {
-                individualGenerationJobs.remove(imageItem.id)
             }
+            individualGenerationJobs.remove(imageItem.id)
         }
         individualGenerationJobs[imageItem.id] = job
     }
@@ -1104,8 +1313,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        val apiKey = _geminiKey.value
-        if (apiKey.isBlank()) {
+        val initialApiKey = _geminiKey.value
+        if (initialApiKey.isBlank()) {
             _toastFlow.value = "Need API Key"
             return
         }
@@ -1145,58 +1354,77 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (it.id == imageItem.id) it.copy(isGeneratingMetadata = true, processStatus = ProcessStatus.PROCESSING) else it 
                     }
                     
-                    try {
-                        val parsed = performGeminiAnalysis(imageItem, apiKey, _selectedModel.value)
-                        if (parsed != null) {
-                            val kwsList = parsed.keywords ?: emptyList()
-                            val kwsString = kwsList.joinToString(",") { 
-                                if (it.isTrademark && !it.replacement.isNullOrBlank()) it.replacement else it.word 
-                            }
+                    var itemSuccess = false
+                    var itemAttempt = 0
+                    val maxAttempts = if (_isMultiApiEnabled.value && _apiKeysList.value.size > 1) _apiKeysList.value.size else 1
 
-                            if (targetImages.size == 1) {
-                                _fileName.value = parsed.fileName ?: ""
-                                _title.value = parsed.title ?: ""
-                                _description.value = parsed.description ?: ""
-                                _keywords.value = kwsString
-                            }
-                            
-                            _imagesList.value = _imagesList.value.map { 
-                                if (it.id == imageItem.id) it.copy(
-                                    individualFileName = parsed.fileName ?: "",
-                                    individualTitle = parsed.title ?: "",
-                                    individualDescription = parsed.description ?: "",
-                                    individualKeywords = kwsString,
-                                    individualKeywordItems = kwsList,
-                                    isGeneratingMetadata = false,
-                                    processStatus = ProcessStatus.SUCCESS
-                                ) else it
-                            }
-
-                            // Langsung Auto Inject Metadata jika fitur auto injection ON
-                            if (_isAutoInjectionEnabled.value) {
-                                injectIndividualMetadata(imageItem.id)
-                            }
-                        } else {
+                    while (!itemSuccess && itemAttempt < maxAttempts) {
+                        val currentApiKey = _geminiKey.value
+                        if (currentApiKey.isBlank()) {
+                            _toastFlow.value = "Need API Key"
                             _imagesList.value = _imagesList.value.map { 
                                 if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
                             }
-                            _toastFlow.value = "Invalid AI"
+                            break
                         }
-                    } catch (e: Exception) {
-                        if (e is kotlinx.coroutines.CancellationException) {
-                            _imagesList.value = _imagesList.value.map { 
-                                if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+
+                        try {
+                            val parsed = performGeminiAnalysis(imageItem, currentApiKey, _selectedModel.value)
+                            if (parsed != null) {
+                                val kwsList = parsed.keywords ?: emptyList()
+                                val kwsString = kwsList.joinToString(",") { 
+                                    if (it.isTrademark && !it.replacement.isNullOrBlank()) it.replacement else it.word 
+                                }
+
+                                if (targetImages.size == 1) {
+                                    _fileName.value = parsed.fileName ?: ""
+                                    _title.value = parsed.title ?: ""
+                                    _description.value = parsed.description ?: ""
+                                    _keywords.value = kwsString
+                                }
+                                
+                                _imagesList.value = _imagesList.value.map { 
+                                    if (it.id == imageItem.id) it.copy(
+                                        individualFileName = parsed.fileName ?: "",
+                                        individualTitle = parsed.title ?: "",
+                                        individualDescription = parsed.description ?: "",
+                                        individualKeywords = kwsString,
+                                        individualKeywordItems = kwsList,
+                                        isGeneratingMetadata = false,
+                                        processStatus = ProcessStatus.SUCCESS
+                                    ) else it
+                                }
+
+                                // Langsung Auto Inject Metadata jika fitur auto injection ON
+                                if (_isAutoInjectionEnabled.value) {
+                                    injectIndividualMetadata(imageItem.id)
+                                }
+                                itemSuccess = true
+                                completed++
+                            } else {
+                                throw Exception("Invalid AI response")
                             }
-                            throw e
-                        } else {
-                            e.printStackTrace()
-                            _imagesList.value = _imagesList.value.map { 
-                                if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                        } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) {
+                                _imagesList.value = _imagesList.value.map { 
+                                    if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                                }
+                                throw e
                             }
-                            _toastFlow.value = "AI Error"
+                            itemAttempt++
+                            if (_isMultiApiEnabled.value && itemAttempt < maxAttempts && switchToNextApiKey()) {
+                                kotlinx.coroutines.delay(600)
+                                // Will retry THIS imageItem from where it failed!
+                            } else {
+                                e.printStackTrace()
+                                _imagesList.value = _imagesList.value.map { 
+                                    if (it.id == imageItem.id) it.copy(isGeneratingMetadata = false, processStatus = ProcessStatus.FAILED) else it 
+                                }
+                                _toastFlow.value = "AI Error"
+                                break
+                            }
                         }
                     }
-                    completed++
                     _globalProcessingText.value = "Generating Process...($completed/$total)"
                 }
                 
@@ -2040,16 +2268,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (isSvg) {
                         when (format) {
                             SvgExportFormat.JPG_HIGH_RES -> {
-                                var rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
-                                if (rawJpg == null) {
-                                    rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 3000)
-                                }
-                                if (rawJpg != null) {
+                                try {
+                                    val rawJpg = SvgToJpgConverter.convert(baseBytes)
                                     val jpgBytes = XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
                                     val fileName = "$baseName.jpg"
                                     FileHelper.saveToDownloads(context, fileName, "image/jpeg", jpgBytes)
-                                } else {
-                                    android.util.Log.e("MainViewModel", "Failed to render high-res JPG for $baseName")
+                                } catch (e: Throwable) {
+                                    android.util.Log.e("MainViewModel", "Failed to render high-res JPG for $baseName", e)
                                     _toastFlow.value = "Render Failed"
                                 }
                             }
@@ -2066,34 +2291,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             SvgExportFormat.ZIP_SVG_EPS_JPG -> {
                                 val zipName = "${baseName}_bundle.zip"
                                 FileHelper.saveStreamToDownloads(context, zipName, "application/zip") { outputStream ->
-                                    java.util.zip.ZipOutputStream(outputStream.buffered()).use { zos ->
-                                        val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
-
-                                        // 1. EPS inside "EPS" folder
-                                        zos.putNextEntry(java.util.zip.ZipEntry("EPS/$baseName.eps"))
-                                        zos.write(epsBytes)
-                                        zos.closeEntry()
-
-                                        // 2. EPS directly outside folder
-                                        zos.putNextEntry(java.util.zip.ZipEntry("$baseName.eps"))
-                                        zos.write(epsBytes)
-                                        zos.closeEntry()
-
-                                        // 3. High resolution JPG preview outside folder with injected metadata and accurate artboard sizing
-                                        var rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
-                                        if (rawJpg == null) {
-                                            // Fallback attempt with safe 3000px if device was low on memory
-                                            rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 3000)
-                                        }
-
-                                        if (rawJpg != null) {
-                                            val jpgBytes = XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
-                                            zos.putNextEntry(java.util.zip.ZipEntry("$baseName.jpg"))
-                                            zos.write(jpgBytes)
-                                            zos.closeEntry()
-                                        } else {
-                                            android.util.Log.e("MainViewModel", "Failed to render high-res JPG for $baseName")
-                                        }
+                                    val exportItem = ZipEpsJpgExporter.Item(
+                                        baseName = baseName,
+                                        svgBytes = baseBytes,
+                                        title = metaTitle,
+                                        description = metaDesc,
+                                        keywords = keywordsList,
+                                        creator = metaCreator
+                                    )
+                                    val result = ZipEpsJpgExporter.export(outputStream, listOf(exportItem), useFolders = false)
+                                    if (result.failed.isNotEmpty()) {
+                                        android.util.Log.e("MainViewModel", "Failed to export ZIP for $baseName: ${result.failed}")
                                     }
                                 }
                             }
@@ -2177,34 +2385,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     if (isSvg) {
                                         val zipName = "${uniqueBaseName}_bundle.zip"
                                         FileHelper.saveStreamToDownloads(context, zipName, "application/zip") { outputStream ->
-                                            java.util.zip.ZipOutputStream(outputStream.buffered()).use { zos ->
-                                                val epsBytes = SvgToEpsConverter.convertSvgToEps(baseBytes, metaTitle, metaDesc, keywordsList, metaCreator)
-
-                                                // 1. EPS inside "EPS" folder
-                                                zos.putNextEntry(java.util.zip.ZipEntry("EPS/$uniqueBaseName.eps"))
-                                                zos.write(epsBytes)
-                                                zos.closeEntry()
-
-                                                // 2. EPS directly outside folder
-                                                zos.putNextEntry(java.util.zip.ZipEntry("$uniqueBaseName.eps"))
-                                                zos.write(epsBytes)
-                                                zos.closeEntry()
-
-                                                // 3. High resolution JPG preview outside folder with injected metadata and accurate artboard sizing
-                                                var rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
-                                                if (rawJpg == null) {
-                                                    // Fallback attempt with safe 3000px if device was low on memory
-                                                    rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 3000)
-                                                }
-
-                                                if (rawJpg != null) {
-                                                    val jpgBytes = XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
-                                                    zos.putNextEntry(java.util.zip.ZipEntry("$uniqueBaseName.jpg"))
-                                                    zos.write(jpgBytes)
-                                                    zos.closeEntry()
-                                                } else {
-                                                    android.util.Log.e("MainViewModel", "Failed to render high-res JPG for $uniqueBaseName")
-                                                }
+                                            val exportItem = ZipEpsJpgExporter.Item(
+                                                baseName = uniqueBaseName,
+                                                svgBytes = baseBytes,
+                                                title = metaTitle,
+                                                description = metaDesc,
+                                                keywords = keywordsList,
+                                                creator = metaCreator
+                                            )
+                                            val result = ZipEpsJpgExporter.export(outputStream, listOf(exportItem), useFolders = false)
+                                            if (result.failed.isNotEmpty()) {
+                                                android.util.Log.e("MainViewModel", "Failed to export ZIP for $uniqueBaseName: ${result.failed}")
                                             }
                                         }
                                     } else {
@@ -2219,15 +2410,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 } else if (isSvg) {
                                     when (format) {
                                         SvgExportFormat.JPG_HIGH_RES -> {
-                                            var rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 4000)
-                                            if (rawJpg == null) {
-                                                rawJpg = SvgRenderer.renderSvgToHighResJpgBytes(context, baseBytes, targetLongEdge = 3000)
-                                            }
-                                            if (rawJpg != null) {
+                                            try {
+                                                val rawJpg = SvgToJpgConverter.convert(baseBytes)
                                                 val jpgBytes = XmpInjector.injectIntoJpeg(rawJpg, metaTitle, metaDesc, keywordsList, metaCreator)
                                                 FileHelper.saveToDownloads(context, "$uniqueBaseName.jpg", "image/jpeg", jpgBytes)
-                                            } else {
-                                                android.util.Log.e("MainViewModel", "Failed to render high-res JPG for $uniqueBaseName")
+                                            } catch (e: Throwable) {
+                                                android.util.Log.e("MainViewModel", "Failed to render high-res JPG for $uniqueBaseName", e)
                                             }
                                         }
                                         SvgExportFormat.EPS -> {

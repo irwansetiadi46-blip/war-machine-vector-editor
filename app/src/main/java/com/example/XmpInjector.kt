@@ -260,8 +260,12 @@ object XmpInjector {
 
     fun extractXMPFromSvg(bytes: ByteArray): String? {
         try {
-            val str = String(bytes, StandardCharsets.UTF_8)
-            val startIdx = str.indexOf("<x:xmpmeta")
+            var str = String(bytes, StandardCharsets.UTF_8)
+            var startIdx = str.indexOf("<x:xmpmeta")
+            if (startIdx == -1 && str.contains("&lt;x:xmpmeta")) {
+                str = str.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&amp;", "&")
+                startIdx = str.indexOf("<x:xmpmeta")
+            }
             if (startIdx != -1) {
                 val endIdx = str.indexOf("</x:xmpmeta>", startIdx)
                 if (endIdx != -1) {
@@ -463,9 +467,66 @@ object XmpInjector {
                 return originalBytes
             }
 
-            val epsString = String(originalBytes, StandardCharsets.UTF_8)
+            // Handle DOS EPS binary header (Magic C5 D0 D3 C6)
+            if (originalBytes.size >= 30 &&
+                originalBytes[0] == 0xC5.toByte() &&
+                originalBytes[1] == 0xD0.toByte() &&
+                originalBytes[2] == 0xD3.toByte() &&
+                originalBytes[3] == 0xC6.toByte()
+            ) {
+                fun readIntLe(bytes: ByteArray, offset: Int): Int {
+                    return (bytes[offset].toInt() and 0xFF) or
+                            ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+                            ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+                            ((bytes[offset + 3].toInt() and 0xFF) shl 24)
+                }
+
+                fun writeIntLe(bytes: ByteArray, offset: Int, value: Int) {
+                    bytes[offset] = (value and 0xFF).toByte()
+                    bytes[offset + 1] = ((value ushr 8) and 0xFF).toByte()
+                    bytes[offset + 2] = ((value ushr 16) and 0xFF).toByte()
+                    bytes[offset + 3] = ((value ushr 24) and 0xFF).toByte()
+                }
+
+                val psOffset = readIntLe(originalBytes, 4)
+                val psLength = readIntLe(originalBytes, 8)
+                val metaOffset = readIntLe(originalBytes, 12)
+                val metaLength = readIntLe(originalBytes, 16)
+                val tiffOffset = readIntLe(originalBytes, 20)
+                val tiffLength = readIntLe(originalBytes, 24)
+
+                if (psOffset in 30..originalBytes.size && psLength >= 0 && psOffset + psLength <= originalBytes.size) {
+                    val psBytes = originalBytes.copyOfRange(psOffset, psOffset + psLength)
+                    val psString = String(psBytes, StandardCharsets.ISO_8859_1)
+                    val resultEps = embedEpsMetadata(psString, metaTitle, metaDesc, cleanKeywords, creator)
+                    val newPsBytes = resultEps.toByteArray(StandardCharsets.ISO_8859_1)
+                    val psDelta = newPsBytes.size - psLength
+
+                    val newHeader = originalBytes.copyOfRange(0, 30)
+                    writeIntLe(newHeader, 8, newPsBytes.size)
+                    if (metaOffset > psOffset && metaLength > 0) {
+                        writeIntLe(newHeader, 12, metaOffset + psDelta)
+                    }
+                    if (tiffOffset > psOffset && tiffLength > 0) {
+                        writeIntLe(newHeader, 20, tiffOffset + psDelta)
+                    }
+
+                    val outputStream = ByteArrayOutputStream(newHeader.size + (psOffset - 30) + newPsBytes.size + (originalBytes.size - (psOffset + psLength)))
+                    outputStream.write(newHeader)
+                    if (psOffset > 30) {
+                        outputStream.write(originalBytes, 30, psOffset - 30)
+                    }
+                    outputStream.write(newPsBytes)
+                    if (originalBytes.size > psOffset + psLength) {
+                        outputStream.write(originalBytes, psOffset + psLength, originalBytes.size - (psOffset + psLength))
+                    }
+                    return outputStream.toByteArray()
+                }
+            }
+
+            val epsString = String(originalBytes, StandardCharsets.ISO_8859_1)
             val resultEps = embedEpsMetadata(epsString, metaTitle, metaDesc, cleanKeywords, creator)
-            return resultEps.toByteArray(StandardCharsets.UTF_8)
+            return resultEps.toByteArray(StandardCharsets.ISO_8859_1)
         } catch (e: Exception) {
             e.printStackTrace()
             return originalBytes
@@ -473,7 +534,7 @@ object XmpInjector {
     }
 
     /**
-     * Injects SVG metadata matching Lineva implementation (`$e` / `he`).
+     * Injects SVG metadata matching Adobe XMP standard (round-trip safe).
      */
     fun injectIntoSvg(
         originalBytes: ByteArray,
@@ -490,26 +551,39 @@ object XmpInjector {
                 return originalBytes
             }
 
-            val kwStr = kwList.joinToString(", ")
+            val fileStr = String(originalBytes, StandardCharsets.UTF_8)
+
+            // 1. HAPUS metadata lama jika ada (agar tidak duplikat)
+            val cleanedSvg = fileStr
+                .replace(Regex("""<x:xmpmeta[\s\S]*?</x:xmpmeta>"""), "")
+                .replace(Regex("""<metadata[\s\S]*?</metadata>"""), "")
+                .replace(Regex("""<title[\s\S]*?</title>"""), "")
+                .replace(Regex("""<desc[\s\S]*?</desc>"""), "")
+
+            // 2. Bangun XMP packet (format standar Adobe, sama dengan JPEG/EPS)
+            val xmpPacket = generateXmpPacket(t, d, kwList)
+
+            // 3. Bangun blok metadata untuk ditaruh di dalam <svg>
             val titleTag = if (t.isNotEmpty()) "<title>${escapeXml(t)}</title>" else ""
             val descTag = if (d.isNotEmpty()) "<desc>${escapeXml(d)}</desc>" else ""
+            val xmpTag = "<metadata>${escapeXml(xmpPacket)}</metadata>"  // escape agar jadi text node
 
-            val dcTitle = if (t.isNotEmpty()) "<dc:title>${escapeXml(t)}</dc:title>" else ""
-            val dcDesc = if (d.isNotEmpty()) "<dc:description>${escapeXml(d)}</dc:description>" else ""
-            val dcSubj = if (kwStr.isNotEmpty()) "<dc:subject>${escapeXml(kwStr)}</dc:subject>" else ""
+            val svgMetaBlock = listOf(titleTag, descTag, xmpTag)
+                .filter { it.isNotEmpty() }
+                .joinToString("\n")
 
-            val metadataContent = listOf(dcTitle, dcDesc, dcSubj).filter { it.isNotEmpty() }.joinToString("")
-            val metadataTag = if (metadataContent.isNotEmpty()) "<metadata>$metadataContent</metadata>" else ""
+            // 4. FIX UTAMA: regex group TANPA '>' — persis seperti JS Lineva
+            val svgOpenTagRegex = Regex("""<svg\b([^>]*)>""")
 
-            val svgMetaBlock = listOf(titleTag, descTag, metadataTag).filter { it.isNotEmpty() }.joinToString("\n")
-            if (svgMetaBlock.isEmpty()) return originalBytes
-
-            val fileStr = String(originalBytes, StandardCharsets.UTF_8)
-            val svgOpenTagRegex = Regex("""(<svg\b[^>]*>)""")
-            val hasilSvg = if (fileStr.contains(svgOpenTagRegex)) {
-                fileStr.replace(svgOpenTagRegex, "$1 xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n$svgMetaBlock")
+            val hasilSvg = if (svgOpenTagRegex.containsMatchIn(cleanedSvg)) {
+                // Tambahkan xmlns:dc + xmlns:rdf agar valid, TANPA '>' ekstra
+                svgOpenTagRegex.replaceFirst(
+                    cleanedSvg,
+                    "<svg$1 xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n$svgMetaBlock"
+                )
             } else {
-                svgMetaBlock + "\n" + fileStr
+                // SVG tanpa tag <svg>? Beri fallback minimal
+                cleanedSvg
             }
 
             return hasilSvg.toByteArray(StandardCharsets.UTF_8)
